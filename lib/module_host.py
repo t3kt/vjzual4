@@ -5,6 +5,8 @@ from operator import attrgetter
 
 if False:
 	from _stubs import *
+	from ui_builder import UiBuilder
+
 
 try:
 	import comp_metadata
@@ -123,6 +125,53 @@ class ModuleHostBase:
 				parinfo.specialtype,
 			])
 
+	def BuildControls(self, dest, uibuilder: 'UiBuilder'):
+		for ctrl in dest.ops('par__*'):
+			ctrl.destroy()
+		if not self.Module:
+			return
+		modpath = self.Module.path
+		for i, parinfo in enumerate(self.Params):
+			parvals = {
+				'alignorder': 10 + (i / 1.0),
+			}
+			nodepos = [
+				100,
+				-50 * i,
+			]
+			if parinfo.style in ('Float', 'Int'):
+				print('creating slider control for {}'.format(parinfo.name))
+				uibuilder.CreateSlider(
+					dest=dest,
+					name='par__' + parinfo.name,
+					label=parinfo.label,
+					isint=parinfo.style == 'Int',
+					valueexpr='op("{}").par.{}'.format(modpath, parinfo.parts[0].name),
+					defval=parinfo.parts[0].default,
+					clamp=[
+						parinfo.parts[0].clampMin,
+						parinfo.parts[0].clampMax,
+					],
+					valrange=[
+						parinfo.parts[0].min if parinfo.parts[0].clampMin else parinfo.parts[0].normMin,
+						parinfo.parts[0].max if parinfo.parts[0].clampMax else parinfo.parts[0].normMax,
+					],
+					parvals=_mergedicts(parvals, {
+						'hmode': 'fill',
+						'vmode': 'fixed',
+					}),
+					nodepos=nodepos,
+				)
+			else:
+				print('Unsupported par style: {}'.format(repr(parinfo.style)))
+
+def _mergedicts(*parts):
+	x = {}
+	for part in parts:
+		if part:
+			x.update(part)
+	return x
+
 
 def _parseAttributeTable(dat):
 	dat = op(dat)
@@ -136,6 +185,7 @@ def _parseAttributeTable(dat):
 		}
 		for cells in dat.rows()[1:]
 	}
+
 
 class ModuleHost(ModuleHostBase):
 	def __init__(self, ownerComp):
@@ -161,6 +211,7 @@ class ModuleHost(ModuleHostBase):
 			else:
 				ptbl = self.Module.op('parameters')
 				self.ParamTable = ptbl if ptbl and ptbl.isDAT else None
+
 
 # When the relevant metadata flag is empty/missing in the parameter table,
 # the following shortcuts can be used to specify it in the parameter label:
