@@ -33,8 +33,8 @@ class ModuleEditor(module_host.ModuleHostBase):
 
 def _initModuleParams(m):
 	page = m.appendCustomPage('Module')
-	page.appendStr('Uilabel', label='UI Label')
+	page.appendStr('Uilabel', label=':UI Label')
 	page.appendToggle('Bypass')
-	page.appendPulse('Resetstate', label='Reset State')
+	page.appendPulse('Resetstate', label=':Reset State')
 	comp_metadata.UpdateCompMetadata(m)
 	pass

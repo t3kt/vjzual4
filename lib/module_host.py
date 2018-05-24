@@ -1,5 +1,7 @@
 print('vjz4/module_host.py loading')
 
+from typing import List
+
 if False:
 	from _stubs import *
 
@@ -13,12 +15,15 @@ try:
 except ImportError:
 	data_node = mod.data_node
 
+
 class ModuleHostBase:
+	"""Base class for components that host modules, such as ModuleHost or ModuleEditor."""
 	def __init__(self, ownerComp):
 		self.ownerComp = ownerComp
 		self.Module = None
 		self.ModuleCore = None
-		self.DataNodes = []
+		self.DataNodes = []  # type: List[data_node.NodeInfo]
+		self.Params = []  # type: List[ModuleParamInfo]
 		self.Actions = {
 			'Reattachmodule': self.attachModuleFromPar,
 		}
@@ -50,15 +55,6 @@ class ModuleHostBase:
 		core = self.ModuleCore
 		return getattr(core.par, name) if core and hasattr(core.par, name) else None
 
-	# def _GetModuleParVal(self, name, defval):
-	# 	p = self.getModulePar(name)
-	# 	return p.eval() if p is not None else defval
-	#
-	# def _SetModuleParVal(self, name, val):
-	# 	p = self.getModulePar(name)
-	# 	if p is not None:
-	# 		p.val = val
-
 	def AttachToModule(self, m):
 		self.Module = m
 		if m:
@@ -66,6 +62,7 @@ class ModuleHostBase:
 		else:
 			self.ModuleCore = None
 		self.DataNodes = data_node.NodeInfo.resolveall(self._FindDataNodes())
+		self._LoadParams()
 
 	def _FindDataNodes(self):
 		if not self.Module:
@@ -92,6 +89,53 @@ class ModuleHostBase:
 				n.texbuf or '',
 			])
 
+	def _LoadParams(self):
+		self.Params.clear()
+		if not self.Module:
+			return
+		pattrs = _parseAttributeTable(self.getCorePar('Parameters'))
+		for partuplet in self.Module.customTuplets:
+			parinfo = ModuleParamInfo.fromParTuplet(partuplet, pattrs.get(partuplet[0].tupletName))
+			if parinfo:
+				self.Params.append(parinfo)
+		self.Params.sort(key=lambda p: p.order)
+
+	def BuildParamTable(self, dat):
+		dat.clear()
+		dat.appendRow([
+			'name',
+			'label',
+			'style',
+			'page',
+			'hidden',
+			'advanced',
+			'specialtype',
+		])
+		for parinfo in self.Params:
+			dat.appendRow([
+				parinfo.name,
+				parinfo.label,
+				parinfo.style,
+				parinfo.page,
+				int(parinfo.hidden),
+				int(parinfo.advanced),
+				parinfo.specialtype,
+			])
+
+
+def _parseAttributeTable(dat):
+	dat = op(dat)
+	if not dat:
+		return {}
+	cols = [c.val for c in dat.row(0)]
+	return {
+		cells[0].val: {
+			cols[i]: cells[i].val
+			for i in range(1, dat.numCols)
+		}
+		for cells in dat.rows()[1:]
+	}
+
 class ModuleHost(ModuleHostBase):
 	def __init__(self, ownerComp):
 		super().__init__(ownerComp)
@@ -116,3 +160,64 @@ class ModuleHost(ModuleHostBase):
 			else:
 				ptbl = self.Module.op('parameters')
 				self.ParamTable = ptbl if ptbl and ptbl.isDAT else None
+
+# When the relevant metadata flag is empty/missing in the parameter table,
+# the following shortcuts can be used to specify it in the parameter label:
+#  ":Some Param" - special parameter (not included in param list)
+#  ".Some Param" - parameter is hidden
+#  "+Some Param" - parameter is advanced
+#  "Some Param~" - parameter is a node reference
+#
+# Parameters in pages with names beginning with ':' are considered special
+# and are not included in the param list, as are parameters with labels starting
+# with ':'.
+
+class ModuleParamInfo:
+	@classmethod
+	def fromParTuplet(cls, partuplet, attrs):
+		attrs = attrs or {}
+		par = partuplet[0]
+		page = par.page.name
+		label = par.label
+		if page.startswith(':') or label.startswith(':'):
+			return None
+		hidden = attrs['hidden'] == '1' if ('hidden' in attrs and attrs['hidden'] != '') else label.startswith('.')
+		advanced = attrs['advanced'] == '1' if ('advanced' in attrs and attrs['advanced'] != '') else label.startswith('+')
+		specialtype = attrs.get('specialtype')
+		if not specialtype:
+			if label.endswith('~'):
+				specialtype = 'node'
+			elif par.style == 'TOP':
+				specialtype = 'node.v'
+			elif par.style == 'CHOP':
+				specialtype = 'node.a'
+			elif par.isOP and par.style != 'DAT':
+				specialtype = 'node'
+		if label.startswith('.') or label.startswith('+'):
+			label = label[1:]
+		if label.endswith('~'):
+			label = label[:-1]
+		return cls(
+			partuplet,
+			label=attrs.get('label') or label,
+			hidden=hidden,
+			advanced=advanced,
+			specialtype=specialtype)
+
+	def __init__(
+			self,
+			partuplet,
+			label=None,
+			hidden=False,
+			advanced=False,
+			specialtype=None):
+		self.parts = partuplet
+		par = self.parts[0]
+		self.name = par.tupletName
+		self.label = label or par.label
+		self.style = par.style
+		self.order = par.order
+		self.page = par.page.name
+		self.hidden = hidden
+		self.advanced = advanced
+		self.specialtype = specialtype or ''
