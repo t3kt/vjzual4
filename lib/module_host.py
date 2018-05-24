@@ -132,12 +132,14 @@ class ModuleHostBase:
 			return
 		modpath = self.Module.path
 		for i, parinfo in enumerate(self.Params):
+			if parinfo.name == 'Bypass':
+				continue
 			parvals = {
 				'alignorder': 10 + (i / 1.0),
 			}
 			nodepos = [
 				100,
-				-50 * i,
+				-100 * i,
 			]
 			if parinfo.style in ('Float', 'Int'):
 				print('creating slider control for {}'.format(parinfo.name))
@@ -156,6 +158,20 @@ class ModuleHostBase:
 						parinfo.parts[0].min if parinfo.parts[0].clampMin else parinfo.parts[0].normMin,
 						parinfo.parts[0].max if parinfo.parts[0].clampMax else parinfo.parts[0].normMax,
 					],
+					parvals=_mergedicts(parvals, {
+						'hmode': 'fill',
+						'vmode': 'fixed',
+					}),
+					nodepos=nodepos,
+				)
+			elif parinfo.style == 'Toggle':
+				print('creating toggle control for {}'.format(parinfo.name))
+				uibuilder.CreateToggle(
+					dest=dest,
+					name='par__' + parinfo.name,
+					label=parinfo.label,
+					valueexpr='op("{}").par.{}'.format(modpath, parinfo.parts[0].name),
+					defval=parinfo.parts[0].default,
 					parvals=_mergedicts(parvals, {
 						'hmode': 'fill',
 						'vmode': 'fixed',

@@ -24,12 +24,13 @@ class UiBuilder:
 			nodepos=None,
 			parvals=None,
 			parexprs=None):
-		ctrl = self._CreateFromTemplate(
+		return self._CreateFromTemplate(
 			template=self.ownerComp.op('sliderL'),
 			name=name,
 			dest=dest,
+			order=order,
+			nodepos=nodepos,
 			parvals=_mergedicts(
-				order is not None and {'alignorder': order},
 				label and {'Label': label},
 				helptext and {'Help': helptext},
 				defval is not None and {'Default1': defval},
@@ -43,18 +44,54 @@ class UiBuilder:
 				parvals),
 			parexprs=_mergedicts(
 				valueexpr and {'Value1': valueexpr},
-				parexprs),
-		)
-		if nodepos:
-			ctrl.nodeCenterX = nodepos[0]
-			ctrl.nodeCenterY = nodepos[1]
-		return ctrl
+				parexprs))
+
+	def CreateToggle(
+			self,
+			dest,
+			name,
+			label=None,
+			helptext=None,
+			value=None,
+			valueexpr=None,
+			defval=None,
+			order=None,
+			nodepos=None,
+			parvals=None,
+			parexprs=None):
+		return self._CreateFromTemplate(
+			template=self.ownerComp.op('binaryC'),
+			dest=dest,
+			name=name,
+			order=order,
+			nodepos=nodepos,
+			parvals=_mergedicts(
+				label and {
+					'Texton': label,
+					'Textoff': label,
+				},
+				helptext and {
+					'Textonroll': helptext + ' (on)',
+					'Textoffroll': helptext + ' (off)',
+				},
+				defval is not None and {'Default1': defval},
+				value is not None and {'Value1': value},
+				{
+					'Behavior': 'toggledown',
+					'Push1': True,
+				},
+				parvals),
+			parexprs=_mergedicts(
+				valueexpr and {'Value1': valueexpr},
+				parexprs))
 
 	@staticmethod
 	def _CreateFromTemplate(
 			template,
 			dest,
 			name,
+			order=None,
+			nodepos=None,
 			parvals=None,
 			parexprs=None):
 		deststr = str(dest)
@@ -68,6 +105,11 @@ class UiBuilder:
 		if parexprs:
 			for key, expr in parexprs.items():
 				getattr(ctrl.par, key).expr = expr
+		if order is not None:
+			ctrl.par.alignorder = order
+		if nodepos:
+			ctrl.nodeCenterX = nodepos[0]
+			ctrl.nodeCenterY = nodepos[1]
 		return ctrl
 
 
