@@ -1,6 +1,7 @@
 print('vjz4/module_host.py loading')
 
 from typing import List
+from operator import attrgetter
 
 if False:
 	from _stubs import *
@@ -98,7 +99,7 @@ class ModuleHostBase:
 			parinfo = ModuleParamInfo.fromParTuplet(partuplet, pattrs.get(partuplet[0].tupletName))
 			if parinfo:
 				self.Params.append(parinfo)
-		self.Params.sort(key=lambda p: p.order)
+		self.Params.sort(key=attrgetter('pageindex', 'order'))
 
 	def BuildParamTable(self, dat):
 		dat.clear()
@@ -218,6 +219,8 @@ class ModuleParamInfo:
 		self.style = par.style
 		self.order = par.order
 		self.page = par.page.name
+		self.pageindex = par.page.index
 		self.hidden = hidden
 		self.advanced = advanced
 		self.specialtype = specialtype or ''
+
