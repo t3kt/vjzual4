@@ -137,32 +137,46 @@ class ModuleHostBase:
 			parvals = {
 				'alignorder': 10 + (i / 1.0),
 			}
+			order = 10 + (i / 10.0)
 			nodepos = [
 				100,
 				-100 * i,
 			]
-			if parinfo.style in ('Float', 'Int'):
+			if parinfo.style in ('Float', 'Int') and len(parinfo.parts) == 1:
 				print('creating slider control for {}'.format(parinfo.name))
-				uibuilder.CreateSlider(
+				uibuilder.CreateParSlider(
 					dest=dest,
 					name='par__' + parinfo.name,
-					label=parinfo.label,
-					isint=parinfo.style == 'Int',
-					valueexpr='op("{}").par.{}'.format(modpath, parinfo.parts[0].name),
-					defval=parinfo.parts[0].default,
-					clamp=[
-						parinfo.parts[0].clampMin,
-						parinfo.parts[0].clampMax,
-					],
-					valrange=[
-						parinfo.parts[0].min if parinfo.parts[0].clampMin else parinfo.parts[0].normMin,
-						parinfo.parts[0].max if parinfo.parts[0].clampMax else parinfo.parts[0].normMax,
-					],
-					parvals=_mergedicts(parvals, {
+					parinfo=parinfo,
+					order=order,
+					nodepos=nodepos,
+					parvals={
 						'hmode': 'fill',
 						'vmode': 'fixed',
-					}),
+					}
+				)
+			elif parinfo.style in [
+				'Float',
+				'Int',
+				'RGB',
+				'RGBA',
+				'UV',
+				'UVW',
+				'WH',
+				'XY',
+				'XYZ',
+			]:
+				print('creating multi slider control fro {}'.format(parinfo.name))
+				uibuilder.CreateParMultiSlider(
+					dest=dest,
+					name='par__' + parinfo.name,
+					parinfo=parinfo,
+					order=order,
 					nodepos=nodepos,
+					parvals={
+						'hmode': 'fill',
+						'vmode': 'fixed',
+					}
 				)
 			elif parinfo.style == 'Toggle':
 				print('creating toggle control for {}'.format(parinfo.name))
