@@ -222,7 +222,7 @@ class UiBuilder:
 			nodepos=None,
 			parvals=None,
 			parexprs=None):
-		return self.CreateTextField(
+		ctrl = self.CreateTextField(
 			dest=dest,
 			name=name,
 			label=parinfo.label,
@@ -233,6 +233,10 @@ class UiBuilder:
 			nodepos=nodepos,
 			parvals=parvals,
 			parexprs=parexprs)
+		# workaround for bug with initial value not being loaded
+		celldat = ctrl.par.Celldat.eval()
+		celldat[0, 0] = parinfo.parts[0].eval()
+		return ctrl
 
 
 def _UpdateComponent(
