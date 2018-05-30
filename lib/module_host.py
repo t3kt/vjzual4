@@ -130,23 +130,20 @@ class ModuleHostBase:
 			ctrl.destroy()
 		if not self.Module:
 			return
-		modpath = self.Module.path
 		for i, parinfo in enumerate(self.Params):
 			if parinfo.name == 'Bypass':
 				continue
-			parvals = {
-				'alignorder': 10 + (i / 1.0),
-			}
 			order = 10 + (i / 10.0)
 			nodepos = [
 				100,
 				-100 * i,
 			]
+			ctrlname = 'par__' + parinfo.name
 			if parinfo.style in ('Float', 'Int') and len(parinfo.parts) == 1:
 				print('creating slider control for {}'.format(parinfo.name))
 				uibuilder.CreateParSlider(
 					dest=dest,
-					name='par__' + parinfo.name,
+					name=ctrlname,
 					parinfo=parinfo,
 					order=order,
 					nodepos=nodepos,
@@ -166,10 +163,10 @@ class ModuleHostBase:
 				'XY',
 				'XYZ',
 			]:
-				print('creating multi slider control fro {}'.format(parinfo.name))
+				print('creating multi slider control for {}'.format(parinfo.name))
 				uibuilder.CreateParMultiSlider(
 					dest=dest,
-					name='par__' + parinfo.name,
+					name=ctrlname,
 					parinfo=parinfo,
 					order=order,
 					nodepos=nodepos,
@@ -180,20 +177,37 @@ class ModuleHostBase:
 				)
 			elif parinfo.style == 'Toggle':
 				print('creating toggle control for {}'.format(parinfo.name))
-				uibuilder.CreateToggle(
+				uibuilder.CreateParToggle(
 					dest=dest,
-					name='par__' + parinfo.name,
-					label=parinfo.label,
-					valueexpr='op("{}").par.{}'.format(modpath, parinfo.parts[0].name),
-					defval=parinfo.parts[0].default,
-					parvals=_mergedicts(parvals, {
+					name=ctrlname,
+					parinfo=parinfo,
+					order=order,
+					nodepos=nodepos,
+					parvals={
 						'hmode': 'fill',
 						'vmode': 'fixed',
-					}),
+					}
+				)
+			elif parinfo.style == 'Str' and not parinfo.isnode:
+				print('creating text field control for plain string {}'.format(parinfo.name))
+				uibuilder.CreateParTextField(
+					dest=dest,
+					name=ctrlname,
+					parinfo=parinfo,
+					order=order,
 					nodepos=nodepos,
+					parvals={
+						# 'hmode': 'fill',
+						'hmode': 'fixed',
+						'vmode': 'fixed',
+					},
+					parexprs={
+						# there's a bug in /gal/string that doesn't resize the field properly when using hmode=fill
+						'w': 'parent().width',
+					},
 				)
 			else:
-				print('Unsupported par style: {}'.format(repr(parinfo.style)))
+				print('Unsupported par style: {!r} (special type: {!r})'.format(parinfo.style, parinfo.specialtype))
 
 def _mergedicts(*parts):
 	x = {}
@@ -241,6 +255,12 @@ class ModuleHost(ModuleHostBase):
 			else:
 				ptbl = self.Module.op('parameters')
 				self.ParamTable = ptbl if ptbl and ptbl.isDAT else None
+		uibuilder = self.ownerComp.par.Uibuilder.eval()
+		if not uibuilder and hasattr(op, 'UiBuilder'):
+			uibuilder = op.UiBuilder
+		controls = self.ownerComp.op('controls_panel')
+		if uibuilder:
+			self.BuildControls(controls, uibuilder=uibuilder)
 
 
 # When the relevant metadata flag is empty/missing in the parameter table,
@@ -296,6 +316,7 @@ class ModuleParamInfo:
 		self.parts = partuplet
 		par = self.parts[0]
 		self.name = par.tupletName
+		self.modpath = par.owner.path
 		self.label = label or par.label
 		self.style = par.style
 		self.order = par.order
@@ -304,4 +325,8 @@ class ModuleParamInfo:
 		self.hidden = hidden
 		self.advanced = advanced
 		self.specialtype = specialtype or ''
+		self.isnode = specialtype and specialtype.startswith('node')
+
+	def createParExpression(self, index=0):
+		return 'op({!r}).par.{}'.format(self.modpath, self.parts[index].name)
 

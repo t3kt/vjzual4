@@ -38,10 +38,8 @@ class UiBuilder:
 				valrange and {'Rangelow1': valrange[0], 'Rangehigh1': valrange[1]},
 				value is not None and {'Value1': value},
 				clamp and {'Clamplow1': clamp[0], 'Clamphigh1': clamp[1]},
-				{
-					'Push1': True,
-					'Integer': isint,
-				},
+				{'Integer': isint},
+				valueexpr and {'Push1': True},
 				parvals),
 			parexprs=_mergedicts(
 				valueexpr and {'Value1': valueexpr},
@@ -61,7 +59,7 @@ class UiBuilder:
 			name=name,
 			label=parinfo.label,
 			isint=parinfo.style == 'Int',
-			valueexpr='op("{}").par.{}'.format(parinfo.parts[0].owner.path, parinfo.parts[0].name),
+			valueexpr=parinfo.createParExpression(),
 			defval=parinfo.parts[0].default,
 			clamp=[
 				parinfo.parts[0].clampMin,
@@ -121,7 +119,7 @@ class UiBuilder:
 				),
 				parexprs=_mergedicts(
 					{
-						'Value1': 'op("{}").par.{}'.format(part.owner.path, part.name),
+						'Value1': parinfo.createParExpression(index=i),
 					}
 				)
 			)
@@ -156,14 +154,85 @@ class UiBuilder:
 				},
 				defval is not None and {'Default1': defval},
 				value is not None and {'Value1': value},
-				{
-					'Behavior': 'toggledown',
-					'Push1': True,
-				},
+				{'Behavior': 'toggledown'},
+				valueexpr and {'Push1': True},
 				parvals),
 			parexprs=_mergedicts(
 				valueexpr and {'Value1': valueexpr},
 				parexprs))
+
+	def CreateParToggle(
+			self,
+			dest,
+			name,
+			parinfo,  # type: ModuleParamInfo
+			order=None,
+			nodepos=None,
+			parvals=None,
+			parexprs=None):
+		return self.CreateToggle(
+			dest=dest,
+			name=name,
+			label=parinfo.label,
+			valueexpr=parinfo.createParExpression(),
+			defval=parinfo.parts[0].default,
+			order=order,
+			nodepos=nodepos,
+			parvals=parvals,
+			parexprs=parexprs)
+
+	def CreateTextField(
+			self,
+			dest,
+			name,
+			label=None,
+			helptext=None,
+			fieldtype=None,
+			value=None,
+			valueexpr=None,
+			defval=None,
+			order=None,
+			nodepos=None,
+			parvals=None,
+			parexprs=None):
+		return _CreateFromTemplate(
+			template=self.ownerComp.op('string'),
+			dest=dest,
+			name=name,
+			order=order,
+			nodepos=nodepos,
+			parvals=_mergedicts(
+				label and {'Label': label},
+				helptext and {'Help': helptext},
+				defval is not None and {'Default1': defval},
+				value is not None and {'Value1': value},
+				{'Type': fieldtype or 'string'},
+				valueexpr and {'Push1': True},
+				parvals),
+			parexprs=_mergedicts(
+				valueexpr and {'Value1': valueexpr},
+				parexprs))
+
+	def CreateParTextField(
+			self,
+			dest,
+			name,
+			parinfo,  # type: ModuleParamInfo
+			order=None,
+			nodepos=None,
+			parvals=None,
+			parexprs=None):
+		return self.CreateTextField(
+			dest=dest,
+			name=name,
+			label=parinfo.label,
+			fieldtype='string',
+			valueexpr=parinfo.createParExpression(),
+			defval=parinfo.parts[0].default,
+			order=order,
+			nodepos=nodepos,
+			parvals=parvals,
+			parexprs=parexprs)
 
 
 def _UpdateComponent(
