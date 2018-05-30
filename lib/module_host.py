@@ -208,6 +208,9 @@ class ModuleHostBase:
 				)
 			else:
 				print('Unsupported par style: {!r} (special type: {!r})'.format(parinfo.style, parinfo.specialtype))
+		height = sum([ctrl.height for ctrl in dest.ops('par__*')])
+		dest.par.h = height
+
 
 def _mergedicts(*parts):
 	x = {}
