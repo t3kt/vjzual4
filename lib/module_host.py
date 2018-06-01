@@ -131,7 +131,7 @@ class ModuleHostBase:
 		if not self.Module:
 			return
 		for i, parinfo in enumerate(self.Params):
-			if parinfo.name == 'Bypass':
+			if parinfo.specialtype.startswith('switch.'):
 				continue
 			order = 10 + (i / 10.0)
 			nodepos = [
@@ -250,6 +250,9 @@ class ModuleHost(ModuleHostBase):
 		if not self.Module:
 			self.HasBypass = False
 			self.ParamTable = None
+		elif self.ModuleCore is None:
+			self.HasBypass = self.getModulePar('Bypass') is not None
+			self.ParamTable = None
 		else:
 			self.HasBypass = bool(self.getCorePar('Hasbypass')) and self.getModulePar('Bypass') is not None
 			ptblpar = self.getCorePar('Parameters')
@@ -284,8 +287,6 @@ class ModuleParamInfo:
 		par = partuplet[0]
 		page = par.page.name
 		label = par.label
-		if page.startswith(':') or label.startswith(':'):
-			return None
 		hidden = attrs['hidden'] == '1' if ('hidden' in attrs and attrs['hidden'] != '') else label.startswith('.')
 		advanced = attrs['advanced'] == '1' if ('advanced' in attrs and attrs['advanced'] != '') else label.startswith('+')
 		specialtype = attrs.get('specialtype')
@@ -298,13 +299,33 @@ class ModuleParamInfo:
 				specialtype = 'node.a'
 			elif par.isOP and par.style != 'DAT':
 				specialtype = 'node'
+
 		if label.startswith('.') or label.startswith('+'):
 			label = label[1:]
 		if label.endswith('~'):
 			label = label[:-1]
+		label = attrs.get('label') or label
+
+		if par.name == 'Bypass':
+			return cls(
+				partuplet,
+				label=label,
+				hidden=True,
+				advanced=False,
+				specialtype='switch.bypass')
+
+		if page.startswith(':') or label.startswith(':'):
+			return None
+
+		# backwards compatibility with vjzual3
+		if page == 'Module' and par.name in (
+				'Modname', 'Uilabel', 'Collapsed', 'Solo',
+				'Uimode', 'Showadvanced', 'Showviewers'):
+			return None
+
 		return cls(
 			partuplet,
-			label=attrs.get('label') or label,
+			label=label,
 			hidden=hidden,
 			advanced=advanced,
 			specialtype=specialtype)
