@@ -139,7 +139,7 @@ class ModuleHostBase:
 				dest=dest,
 				name='par__' + parinfo.name,
 				parinfo=parinfo,
-				order=10 + (i / 10.0),
+				order=i,
 				nodepos=[100, -100 * i],
 				parexprs=_mergedicts(
 					parinfo.advanced and {'display': 'parent.ModuleHost.par.Showadvanced'}
@@ -157,6 +157,29 @@ class ModuleHostBase:
 			self.SubModules = []
 		else:
 			self.SubModules = self.Module.findChildren(tags=['vjzmod4', 'tmod'], maxDepth=1)
+
+	def BuildSubModuleTable(self, dat):
+		dat.clear()
+		dat.appendRow([
+			'name',
+			'path',
+			'label',
+		])
+		for m in self.SubModules:
+			dat.appendRow([m.name, m.path, getattr(m.par, 'Uilabel') or m.name])
+
+	def BuildSubModuleHosts(self, dest):
+		for m in dest.ops('mod__*'):
+			m.destroy()
+		if not self.Module:
+			return
+		template = self.ownerComp
+		for i, submod in enumerate(self.SubModules):
+			host = dest.copy(template, name='mod__' + submod.name)
+			host.par.Uibuilder.expr = 'parent.ModuleHost.par.Uibuilder or ""'
+			host.par.Module = submod.path
+			host.par.wmode = 'fill'
+			host.par.alignorder = i
 
 
 def _mergedicts(*parts):
@@ -214,6 +237,7 @@ class ModuleHost(ModuleHostBase):
 		controls = self.ownerComp.op('controls_panel')
 		if uibuilder:
 			self.BuildControls(controls, uibuilder=uibuilder)
+		#self.BuildSubModuleHosts(dest=self.ownerComp.op('sub_modules_panel'))
 
 
 # When the relevant metadata flag is empty/missing in the parameter table,
