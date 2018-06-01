@@ -131,85 +131,15 @@ class ModuleHostBase:
 		if not self.Module:
 			return
 		for i, parinfo in enumerate(self.Params):
-			if parinfo.specialtype.startswith('switch.'):
+			if parinfo.hidden or parinfo.specialtype.startswith('switch.'):
 				continue
-			order = 10 + (i / 10.0)
-			nodepos = [
-				100,
-				-100 * i,
-			]
-			ctrlname = 'par__' + parinfo.name
-			if parinfo.style in ('Float', 'Int') and len(parinfo.parts) == 1:
-				print('creating slider control for {}'.format(parinfo.name))
-				uibuilder.CreateParSlider(
-					dest=dest,
-					name=ctrlname,
-					parinfo=parinfo,
-					order=order,
-					nodepos=nodepos,
-					parvals={
-						'hmode': 'fill',
-						'vmode': 'fixed',
-					}
-				)
-			elif parinfo.style in [
-				'Float',
-				'Int',
-				'RGB',
-				'RGBA',
-				'UV',
-				'UVW',
-				'WH',
-				'XY',
-				'XYZ',
-			]:
-				print('creating multi slider control for {}'.format(parinfo.name))
-				uibuilder.CreateParMultiSlider(
-					dest=dest,
-					name=ctrlname,
-					parinfo=parinfo,
-					order=order,
-					nodepos=nodepos,
-					parvals={
-						'hmode': 'fill',
-						'vmode': 'fixed',
-					}
-				)
-			elif parinfo.style == 'Toggle':
-				print('creating toggle control for {}'.format(parinfo.name))
-				uibuilder.CreateParToggle(
-					dest=dest,
-					name=ctrlname,
-					parinfo=parinfo,
-					order=order,
-					nodepos=nodepos,
-					parvals={
-						'hmode': 'fill',
-						'vmode': 'fixed',
-					}
-				)
-			elif parinfo.style == 'Str' and not parinfo.isnode:
-				print('creating text field control for plain string {}'.format(parinfo.name))
-				uibuilder.CreateParTextField(
-					dest=dest,
-					name=ctrlname,
-					parinfo=parinfo,
-					order=order,
-					nodepos=nodepos,
-					parvals={
-						# 'hmode': 'fill',
-						'hmode': 'fixed',
-						'vmode': 'fixed',
-					},
-					parexprs={
-						# there's a bug in /gal/string that doesn't resize the field properly when using hmode=fill
-						'w': 'parent().width',
-					},
-				)
-			else:
-				print('Unsupported par style: {!r} (special type: {!r})'.format(parinfo.style, parinfo.specialtype))
-		height = sum([ctrl.height for ctrl in dest.ops('par__*')])
-		dest.par.h = height
+			uibuilder.CreateParControl(
+				dest=dest,
+				name='par__' + parinfo.name,
+				parinfo=parinfo,
+				order=10 + (i / 10.0),
+				nodepos=[100, -100 * i])
+		dest.par.h = sum([ctrl.height for ctrl in dest.ops('par__*')])
 
 
 def _mergedicts(*parts):

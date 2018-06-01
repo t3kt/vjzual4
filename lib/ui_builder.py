@@ -238,6 +238,63 @@ class UiBuilder:
 		celldat[0, 0] = parinfo.parts[0].eval()
 		return ctrl
 
+	def CreateParControl(
+			self,
+			dest,
+			name,
+			parinfo,  # type: ModuleParamInfo
+			order=None,
+			nodepos=None,
+			parvals=None,
+			parexprs=None):
+		if parinfo.style in ('Float', 'Int') and len(parinfo.parts) == 1:
+			print('creating slider control for {}'.format(parinfo.name))
+			return self.CreateParSlider(
+				dest=dest,
+				name=name,
+				parinfo=parinfo,
+				order=order,
+				nodepos=nodepos,
+				parvals=parvals,
+				parexprs=parexprs)
+		elif parinfo.style in [
+			'Float', 'Int',
+			'RGB', 'RGBA',
+			'UV', 'UVW', 'WH', 'XY', 'XYZ',
+		]:
+			print('creating multi slider control for {}'.format(parinfo.name))
+			return self.CreateParMultiSlider(
+				dest=dest,
+				name=name,
+				parinfo=parinfo,
+				order=order,
+				nodepos=nodepos,
+				parvals=parvals,
+				parexprs=parexprs)
+		elif parinfo.style == 'Toggle':
+			print('creating toggle control for {}'.format(parinfo.name))
+			return self.CreateParToggle(
+				dest=dest,
+				name=name,
+				parinfo=parinfo,
+				order=order,
+				nodepos=nodepos,
+				parvals=parvals,
+				parexprs=parexprs)
+		elif parinfo.style == 'Str' and not parinfo.isnode:
+			print('creating text field control for plain string {}'.format(parinfo.name))
+			return self.CreateParTextField(
+				dest=dest,
+				name=name,
+				parinfo=parinfo,
+				order=order,
+				nodepos=nodepos,
+				parvals=parvals,
+				parexprs=parexprs)
+		else:
+			print('Unsupported par style: {!r} (special type: {!r})'.format(parinfo.style, parinfo.specialtype))
+			return None
+
 
 def _UpdateComponent(
 		ctrl,
