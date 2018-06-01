@@ -7,6 +7,8 @@ class NodeInfo:
 	@classmethod
 	def resolve(cls, nodeorpath):
 		n = op(nodeorpath)
+		if not n:
+			return None
 		label = getattr(n.par, 'Label', None) if n else None
 		if n and n.isCOMP:
 			if 'vjznode' not in n.tags:
