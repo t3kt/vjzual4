@@ -29,7 +29,7 @@ class ModuleEditor(module_host.ModuleHostBase):
 		if not m:
 			raise Exception('Editor does not have an attached module')
 		_initModuleParams(m)
-		# ...
+		m.tags.add('vjzmod4')
 
 def _initModuleParams(m):
 	page = m.appendCustomPage('Module')

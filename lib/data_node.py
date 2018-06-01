@@ -51,7 +51,17 @@ class NodeInfo:
 			self.kind = 'raw audio CHOP'
 			self.audio = n
 		elif n.isCOMP:
-			if 'vjznode' in n.tags:
+			if 'tdatanode' in n.tags:
+				# vjzual3 data node
+				self.kind = 'vjzual3 node'
+				if getattr(n.par, 'Hasvideo') in (None, True):
+					self.video = op(getattr(n.par, 'Video', None))
+				if getattr(n.par, 'Hasaudio') in (None, True):
+					self.audio = op(getattr(n.par, 'Audio', None))
+				if getattr(n.par, 'Hastexbuf') in (None, True):
+					self.texbuf = op(getattr(n.par, 'Texbuf', None))
+			elif 'vjznode' in n.tags:
+				self.kind = 'data node'
 				self.video = op(getattr(n.par, 'Video', None))
 				self.audio = op(getattr(n.par, 'Audio', None))
 				self.texbuf = op(getattr(n.par, 'Texbuf', None))

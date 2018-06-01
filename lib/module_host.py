@@ -27,6 +27,7 @@ class ModuleHostBase:
 		self.ModuleCore = None
 		self.DataNodes = []  # type: List[data_node.NodeInfo]
 		self.Params = []  # type: List[ModuleParamInfo]
+		self.SubModules = []
 		self.Actions = {
 			'Reattachmodule': self.attachModuleFromPar,
 		}
@@ -66,6 +67,7 @@ class ModuleHostBase:
 			self.ModuleCore = None
 		self.DataNodes = data_node.NodeInfo.resolveall(self._FindDataNodes())
 		self._LoadParams()
+		self._LoadSubModules()
 
 	def _FindDataNodes(self):
 		if not self.Module:
@@ -77,7 +79,7 @@ class ModuleHostBase:
 				return self.Module.ops(*nodesval)
 			else:
 				return self.Module.op(nodesval)
-		return self.Module.findChildren(tags=['vjznode'], maxDepth=1)
+		return self.Module.findChildren(tags=['vjznode', 'tdatanode'], maxDepth=1)
 
 	def BuildDataNodeTable(self, dat):
 		dat.clear()
@@ -138,8 +140,23 @@ class ModuleHostBase:
 				name='par__' + parinfo.name,
 				parinfo=parinfo,
 				order=10 + (i / 10.0),
-				nodepos=[100, -100 * i])
-		dest.par.h = sum([ctrl.height for ctrl in dest.ops('par__*')])
+				nodepos=[100, -100 * i],
+				parexprs=_mergedicts(
+					parinfo.advanced and {'display': 'parent.ModuleHost.par.Showadvanced'}
+				))
+		self.UpdateControlsHeight(dest)
+
+	@staticmethod
+	def UpdateControlsHeight(panel):
+		if not panel:
+			return
+		panel.par.h = sum(ctrl.height for ctrl in panel.ops('par__*') if ctrl.par.display)
+
+	def _LoadSubModules(self):
+		if not self.Module:
+			self.SubModules = []
+		else:
+			self.SubModules = self.Module.findChildren(tags=['vjzmod4', 'tmod'], maxDepth=1)
 
 
 def _mergedicts(*parts):
