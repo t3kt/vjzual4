@@ -85,6 +85,7 @@ class ModuleHostBase:
 			self.HasBypass.val = self.getModulePar('Bypass') is not None
 		else:
 			self.HasBypass.val = bool(self.getCorePar('Hasbypass')) and self.getModulePar('Bypass') is not None
+		self._LoadSubModules()
 
 	def _FindDataNodes(self):
 		if not self.Module:
@@ -183,6 +184,23 @@ class ModuleHostBase:
 			for ctrl in panels
 			if ctrl and ctrl.isPanel and ctrl.par.display)
 
+	def _LoadSubModules(self):
+		if not self.Module:
+			self.SubModules = []
+		else:
+			self.SubModules = self.Module.findChildren(tags=['vjzmod4', 'tmod'], maxDepth=1)
+			self.SubModules.sort(key=attrgetter('par.alignorder'))
+
+	def BuildSubModuleTable(self, dat):
+		dat.clear()
+		dat.appendRow([
+			'name',
+			'path',
+			'label',
+		])
+		for m in self.SubModules:
+			dat.appendRow([m.name, m.path, getattr(m.par, 'Uilabel') or m.name])
+
 	def _GetContextMenuItems(self):
 		if not self.Module:
 			return []
@@ -270,25 +288,7 @@ class ModuleChainHost(ModuleHostBase):
 
 	def AttachToModule(self):
 		super().AttachToModule()
-		self._LoadSubModules()
 		self.BuildSubModuleHosts()
-
-	def _LoadSubModules(self):
-		if not self.Module:
-			self.SubModules = []
-		else:
-			self.SubModules = self.Module.findChildren(tags=['vjzmod4', 'tmod'], maxDepth=1)
-			self.SubModules.sort(key=attrgetter('par.alignorder'))
-
-	def BuildSubModuleTable(self, dat):
-		dat.clear()
-		dat.appendRow([
-			'name',
-			'path',
-			'label',
-		])
-		for m in self.SubModules:
-			dat.appendRow([m.name, m.path, getattr(m.par, 'Uilabel') or m.name])
 
 	def BuildSubModuleHosts(self):
 		dest = self.ownerComp.op('./sub_modules_panel')
