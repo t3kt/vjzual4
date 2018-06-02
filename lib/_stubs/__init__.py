@@ -61,3 +61,6 @@ class COMP:
 
 class app:
 	name = ''
+
+class _PopMenuExt:
+	pass
