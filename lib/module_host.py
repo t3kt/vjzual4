@@ -52,6 +52,8 @@ class ModuleHostBase:
 		self.Actions = {
 			'Reattachmodule': self.AttachToModule,
 			'Clearuistate': self.ClearUIState,
+			'Loaduistate': self.LoadUIState,
+			'Saveuistate': self.SaveUIState,
 		}
 
 		# trick pycharm
@@ -59,26 +61,45 @@ class ModuleHostBase:
 			self.par = object()
 			self.storage = {}
 
-	@property
-	def UIState(self) -> DependDict:
+	def _AutoInitActionParams(self):
+		page = None
+		for name in self.Actions.keys():
+			if not hasattr(self.ownerComp.par, name):
+				if not page:
+					page = self.ownerComp.appendCustomPage('Actions')
+				page.appendPulse(name)
+
+	def _GetUIState(self, autoinit) -> DependDict:
 		parent = self.ParentHost
 		if not parent:
+			if not autoinit and 'UIState' not in self.ownerComp.storage:
+				return None
 			uistate = _GetOrAdd(self.ownerComp.storage, 'UIState', DependDict)
 		else:
 			if hasattr(parent, 'UIState'):
 				parentstate = parent.UIState
 			else:
+				if not autoinit and 'UIState' not in parent.storage:
+					return None
 				parentstate = _GetOrAdd(parent.storage, 'UIState', DependDict)
+			if not autoinit and 'children' not in parentstate:
+				return None
 			children = _GetOrAdd(parentstate, 'children', DependDict)
 			if self.Module and self.Module.path in children:
 				uistate = children[self.Module.path]
 			elif self.ownerComp.path in children:
 				uistate = children[self.ownerComp.path]
+			elif not autoinit:
+				return None
 			elif self.Module:
 				uistate = children[self.Module.path] = DependDict()
 			else:
 				uistate = children[self.ownerComp.path] = DependDict()
 		return uistate
+
+	@property
+	def UIState(self):
+		return self._GetUIState(autoinit=True)
 
 	def ClearUIState(self):
 		parent = self.ParentHost
@@ -96,6 +117,19 @@ class ModuleHostBase:
 				del children[self.Module.path]
 			if self.ownerComp.path in children:
 				del children[self.ownerComp.path]
+
+	def SaveUIState(self):
+		uistate = self.UIState
+		for name in ['Collapsed', 'Uimode']:
+			uistate[name] = getattr(self.ownerComp.par, name).eval()
+
+	def LoadUIState(self):
+		uistate = self._GetUIState(autoinit=False)
+		if not uistate:
+			return
+		self.ownerComp.par.Collapsed = uistate.get('Collapsed', False)
+		if 'Uimode' in uistate and uistate['Uimode'] in self.ownerComp.par.Uimode.menuNames:
+			self.ownerComp.par.Uimode = uistate['Uimode']
 
 	def PerformAction(self, name):
 		if name not in self.Actions:
@@ -336,6 +370,7 @@ class ModuleHost(ModuleHostBase):
 		super().__init__(ownerComp)
 		self.SubModules = []
 		self.AttachToModule()
+		self._AutoInitActionParams()
 
 	def AttachToModule(self):
 		super().AttachToModule()
@@ -352,6 +387,7 @@ class ModuleChainHost(ModuleHostBase):
 	def __init__(self, ownerComp):
 		super().__init__(ownerComp)
 		self.AttachToModule()
+		self._AutoInitActionParams()
 
 	def AttachToModule(self):
 		super().AttachToModule()
@@ -359,9 +395,18 @@ class ModuleChainHost(ModuleHostBase):
 
 	def ClearUIState(self):
 		for m in self._SubModuleHosts:
-			if hasattr(m, 'ClearUIState'):
-				m.ClearUIState()
+			m.ClearUIState()
 		super().ClearUIState()
+
+	def SaveUIState(self):
+		super().SaveUIState()
+		for m in self._SubModuleHosts:
+			m.SaveUIState()
+
+	def LoadUIState(self):
+		super().LoadUIState()
+		for m in self._SubModuleHosts:
+			m.LoadUIState()
 
 	@property
 	def _SubModuleHosts(self) -> List[ModuleHostBase]:
