@@ -1,10 +1,15 @@
 # trick pycharm
-mod = object()
-ui = object()
+
+class _Expando:
+	def __init__(self):
+		pass
+
+mod = _Expando()
+ui = _Expando()
 ui.panes = []
 ui.panes.current = None
 ui.status = ''
-PaneType = object()
+PaneType = _Expando()
 PaneType.NETWORKEDITOR = None
 
 class project:
@@ -32,9 +37,11 @@ class tdu:
 	def legalName(s):
 		return s
 
-class _Expando:
-	def __init__(self):
-		pass
+	class Dependency:
+		def __init__(self, _=None):
+			self.val = None
+
+		def modified(self): pass
 
 JustifyType = _Expando()
 JustifyType.TOPLEFT, JustifyType.TOPCENTER, JustifyType.TOPRIGHT, JustifyType.CENTERLEFT = 0, 0, 0, 0

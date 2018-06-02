@@ -19,10 +19,7 @@ class ModuleEditor(module_host.ModuleHostBase):
 		self.Actions = {
 			'Initializemodule': self.InitializeModule,
 		}
-		self.attachModuleFromPar()
-
-	def AttachToModule(self, m):
-		super().AttachToModule(m)
+		self.AttachToModule()
 
 	def InitializeModule(self):
 		m = self.Module

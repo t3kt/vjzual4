@@ -27,14 +27,16 @@ class ModuleHostBase:
 		self.ModuleCore = None
 		self.DataNodes = []  # type: List[data_node.NodeInfo]
 		self.Params = []  # type: List[ModuleParamInfo]
-		self.SubModules = []
+		self.HasBypass = tdu.Dependency(False)
 		self.Actions = {
-			'Reattachmodule': self.attachModuleFromPar,
+			'Reattachmodule': self.AttachToModule,
 		}
 
-	def attachModuleFromPar(self):
-		if hasattr(self.ownerComp.par, 'Module'):
-			self.AttachToModule(self.ownerComp.par.Module.eval())
+	def PerformAction(self, name):
+		if name not in self.Actions:
+			raise Exception('Unsupported action: {}'.format(name))
+		print('{} performing action {}'.format(self.ownerComp, name))
+		self.Actions[name]()
 
 	@property
 	def ModulePath(self):
@@ -52,6 +54,17 @@ class ModuleHostBase:
 			return self.Module.par.Uilabel
 		return self.ModuleCompName
 
+	@property
+	def ModuleBypass(self):
+		par = self.getModulePar('Bypass')
+		return False if par is None else par
+
+	@ModuleBypass.setter
+	def ModuleBypass(self, value):
+		par = self.getModulePar('Bypass')
+		if par is not None:
+			par.val = value
+
 	def getModulePar(self, name):
 		return getattr(self.Module.par, name) if self.Module and hasattr(self.Module.par, name) else None
 
@@ -59,15 +72,17 @@ class ModuleHostBase:
 		core = self.ModuleCore
 		return getattr(core.par, name) if core and hasattr(core.par, name) else None
 
-	def AttachToModule(self, m):
-		self.Module = m
-		if m:
-			self.ModuleCore = m.op('./core')
-		else:
-			self.ModuleCore = None
+	def AttachToModule(self):
+		self.Module = self.ownerComp.par.Module.eval()
+		self.ModuleCore = self.Module.op('./core') if self.Module else None
 		self.DataNodes = data_node.NodeInfo.resolveall(self._FindDataNodes())
 		self._LoadParams()
-		self._LoadSubModules()
+		if not self.Module:
+			self.HasBypass.val = False
+		elif self.ModuleCore is None:
+			self.HasBypass.val = self.getModulePar('Bypass') is not None
+		else:
+			self.HasBypass.val = bool(self.getCorePar('Hasbypass')) and self.getModulePar('Bypass') is not None
 
 	def _FindDataNodes(self):
 		if not self.Module:
@@ -152,35 +167,6 @@ class ModuleHostBase:
 			return
 		panel.par.h = sum(ctrl.height for ctrl in panel.ops('par__*') if ctrl.par.display)
 
-	def _LoadSubModules(self):
-		if not self.Module:
-			self.SubModules = []
-		else:
-			self.SubModules = self.Module.findChildren(tags=['vjzmod4', 'tmod'], maxDepth=1)
-
-	def BuildSubModuleTable(self, dat):
-		dat.clear()
-		dat.appendRow([
-			'name',
-			'path',
-			'label',
-		])
-		for m in self.SubModules:
-			dat.appendRow([m.name, m.path, getattr(m.par, 'Uilabel') or m.name])
-
-	def BuildSubModuleHosts(self, dest):
-		for m in dest.ops('mod__*'):
-			m.destroy()
-		if not self.Module:
-			return
-		template = self.ownerComp
-		for i, submod in enumerate(self.SubModules):
-			host = dest.copy(template, name='mod__' + submod.name)
-			host.par.Uibuilder.expr = 'parent.ModuleHost.par.Uibuilder or ""'
-			host.par.Module = submod.path
-			host.par.wmode = 'fill'
-			host.par.alignorder = i
-
 
 def _mergedicts(*parts):
 	x = {}
@@ -207,37 +193,65 @@ def _parseAttributeTable(dat):
 class ModuleHost(ModuleHostBase):
 	def __init__(self, ownerComp):
 		super().__init__(ownerComp)
-		self.ParamTable = None
-		self.HasBypass = False
-		self.attachModuleFromPar()
+		self.SubModules = []
+		self.AttachToModule()
 
-	@property
-	def ModuleBypass(self):
-		return self.getModulePar('Bypass')
-
-	def AttachToModule(self, m):
-		super().AttachToModule(m)
-		if not self.Module:
-			self.HasBypass = False
-			self.ParamTable = None
-		elif self.ModuleCore is None:
-			self.HasBypass = self.getModulePar('Bypass') is not None
-			self.ParamTable = None
-		else:
-			self.HasBypass = bool(self.getCorePar('Hasbypass')) and self.getModulePar('Bypass') is not None
-			ptblpar = self.getCorePar('Parameters')
-			if ptblpar:
-				self.ParamTable = ptblpar.eval()
-			else:
-				ptbl = self.Module.op('parameters')
-				self.ParamTable = ptbl if ptbl and ptbl.isDAT else None
+	def AttachToModule(self):
+		super().AttachToModule()
 		uibuilder = self.ownerComp.par.Uibuilder.eval()
 		if not uibuilder and hasattr(op, 'UiBuilder'):
 			uibuilder = op.UiBuilder
 		controls = self.ownerComp.op('controls_panel')
 		if uibuilder:
 			self.BuildControls(controls, uibuilder=uibuilder)
-		#self.BuildSubModuleHosts(dest=self.ownerComp.op('sub_modules_panel'))
+
+
+class ModuleChainHost(ModuleHostBase):
+	def __init__(self, ownerComp):
+		super().__init__(ownerComp)
+		self.AttachToModule()
+
+	def AttachToModule(self):
+		super().AttachToModule()
+		self._LoadSubModules()
+		self.BuildSubModuleHosts()
+
+	def _LoadSubModules(self):
+		if not self.Module:
+			self.SubModules = []
+		else:
+			self.SubModules = self.Module.findChildren(tags=['vjzmod4', 'tmod'], maxDepth=1)
+
+	def BuildSubModuleTable(self, dat):
+		dat.clear()
+		dat.appendRow([
+			'name',
+			'path',
+			'label',
+		])
+		for m in self.SubModules:
+			dat.appendRow([m.name, m.path, getattr(m.par, 'Uilabel') or m.name])
+
+	def BuildSubModuleHosts(self):
+		dest = self.ownerComp.op('./sub_modules_panel')
+		for m in dest.ops('mod__*'):
+			m.destroy()
+		if not self.Module:
+			return
+		template = self.ownerComp.par.Modulehosttemplate.eval()
+		if not template and hasattr(op, 'Vjz4'):
+			template = op.Vjz4.op('./module_host')
+		if not template:
+			return
+		for i, submod in enumerate(self.SubModules):
+			host = dest.copy(template, name='mod__' + submod.name)
+			host.par.Uibuilder.expr = 'parent.ModuleHost.par.Uibuilder or ""'
+			host.par.Module = submod.path
+			host.par.hmode = 'fill'
+			host.par.alignorder = i
+			host.nodeX = 100
+			host.nodeY = -100 * i
+			host.AttachToModule()
 
 
 # When the relevant metadata flag is empty/missing in the parameter table,
