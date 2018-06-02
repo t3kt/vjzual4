@@ -232,6 +232,7 @@ class ModuleChainHost(ModuleHostBase):
 			self.SubModules = []
 		else:
 			self.SubModules = self.Module.findChildren(tags=['vjzmod4', 'tmod'], maxDepth=1)
+			self.SubModules.sort(key=attrgetter('par.alignorder'))
 
 	def BuildSubModuleTable(self, dat):
 		dat.clear()
