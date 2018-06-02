@@ -1,5 +1,6 @@
 print('vjz4/module_host.py loading')
 
+from collections import namedtuple
 from typing import List
 from operator import attrgetter
 
@@ -28,6 +29,7 @@ class ModuleHostBase:
 		self.DataNodes = []  # type: List[data_node.NodeInfo]
 		self.Params = []  # type: List[ModuleParamInfo]
 		self.HasBypass = tdu.Dependency(False)
+		self.HasAdvancedParams = tdu.Dependency(False)
 		self.Actions = {
 			'Reattachmodule': self.AttachToModule,
 		}
@@ -111,6 +113,7 @@ class ModuleHostBase:
 
 	def _LoadParams(self):
 		self.Params.clear()
+		self.HasAdvancedParams.val = False
 		if not self.Module:
 			return
 		pattrs = _parseAttributeTable(self.getCorePar('Parameters'))
@@ -118,6 +121,8 @@ class ModuleHostBase:
 			parinfo = ModuleParamInfo.fromParTuplet(partuplet, pattrs.get(partuplet[0].tupletName))
 			if parinfo:
 				self.Params.append(parinfo)
+				if parinfo.advanced:
+					self.HasAdvancedParams.val = True
 		self.Params.sort(key=attrgetter('pageindex', 'order'))
 
 	def BuildParamTable(self, dat):
@@ -178,6 +183,45 @@ class ModuleHostBase:
 			for ctrl in panels
 			if ctrl and ctrl.isPanel and ctrl.par.display)
 
+	def _GetContextMenuItems(self):
+		if not self.Module:
+			return []
+		items = [
+			_MenuItem('Parameters', callback=lambda: self.Module.openParameters()),
+			_MenuItem('Edit', callback=lambda: _editComp(self.Module)),
+			_MenuItem(
+				'Edit Master',
+				disabled=not self.Module.par.clone.eval() or self.Module.par.clone.eval() is self.Module,
+				callback=lambda: _editComp(self.Module.par.clone.eval()),
+				dividerafter=True),
+			_MenuItem(
+				'Show Advanced',
+				disabled=not self.HasAdvancedParams.val,
+				checked=self.ownerComp.par.Showadvanced.eval(),
+				callback=lambda: setattr(self.ownerComp.par, 'Showadvanced', not self.ownerComp.par.Showadvanced),
+				dividerafter=True),
+			# _MenuItem('Host Parameters', callback=lambda: self.ownerComp.openParameters()),
+		]
+		return items
+
+	def ShowContextMenu(self):
+		_showPopMenu(
+			items=self._GetContextMenuItems(),
+			autoClose=True)
+
+
+def _getActiveEditor():
+	pane = ui.panes.current
+	if pane.type == PaneType.NETWORKEDITOR:
+		return pane
+	for pane in ui.panes:
+		if pane.type == PaneType.NETWORKEDITOR:
+			return pane
+
+def _editComp(comp):
+	editor = _getActiveEditor()
+	if editor:
+		editor.owner = comp
 
 def _mergedicts(*parts):
 	x = {}
@@ -268,6 +312,34 @@ class ModuleChainHost(ModuleHostBase):
 			host.AttachToModule()
 		self.UpdateModuleHeight()
 
+	def _SetSubModuleHostPars(self, name, val):
+		submods = self.ownerComp.ops('sub_modules_panel/mod__*')
+		for m in submods:
+			setattr(m.par, name, val)
+
+	def _GetContextMenuItems(self):
+		if not self.Module:
+			return []
+		items = super()._GetContextMenuItems() + [
+			_MenuItem(
+				'Collapse Sub Modules',
+				disabled=not self.SubModules,
+				callback=lambda: self._SetSubModuleHostPars('Collapsed', True)),
+			_MenuItem(
+				'Expand Sub Modules',
+				disabled=not self.SubModules,
+				callback=lambda: self._SetSubModuleHostPars('Collapsed', False)),
+			_MenuItem(
+				'Sub Module Controls',
+				disabled=not self.SubModules,
+				callback=lambda: self._SetSubModuleHostPars('Uimode', 'ctrl')),
+			_MenuItem(
+				'Sub Module Nodes',
+				disabled=not self.SubModules,
+				callback=lambda: self._SetSubModuleHostPars('Uimode', 'nodes')),
+		]
+		return items
+
 
 # When the relevant metadata flag is empty/missing in the parameter table,
 # the following shortcuts can be used to specify it in the parameter label:
@@ -353,4 +425,76 @@ class ModuleParamInfo:
 
 	def createParExpression(self, index=0):
 		return 'op({!r}).par.{}'.format(self.modpath, self.parts[index].name)
+
+
+# TODO: move this menu stuff elsewhere
+
+class _MenuItem:
+	def __init__(
+			self,
+			text,
+			disabled=False,
+			dividerafter=False,
+			highlighted=False,
+			checked=None,
+			hassubmenu=False,
+			callback=None):
+		self.text = text
+		self.disabled = disabled
+		self.dividerafter = dividerafter
+		self.highlighted = highlighted
+		self.checked = checked
+		self.hassubmenu = hassubmenu
+		self.callback = callback
+
+def _getPopMenu():
+	if False:
+		import _stubs.PopMenuExt as _PopMenuExt
+		return _PopMenuExt.PopMenuExt(None)
+	return op.TDResources.op('popMenu')
+
+def _showPopMenu(
+		items: List[_MenuItem],
+		callback=None,
+		callbackDetails=None,
+		autoClose=None,
+		rolloverCallback=None,
+		allowStickySubMenus=None):
+	items = [item for item in items if item]
+	if not items:
+		return
+
+	popmenu = _getPopMenu()
+
+	if not callback:
+		def _callback(info):
+			i = info['index']
+			if i < 0 or i >= len(items):
+				return
+			item = items[i]
+			if not item or item.disabled or not item.callback:
+				return
+			item.callback()
+		callback = _callback
+
+	popmenu.Open(
+		items=[item.text for item in items],
+		highlightedItems=[
+			item.text for item in items if item.highlighted],
+		disabledItems=[
+			item.text for item in items if item.disabled],
+		dividersAfterItems=[
+			item.text for item in items if item.dividerafter],
+		checkedItems={
+			item.text: item.checked
+			for item in items
+			if item.checked is not None
+		},
+		subMenuItems=[
+			item.text for item in items if item.hassubmenu],
+		callback=callback,
+		callbackDetails=callbackDetails,
+		autoClose=autoClose,
+		rolloverCallback=rolloverCallback,
+		allowStickySubMenus=allowStickySubMenus)
 

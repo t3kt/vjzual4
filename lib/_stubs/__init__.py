@@ -18,6 +18,9 @@ class project:
 def op(path):
 	return object()
 
+op.TDResources = _Expando()
+op.TDResources.op = op
+
 def ops(*paths):
 	return []
 
