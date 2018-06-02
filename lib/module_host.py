@@ -513,7 +513,7 @@ class ModuleParamInfo:
 		# backwards compatibility with vjzual3
 		if page == 'Module' and par.name in (
 				'Modname', 'Uilabel', 'Collapsed', 'Solo',
-				'Uimode', 'Showadvanced', 'Showviewers'):
+				'Uimode', 'Showadvanced', 'Showviewers', 'Resetstate'):
 			return None
 
 		return cls(
@@ -546,6 +546,17 @@ class ModuleParamInfo:
 
 	def createParExpression(self, index=0):
 		return 'op({!r}).par.{}'.format(self.modpath, self.parts[index].name)
+
+	def __repr__(self):
+		return 'ParamInfo({!r})'.format({
+			'name': self.name,
+			'style': self.style,
+			'modpath': self.modpath,
+			'specialtype': self.specialtype,
+		})
+
+	def __str__(self):
+		return repr(self)
 
 
 # TODO: move this menu stuff elsewhere
