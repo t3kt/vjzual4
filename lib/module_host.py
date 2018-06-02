@@ -159,13 +159,22 @@ class ModuleHostBase:
 				parexprs=_mergedicts(
 					parinfo.advanced and {'display': 'parent.ModuleHost.par.Showadvanced'}
 				))
-		self.UpdateControlsHeight(dest)
+		dest.par.h = HeightOfVisiblePanels(dest.panelChildren)
 
-	@staticmethod
-	def UpdateControlsHeight(panel):
-		if not panel:
+	def UpdateModuleHeight(self):
+		if not self.ownerComp.par.Autoheight:
 			return
-		panel.par.h = sum(ctrl.height for ctrl in panel.ops('par__*') if ctrl.par.display)
+		maxheight = self.ownerComp.par.Maxheight
+		h = HeightOfVisiblePanels(self.ownerComp.ops('module_header', 'nodes_panel', 'controls_panel', 'sub_modules_panel'))
+		if 0 < maxheight < h:
+			h = maxheight
+		self.ownerComp.par.h = h
+
+def HeightOfVisiblePanels(panels):
+	return sum(
+		ctrl.height
+		for ctrl in panels
+		if ctrl and ctrl.isPanel and ctrl.par.display)
 
 
 def _mergedicts(*parts):
@@ -190,6 +199,7 @@ def _parseAttributeTable(dat):
 	}
 
 
+
 class ModuleHost(ModuleHostBase):
 	def __init__(self, ownerComp):
 		super().__init__(ownerComp)
@@ -204,6 +214,7 @@ class ModuleHost(ModuleHostBase):
 		controls = self.ownerComp.op('controls_panel')
 		if uibuilder:
 			self.BuildControls(controls, uibuilder=uibuilder)
+		self.UpdateModuleHeight()
 
 
 class ModuleChainHost(ModuleHostBase):
@@ -252,6 +263,7 @@ class ModuleChainHost(ModuleHostBase):
 			host.nodeX = 100
 			host.nodeY = -100 * i
 			host.AttachToModule()
+		self.UpdateModuleHeight()
 
 
 # When the relevant metadata flag is empty/missing in the parameter table,
