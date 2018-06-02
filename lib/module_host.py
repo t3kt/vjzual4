@@ -159,22 +159,24 @@ class ModuleHostBase:
 				parexprs=_mergedicts(
 					parinfo.advanced and {'display': 'parent.ModuleHost.par.Showadvanced'}
 				))
-		dest.par.h = HeightOfVisiblePanels(dest.panelChildren)
+		dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
 
 	def UpdateModuleHeight(self):
 		if not self.ownerComp.par.Autoheight:
 			return
 		maxheight = self.ownerComp.par.Maxheight
-		h = HeightOfVisiblePanels(self.ownerComp.ops('module_header', 'nodes_panel', 'controls_panel', 'sub_modules_panel'))
+		h = self.HeightOfVisiblePanels(self.ownerComp.ops(
+			'module_header', 'nodes_panel', 'controls_panel', 'sub_modules_panel'))
 		if 0 < maxheight < h:
 			h = maxheight
 		self.ownerComp.par.h = h
 
-def HeightOfVisiblePanels(panels):
-	return sum(
-		ctrl.height
-		for ctrl in panels
-		if ctrl and ctrl.isPanel and ctrl.par.display)
+	@staticmethod
+	def HeightOfVisiblePanels(panels):
+		return sum(
+			ctrl.height
+			for ctrl in panels
+			if ctrl and ctrl.isPanel and ctrl.par.display)
 
 
 def _mergedicts(*parts):
