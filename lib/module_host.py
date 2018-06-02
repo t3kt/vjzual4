@@ -19,6 +19,25 @@ try:
 except ImportError:
 	data_node = mod.data_node
 
+try:
+	from TDStoreTools import DependDict
+except ImportError:
+	from _stubs.TDStoreTools import DependDict
+
+def _GetOrInitStateFromCOMP(comp, key, makedefault=None):
+	if key in comp.storage:
+		return comp.storage[key]
+	else:
+		return comp.store(key, makedefault() if makedefault else DependDict())
+
+def _GetOrAdd(d, key, default):
+	if key in d:
+		return d[key]
+	elif callable(default):
+		d[key] = val = default()
+	else:
+		d[key] = val = default
+	return val
 
 class ModuleHostBase:
 	"""Base class for components that host modules, such as ModuleHost or ModuleEditor."""
@@ -32,13 +51,61 @@ class ModuleHostBase:
 		self.HasAdvancedParams = tdu.Dependency(False)
 		self.Actions = {
 			'Reattachmodule': self.AttachToModule,
+			'Clearuistate': self.ClearUIState,
 		}
+
+		# trick pycharm
+		if False:
+			self.par = object()
+			self.storage = {}
+
+	@property
+	def UIState(self) -> DependDict:
+		parent = self.ParentHost
+		if not parent:
+			uistate = _GetOrAdd(self.ownerComp.storage, 'UIState', DependDict)
+		else:
+			if hasattr(parent, 'UIState'):
+				parentstate = parent.UIState
+			else:
+				parentstate = _GetOrAdd(parent.storage, 'UIState', DependDict)
+			children = _GetOrAdd(parentstate, 'children', DependDict)
+			if self.Module and self.Module.path in children:
+				uistate = children[self.Module.path]
+			elif self.ownerComp.path in children:
+				uistate = children[self.ownerComp.path]
+			elif self.Module:
+				uistate = children[self.Module.path] = DependDict()
+			else:
+				uistate = children[self.ownerComp.path] = DependDict()
+		return uistate
+
+	def ClearUIState(self):
+		parent = self.ParentHost
+		if not parent:
+			if 'UIState' in self.ownerComp.storage:
+				self.ownerComp.unstore('UIState')
+		else:
+			if 'UIState' not in parent.storage:
+				return
+			parentstate = parent.storage['UIState']
+			if 'children' not in parentstate:
+				return
+			children = parentstate['children']
+			if self.Module and self.Module.path in children:
+				del children[self.Module.path]
+			if self.ownerComp.path in children:
+				del children[self.ownerComp.path]
 
 	def PerformAction(self, name):
 		if name not in self.Actions:
 			raise Exception('Unsupported action: {}'.format(name))
 		print('{} performing action {}'.format(self.ownerComp, name))
 		self.Actions[name]()
+
+	@property
+	def ParentHost(self) -> 'ModuleHostBase':
+		return getattr(self.ownerComp.parent, 'ModuleHost', None)
 
 	@property
 	def ModulePath(self):
@@ -290,6 +357,16 @@ class ModuleChainHost(ModuleHostBase):
 		super().AttachToModule()
 		self.BuildSubModuleHosts()
 
+	def ClearUIState(self):
+		for m in self._SubModuleHosts:
+			if hasattr(m, 'ClearUIState'):
+				m.ClearUIState()
+		super().ClearUIState()
+
+	@property
+	def _SubModuleHosts(self) -> List[ModuleHostBase]:
+		return self.ownerComp.ops('sub_modules_panel/mod__*')
+
 	def BuildSubModuleHosts(self):
 		dest = self.ownerComp.op('./sub_modules_panel')
 		for m in dest.ops('mod__*'):
@@ -313,8 +390,7 @@ class ModuleChainHost(ModuleHostBase):
 		self.UpdateModuleHeight()
 
 	def _SetSubModuleHostPars(self, name, val):
-		submods = self.ownerComp.ops('sub_modules_panel/mod__*')
-		for m in submods:
+		for m in self._SubModuleHosts:
 			setattr(m.par, name, val)
 
 	def _GetContextMenuItems(self):
