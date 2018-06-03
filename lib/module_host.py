@@ -1,6 +1,5 @@
 print('vjz4/module_host.py loading')
 
-from collections import namedtuple
 from typing import List
 from operator import attrgetter
 
@@ -20,15 +19,14 @@ except ImportError:
 	data_node = mod.data_node
 
 try:
+	import common
+except ImportError:
+	common = mod.common
+
+try:
 	from TDStoreTools import DependDict
 except ImportError:
 	from _stubs.TDStoreTools import DependDict
-
-def _GetOrInitStateFromCOMP(comp, key, makedefault=None):
-	if key in comp.storage:
-		return comp.storage[key]
-	else:
-		return comp.store(key, makedefault() if makedefault else DependDict())
 
 def _GetOrAdd(d, key, default):
 	if key in d:
@@ -39,9 +37,16 @@ def _GetOrAdd(d, key, default):
 		d[key] = val = default
 	return val
 
-class ModuleHostBase:
+class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 	"""Base class for components that host modules, such as ModuleHost or ModuleEditor."""
 	def __init__(self, ownerComp):
+		common.ExtensionBase.__init__(self, ownerComp)
+		common.ActionsExt.__init__(self, ownerComp, actions={
+			'Reattachmodule': self.AttachToModule,
+			'Clearuistate': self.ClearUIState,
+			'Loaduistate': self.LoadUIState,
+			'Saveuistate': self.SaveUIState,
+		})
 		self.ownerComp = ownerComp
 		self.Module = None
 		self.ModuleCore = None
@@ -50,25 +55,11 @@ class ModuleHostBase:
 		self.SubModules = []
 		self.HasBypass = tdu.Dependency(False)
 		self.HasAdvancedParams = tdu.Dependency(False)
-		self.Actions = {
-			'Reattachmodule': self.AttachToModule,
-			'Clearuistate': self.ClearUIState,
-			'Loaduistate': self.LoadUIState,
-			'Saveuistate': self.SaveUIState,
-		}
 
 		# trick pycharm
 		if False:
 			self.par = object()
 			self.storage = {}
-
-	def _AutoInitActionParams(self):
-		page = None
-		for name in self.Actions.keys():
-			if not hasattr(self.ownerComp.par, name):
-				if not page:
-					page = self.ownerComp.appendCustomPage('Actions')
-				page.appendPulse(name)
 
 	def _GetUIState(self, autoinit) -> DependDict:
 		parent = self.ParentHost
@@ -131,12 +122,6 @@ class ModuleHostBase:
 		self.ownerComp.par.Collapsed = uistate.get('Collapsed', False)
 		if 'Uimode' in uistate and uistate['Uimode'] in self.ownerComp.par.Uimode.menuNames:
 			self.ownerComp.par.Uimode = uistate['Uimode']
-
-	def PerformAction(self, name):
-		if name not in self.Actions:
-			raise Exception('Unsupported action: {}'.format(name))
-		print('{} performing action {}'.format(self.ownerComp, name))
-		self.Actions[name]()
 
 	@property
 	def ParentHost(self) -> 'ModuleHostBase':
@@ -450,7 +435,6 @@ class ModuleChainHost(ModuleHostBase):
 			host.par.alignorder = i
 			host.nodeX = 100
 			host.nodeY = -100 * i
-			host.AttachToModule()
 		self.UpdateModuleHeight()
 
 	def _SetSubModuleHostPars(self, name, val):
