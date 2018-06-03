@@ -386,7 +386,10 @@ class ModuleHost(ModuleHostBase):
 	def __init__(self, ownerComp):
 		super().__init__(ownerComp)
 		self._AutoInitActionParams()
-		self.ownerComp.op('deferred_attach_module').run(delayFrames=1)
+		# modules hosted inside other modules are asynchronously initialized by the
+		# parent so they don't need to auto initialize on construction
+		if not self.ParentHost:
+			self.ownerComp.op('deferred_attach_module').run(delayFrames=1)
 
 	def AttachToModule(self):
 		super().AttachToModule()
@@ -399,7 +402,10 @@ class ModuleChainHost(ModuleHostBase):
 	def __init__(self, ownerComp):
 		super().__init__(ownerComp)
 		self._AutoInitActionParams()
-		self.ownerComp.op('deferred_attach_module').run(delayFrames=1)
+		# modules hosted inside other modules are asynchronously initialized by the
+		# parent so they don't need to auto initialize on construction
+		if not self.ParentHost:
+			self.ownerComp.op('deferred_attach_module').run(delayFrames=1)
 
 	def AttachToModule(self):
 		super().AttachToModule()
@@ -435,6 +441,7 @@ class ModuleChainHost(ModuleHostBase):
 			template = op.Vjz4.op('./module_host')
 		if not template:
 			return
+		hosts = []
 		for i, submod in enumerate(self.SubModules):
 			host = dest.copy(template, name='mod__' + submod.name)
 			host.par.Uibuilder.expr = 'parent.ModuleHost.par.Uibuilder or ""'
@@ -443,8 +450,9 @@ class ModuleChainHost(ModuleHostBase):
 			host.par.alignorder = i
 			host.nodeX = 100
 			host.nodeY = -100 * i
-			# host.AttachToModule()
+			hosts.append(host)
 		self.UpdateModuleHeight()
+		self.ownerComp.op('deferred_attach_next_child_module').run(hosts, delayFrames=1)
 
 	def _SetSubModuleHostPars(self, name, val):
 		for m in self._SubModuleHosts:
