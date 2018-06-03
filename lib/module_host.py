@@ -47,6 +47,7 @@ class ModuleHostBase:
 		self.ModuleCore = None
 		self.DataNodes = []  # type: List[data_node.NodeInfo]
 		self.Params = []  # type: List[ModuleParamInfo]
+		self.SubModules = []
 		self.HasBypass = tdu.Dependency(False)
 		self.HasAdvancedParams = tdu.Dependency(False)
 		self.Actions = {
@@ -187,6 +188,8 @@ class ModuleHostBase:
 		else:
 			self.HasBypass.val = bool(self.getCorePar('Hasbypass')) and self.getModulePar('Bypass') is not None
 		self._LoadSubModules()
+		for dat in self.ownerComp.ops('host_core/build*'):
+			dat.cook()
 
 	def _FindDataNodes(self):
 		if not self.Module:
@@ -290,7 +293,15 @@ class ModuleHostBase:
 			self.SubModules = []
 		else:
 			self.SubModules = self.Module.findChildren(tags=['vjzmod4', 'tmod'], maxDepth=1)
-			self.SubModules.sort(key=attrgetter('par.alignorder'))
+			if all(hasattr(m.par, 'alignorder') for m in self.SubModules):
+				self.SubModules.sort(key=attrgetter('par.alignorder'))
+			else:
+				distx = abs(max(m.nodeX for m in self.SubModules) - min(m.nodeX for m in self.SubModules))
+				disty = abs(max(m.nodeY for m in self.SubModules) - min(m.nodeY for m in self.SubModules))
+				if distx > disty:
+					self.SubModules.sort(key=attrgetter('nodeX'))
+				else:
+					self.SubModules.sort(key=attrgetter('nodeY'))
 
 	def BuildSubModuleTable(self, dat):
 		dat.clear()
@@ -349,6 +360,15 @@ def _mergedicts(*parts):
 			x.update(part)
 	return x
 
+def _stripdict(d):
+	if not d:
+		return {}
+	return {
+		key: val
+		for key, val in d.items()
+		if val is not None
+	}
+
 
 def _parseAttributeTable(dat):
 	dat = op(dat)
@@ -368,7 +388,6 @@ def _parseAttributeTable(dat):
 class ModuleHost(ModuleHostBase):
 	def __init__(self, ownerComp):
 		super().__init__(ownerComp)
-		self.SubModules = []
 		self._AutoInitActionParams()
 		self.ownerComp.op('deferred_attach_module').run(delayFrames=1)
 
@@ -548,12 +567,12 @@ class ModuleParamInfo:
 		return 'op({!r}).par.{}'.format(self.modpath, self.parts[index].name)
 
 	def __repr__(self):
-		return 'ParamInfo({!r})'.format({
+		return 'ParamInfo({!r})'.format(_stripdict({
 			'name': self.name,
 			'style': self.style,
 			'modpath': self.modpath,
 			'specialtype': self.specialtype,
-		})
+		}))
 
 	def __str__(self):
 		return repr(self)
