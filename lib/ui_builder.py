@@ -291,7 +291,7 @@ class UiBuilder:
 			parvals=None,
 			parexprs=None):
 		if parinfo.style in ('Float', 'Int') and len(parinfo.parts) == 1:
-			print('creating slider control for {}'.format(parinfo))
+			# print('creating slider control for {}'.format(parinfo))
 			return self.CreateParSlider(
 				dest=dest,
 				name=name,
@@ -305,7 +305,7 @@ class UiBuilder:
 			'RGB', 'RGBA',
 			'UV', 'UVW', 'WH', 'XY', 'XYZ',
 		]:
-			print('creating multi slider control for {}'.format(parinfo))
+			# print('creating multi slider control for {}'.format(parinfo))
 			return self.CreateParMultiSlider(
 				dest=dest,
 				name=name,
@@ -315,7 +315,7 @@ class UiBuilder:
 				parvals=parvals,
 				parexprs=parexprs)
 		elif parinfo.style == 'Toggle':
-			print('creating toggle control for {}'.format(parinfo))
+			# print('creating toggle control for {}'.format(parinfo))
 			return self.CreateParToggle(
 				dest=dest,
 				name=name,
@@ -325,7 +325,7 @@ class UiBuilder:
 				parvals=parvals,
 				parexprs=parexprs)
 		elif parinfo.style == 'Pulse':
-			print('creating trigger control for {}'.format(parinfo))
+			# print('creating trigger control for {}'.format(parinfo))
 			return self.CreateParTrigger(
 				dest=dest,
 				name=name,
@@ -335,7 +335,7 @@ class UiBuilder:
 				parvals=parvals,
 				parexprs=parexprs)
 		elif parinfo.style == 'Str' and not parinfo.isnode:
-			print('creating text field control for plain string {}'.format(parinfo))
+			# print('creating text field control for plain string {}'.format(parinfo))
 			return self.CreateParTextField(
 				dest=dest,
 				name=name,
