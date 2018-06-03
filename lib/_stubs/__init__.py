@@ -40,6 +40,14 @@ class tdu:
 	def legalName(s):
 		return s
 
+	@staticmethod
+	def clamp(inputVal, min, max):
+		return inputVal
+
+	@staticmethod
+	def remap(inputVal, fromMin, fromMax, toMin, toMax):
+		return inputVal
+
 	class Dependency:
 		def __init__(self, _=None):
 			self.val = None

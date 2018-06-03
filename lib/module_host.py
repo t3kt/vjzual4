@@ -54,6 +54,7 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 		self.SubModules = []
 		self.HasBypass = tdu.Dependency(False)
 		self.HasAdvancedParams = tdu.Dependency(False)
+		self.SetProgressBar(None)
 
 		# trick pycharm
 		if False:
@@ -159,6 +160,17 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 	def getCorePar(self, name):
 		core = self.ModuleCore
 		return getattr(core.par, name) if core and hasattr(core.par, name) else None
+
+	def SetProgressBar(self, ratio):
+		bar = self.ownerComp.op('module_header/progress_bar')
+		if not bar:
+			return
+		if ratio is None:
+			bar.par.display = False
+			bar.par.Ratio = 0
+		else:
+			bar.par.display = True
+			bar.par.Ratio = ratio
 
 	def AttachToModule(self):
 		self.Module = self.ownerComp.par.Module.eval()
@@ -409,7 +421,7 @@ class ModuleChainHost(ModuleHostBase):
 
 	def AttachToModule(self):
 		super().AttachToModule()
-		self.BuildSubModuleHosts()
+		self._BuildSubModuleHosts()
 
 	def ClearUIState(self):
 		for m in self._SubModuleHosts:
@@ -430,7 +442,8 @@ class ModuleChainHost(ModuleHostBase):
 	def _SubModuleHosts(self) -> List[ModuleHostBase]:
 		return self.ownerComp.ops('sub_modules_panel/mod__*')
 
-	def BuildSubModuleHosts(self):
+	def _BuildSubModuleHosts(self):
+		self.SetProgressBar(None)
 		dest = self.ownerComp.op('./sub_modules_panel')
 		for m in dest.ops('mod__*'):
 			m.destroy()
@@ -452,7 +465,15 @@ class ModuleChainHost(ModuleHostBase):
 			host.nodeY = -100 * i
 			hosts.append(host)
 		self.UpdateModuleHeight()
-		self.ownerComp.op('deferred_attach_next_child_module').run(hosts, delayFrames=1)
+		if not hosts:
+			self.AfterSubModulesAttached()
+		else:
+			self.SetProgressBar(0)
+			self.ownerComp.op('deferred_attach_next_child_module').run(hosts, delayFrames=1)
+
+	def AfterSubModulesAttached(self):
+		# TODO: load ui state etc
+		self.SetProgressBar(None)
 
 	def _SetSubModuleHostPars(self, name, val):
 		for m in self._SubModuleHosts:
