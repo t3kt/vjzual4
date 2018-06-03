@@ -323,6 +323,14 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 			items=self._GetContextMenuItems(),
 			autoClose=True)
 
+	@property
+	def UiBuilder(self):
+		uibuilder = self.ownerComp.par.Uibuilder.eval()  # type: UiBuilder
+		if uibuilder:
+			return uibuilder
+		if hasattr(op, 'UiBuilder'):
+			return op.UiBuilder
+
 
 def _getActiveEditor():
 	pane = ui.panes.current
@@ -377,9 +385,7 @@ class ModuleHost(ModuleHostBase):
 
 	def AttachToModule(self):
 		super().AttachToModule()
-		uibuilder = self.ownerComp.par.Uibuilder.eval()
-		if not uibuilder and hasattr(op, 'UiBuilder'):
-			uibuilder = op.UiBuilder
+		uibuilder = self.UiBuilder
 		controls = self.ownerComp.op('controls_panel')
 		if uibuilder:
 			self.BuildControls(controls, uibuilder=uibuilder)
