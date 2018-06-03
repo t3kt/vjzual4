@@ -369,8 +369,8 @@ class ModuleHost(ModuleHostBase):
 	def __init__(self, ownerComp):
 		super().__init__(ownerComp)
 		self.SubModules = []
-		self.AttachToModule()
 		self._AutoInitActionParams()
+		self.ownerComp.op('deferred_attach_module').run(delayFrames=1)
 
 	def AttachToModule(self):
 		super().AttachToModule()
@@ -386,8 +386,8 @@ class ModuleHost(ModuleHostBase):
 class ModuleChainHost(ModuleHostBase):
 	def __init__(self, ownerComp):
 		super().__init__(ownerComp)
-		self.AttachToModule()
 		self._AutoInitActionParams()
+		self.ownerComp.op('deferred_attach_module').run(delayFrames=1)
 
 	def AttachToModule(self):
 		super().AttachToModule()

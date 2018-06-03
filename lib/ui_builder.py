@@ -97,6 +97,25 @@ class UiBuilder:
 			suffixes = list(range(1, n + 1))
 		else:
 			suffixes = parinfo.style
+		preview = ctrl.op('preview')
+		if parinfo.style not in ('RGB', 'RGBA'):
+			preview.par.display = False
+		else:
+			preview.par.display = True
+			_UpdateComponent(
+				preview.op('set_color'),
+				parvals=_mergedicts(
+					parinfo.style != 'RGBA' and {'alpha': 1},
+				),
+				parexprs=_mergedicts(
+					{
+						'colorr': parinfo.createParExpression(index=0),
+						'colorg': parinfo.createParExpression(index=1),
+						'colorb': parinfo.createParExpression(index=2),
+					},
+					parinfo.style == 'RGBA' and {
+						'alpha': parinfo.createParExpression(index=3),
+					}))
 		for i in range(4):
 			slider = ctrl.op('slider{}'.format(i + 1))
 			if i >= n:
