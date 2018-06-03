@@ -47,7 +47,6 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 			'Loaduistate': self.LoadUIState,
 			'Saveuistate': self.SaveUIState,
 		})
-		self.ownerComp = ownerComp
 		self.Module = None
 		self.ModuleCore = None
 		self.DataNodes = []  # type: List[data_node.NodeInfo]
@@ -435,6 +434,7 @@ class ModuleChainHost(ModuleHostBase):
 			host.par.alignorder = i
 			host.nodeX = 100
 			host.nodeY = -100 * i
+			# host.AttachToModule()
 		self.UpdateModuleHeight()
 
 	def _SetSubModuleHostPars(self, name, val):
