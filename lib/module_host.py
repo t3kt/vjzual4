@@ -1,6 +1,6 @@
 print('vjz4/module_host.py loading')
 
-from typing import List
+from typing import List, Optional
 from operator import attrgetter
 
 if False:
@@ -60,7 +60,7 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 			self.par = object()
 			self.storage = {}
 
-	def _GetUIState(self, autoinit) -> DependDict:
+	def _GetUIState(self, autoinit) -> Optional[DependDict]:
 		parent = self.ParentHost
 		if not parent:
 			if not autoinit and 'UIState' not in self.ownerComp.storage:
@@ -172,8 +172,10 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 		else:
 			self.HasBypass.val = bool(self.getCorePar('Hasbypass')) and self.getModulePar('Bypass') is not None
 		self._LoadSubModules()
-		for dat in self.ownerComp.ops('host_core/build*'):
-			dat.cook()
+		hostcore = self.ownerComp.op('host_core')
+		self._BuildParamTable(hostcore.op('set_param_table'))
+		self._BuildDataNodeTable(hostcore.op('set_data_nodes'))
+		self._BuildSubModuleTable(hostcore.op('set_sub_module_table'))
 
 	def _FindDataNodes(self):
 		if not self.Module:
@@ -187,7 +189,7 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 				return self.Module.op(nodesval)
 		return self.Module.findChildren(tags=['vjznode', 'tdatanode'], maxDepth=1)
 
-	def BuildDataNodeTable(self, dat):
+	def _BuildDataNodeTable(self, dat):
 		dat.clear()
 		dat.appendRow(['name', 'label', 'path', 'video', 'audio', 'texbuf'])
 		for n in self.DataNodes:
@@ -214,7 +216,7 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 					self.HasAdvancedParams.val = True
 		self.Params.sort(key=attrgetter('pageindex', 'order'))
 
-	def BuildParamTable(self, dat):
+	def _BuildParamTable(self, dat):
 		dat.clear()
 		dat.appendRow([
 			'name',
@@ -224,6 +226,7 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 			'hidden',
 			'advanced',
 			'specialtype',
+			'mappable',
 		])
 		for parinfo in self.Params:
 			dat.appendRow([
@@ -234,12 +237,14 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 				int(parinfo.hidden),
 				int(parinfo.advanced),
 				parinfo.specialtype,
+				int(parinfo.mappable),
 			])
 
-	def BuildControls(self, dest, uibuilder: 'UiBuilder'):
+	def BuildControls(self, dest):
+		uibuilder = self.UiBuilder
 		for ctrl in dest.ops('par__*'):
 			ctrl.destroy()
-		if not self.Module:
+		if not self.Module or not uibuilder:
 			return
 		for i, parinfo in enumerate(self.Params):
 			if parinfo.hidden or parinfo.specialtype.startswith('switch.'):
@@ -287,7 +292,7 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 				else:
 					self.SubModules.sort(key=attrgetter('nodeY'))
 
-	def BuildSubModuleTable(self, dat):
+	def _BuildSubModuleTable(self, dat):
 		dat.clear()
 		dat.appendRow([
 			'name',
@@ -385,10 +390,8 @@ class ModuleHost(ModuleHostBase):
 
 	def AttachToModule(self):
 		super().AttachToModule()
-		uibuilder = self.UiBuilder
 		controls = self.ownerComp.op('controls_panel')
-		if uibuilder:
-			self.BuildControls(controls, uibuilder=uibuilder)
+		self.BuildControls(controls)
 		self.UpdateModuleHeight()
 
 
@@ -450,23 +453,27 @@ class ModuleChainHost(ModuleHostBase):
 	def _GetContextMenuItems(self):
 		if not self.Module:
 			return []
+
+		def _subModuleHostParUpdater(name, val):
+			return lambda: self._SetSubModuleHostPars(name, val)
+
 		items = super()._GetContextMenuItems() + [
 			_MenuItem(
 				'Collapse Sub Modules',
 				disabled=not self.SubModules,
-				callback=lambda: self._SetSubModuleHostPars('Collapsed', True)),
+				callback=_subModuleHostParUpdater('Collapsed', True)),
 			_MenuItem(
 				'Expand Sub Modules',
 				disabled=not self.SubModules,
-				callback=lambda: self._SetSubModuleHostPars('Collapsed', False)),
+				callback=_subModuleHostParUpdater('Collapsed', False)),
 			_MenuItem(
 				'Sub Module Controls',
 				disabled=not self.SubModules,
-				callback=lambda: self._SetSubModuleHostPars('Uimode', 'ctrl')),
+				callback=_subModuleHostParUpdater('Uimode', 'ctrl')),
 			_MenuItem(
 				'Sub Module Nodes',
 				disabled=not self.SubModules,
-				callback=lambda: self._SetSubModuleHostPars('Uimode', 'nodes')),
+				callback=_subModuleHostParUpdater('Uimode', 'nodes')),
 		]
 		return items
 
@@ -491,6 +498,7 @@ class ModuleParamInfo:
 		label = par.label
 		hidden = attrs['hidden'] == '1' if ('hidden' in attrs and attrs['hidden'] != '') else label.startswith('.')
 		advanced = attrs['advanced'] == '1' if ('advanced' in attrs and attrs['advanced'] != '') else label.startswith('+')
+		mappable = attrs.get('mappable')
 		specialtype = attrs.get('specialtype')
 		if not specialtype:
 			if label.endswith('~'):
@@ -508,16 +516,17 @@ class ModuleParamInfo:
 			label = label[:-1]
 		label = attrs.get('label') or label
 
+		if page.startswith(':') or label.startswith(':'):
+			return None
+
 		if par.name == 'Bypass':
 			return cls(
 				partuplet,
 				label=label,
 				hidden=True,
 				advanced=False,
-				specialtype='switch.bypass')
-
-		if page.startswith(':') or label.startswith(':'):
-			return None
+				specialtype='switch.bypass',
+				mappable=True)
 
 		# backwards compatibility with vjzual3
 		if page == 'Module' and par.name in (
@@ -525,12 +534,16 @@ class ModuleParamInfo:
 				'Uimode', 'Showadvanced', 'Showviewers', 'Resetstate'):
 			return None
 
+		if mappable is None:
+			mappable = (not advanced) and par.style in ('Float', 'Int', 'UV', 'UVW', 'XY', 'XYZ', 'Toggle', 'Pulse')
+
 		return cls(
 			partuplet,
 			label=label,
 			hidden=hidden,
 			advanced=advanced,
-			specialtype=specialtype)
+			specialtype=specialtype,
+			mappable=mappable)
 
 	def __init__(
 			self,
@@ -538,7 +551,8 @@ class ModuleParamInfo:
 			label=None,
 			hidden=False,
 			advanced=False,
-			specialtype=None):
+			specialtype=None,
+			mappable=True):
 		self.parts = partuplet
 		par = self.parts[0]
 		self.name = par.tupletName
@@ -552,6 +566,7 @@ class ModuleParamInfo:
 		self.advanced = advanced
 		self.specialtype = specialtype or ''
 		self.isnode = specialtype and specialtype.startswith('node')
+		self.mappable = mappable and not self.isnode
 
 	def createParExpression(self, index=0):
 		return 'op({!r}).par.{}'.format(self.modpath, self.parts[index].name)
