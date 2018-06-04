@@ -165,12 +165,8 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 		bar = self.ownerComp.op('module_header/progress_bar')
 		if not bar:
 			return
-		if ratio is None:
-			bar.par.display = False
-			bar.par.Ratio = 0
-		else:
-			bar.par.display = True
-			bar.par.Ratio = ratio
+		bar.par.display = ratio is not None
+		bar.par.Ratio = ratio or 0
 
 	def AttachToModule(self):
 		self.Module = self.ownerComp.par.Module.eval()
