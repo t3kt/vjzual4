@@ -130,7 +130,8 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 
 	@property
 	def ParentHost(self) -> 'ModuleHostBase':
-		return getattr(self.ownerComp.parent, 'ModuleHost', None)
+		parent = getattr(self.ownerComp.parent, 'ModuleHost', None)
+		return parent or getattr(self.ownerComp.parent, 'AppHost', None)
 
 	@property
 	def ModulePath(self):
@@ -296,19 +297,7 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 			if ctrl and ctrl.isPanel and ctrl.par.display)
 
 	def _LoadSubModules(self):
-		if not self.Module:
-			self.SubModules = []
-		else:
-			self.SubModules = self.Module.findChildren(tags=['vjzmod4', 'tmod'], maxDepth=1)
-			if all(hasattr(m.par, 'alignorder') for m in self.SubModules):
-				self.SubModules.sort(key=attrgetter('par.alignorder'))
-			else:
-				distx = abs(max(m.nodeX for m in self.SubModules) - min(m.nodeX for m in self.SubModules))
-				disty = abs(max(m.nodeY for m in self.SubModules) - min(m.nodeY for m in self.SubModules))
-				if distx > disty:
-					self.SubModules.sort(key=attrgetter('nodeX'))
-				else:
-					self.SubModules.sort(key=attrgetter('nodeY'))
+		self.SubModules = FindSubModules(self.Module)
 
 	def _BuildSubModuleTable(self, dat):
 		dat.clear()
@@ -354,6 +343,20 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 		if hasattr(op, 'UiBuilder'):
 			return op.UiBuilder
 
+def FindSubModules(parentComp):
+	if not parentComp:
+		return []
+	submodules = parentComp.findChildren(tags=['vjzmod4', 'tmod'], maxDepth=1)
+	if all(hasattr(m.par, 'alignorder') for m in submodules):
+		submodules.sort(key=attrgetter('par.alignorder'))
+	else:
+		distx = abs(max(m.nodeX for m in submodules) - min(m.nodeX for m in submodules))
+		disty = abs(max(m.nodeY for m in submodules) - min(m.nodeY for m in submodules))
+		if distx > disty:
+			submodules.sort(key=attrgetter('nodeX'))
+		else:
+			submodules.sort(key=attrgetter('nodeY'))
+	return submodules
 
 def _getActiveEditor():
 	pane = ui.panes.current
@@ -448,6 +451,13 @@ class ModuleChainHost(ModuleHostBase):
 	def _SubModuleHosts(self) -> List[ModuleHostBase]:
 		return self.ownerComp.ops('sub_modules_panel/mod__*')
 
+	@property
+	def _ModuleHostTemplate(self):
+		template = self.ownerComp.par.Modulehosttemplate.eval()
+		if not template and hasattr(op, 'Vjz4'):
+			template = op.Vjz4.op('./module_host')
+		return template
+
 	def _BuildSubModuleHosts(self):
 		self.SetProgressBar(None)
 		dest = self.ownerComp.op('./sub_modules_panel')
@@ -455,9 +465,7 @@ class ModuleChainHost(ModuleHostBase):
 			m.destroy()
 		if not self.Module:
 			return
-		template = self.ownerComp.par.Modulehosttemplate.eval()
-		if not template and hasattr(op, 'Vjz4'):
-			template = op.Vjz4.op('./module_host')
+		template = self._ModuleHostTemplate
 		if not template:
 			return
 		hosts = []
