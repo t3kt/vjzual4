@@ -24,6 +24,11 @@ except ImportError:
 	common = mod.common
 
 try:
+	import control_mapping
+except ImportError:
+	control_mapping = mod.control_mapping
+
+try:
 	from TDStoreTools import DependDict
 except ImportError:
 	from _stubs.TDStoreTools import DependDict
@@ -247,6 +252,11 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 				parinfo.specialtype,
 				int(parinfo.mappable),
 			])
+
+	def GetParamByName(self, name):
+		for parinfo in self.Params:
+			if parinfo.name == name:
+				return parinfo
 
 	def BuildControls(self, dest):
 		uibuilder = self.UiBuilder
