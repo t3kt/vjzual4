@@ -4,11 +4,6 @@ if False:
 	from _stubs import *
 
 try:
-	from TDStoreTools import StorageManager
-except ImportError:
-	from _stubs.TDStoreTools import StorageManager
-
-try:
 	import common
 except ImportError:
 	common = mod.common
@@ -26,10 +21,6 @@ class MidiDevice(common.ExtensionBase, common.ActionsExt):
 		outdat = self.ownerComp.op('set_controls')
 		outdat.clear()
 		outdat.appendRow(['name', 'fullname', 'type', 'outcc', 'outchan'])
-		selectoutputvals = self.ownerComp.op('select_prefixed_output_vals')
-		selectoutputvals.par.channames = ''
-		selectoutputvals.par.renamefrom = ''
-		selectoutputvals.par.renameto = ''
 		prefix = (self.ownerComp.par.Name.eval() or self.ownerComp.name) + '_'
 		controlsin = self.ownerComp.par.Controls.eval()
 		if not controlsin:
@@ -43,7 +34,4 @@ class MidiDevice(common.ExtensionBase, common.ActionsExt):
 				outcc,
 				controlsin[i, 'outchan'] or ('ch1c' + outcc),
 			])
-		selectoutputvals.par.channames = ' '.join([c.val for c in outdat.col('fullname')[1:]])
-		selectoutputvals.par.renamefrom = selectoutputvals.par.channames
-		selectoutputvals.par.renameto = ' '.join([c.val for c in outdat.col('outchan')[1:]])
 
