@@ -27,12 +27,16 @@ class AppHost(common.ExtensionBase, common.ActionsExt):
 		self.SubModules = []
 		self.ownerComp.op('deferred_attach_app').run(delayFrames=1)
 
+	def OnTDPreSave(self):
+		for o in self.ownerComp.ops('modules_panel/mod__*'):
+			o.destroy()
+
 	def AttachToApp(self):
 		self.AppRoot = self.ownerComp.par.Approot.eval()
 		self._LoadSubModules()
 		hostcore = self.ownerComp.op('host_core')
 		self._BuildSubModuleTable(hostcore.op('set_sub_module_table'))
-		self._BuildSubModuleHosts()
+		# self._BuildSubModuleHosts()
 
 	def _LoadSubModules(self):
 		self.SubModules = module_host.FindSubModules(self.AppRoot)

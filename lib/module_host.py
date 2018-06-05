@@ -59,12 +59,16 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 		self.SubModules = []
 		self.HasBypass = tdu.Dependency(False)
 		self.HasAdvancedParams = tdu.Dependency(False)
+		self.controlsBuilt = False
 		self.SetProgressBar(None)
 
 		# trick pycharm
 		if False:
 			self.par = object()
 			self.storage = {}
+
+	def OnTDPreSave(self):
+		pass
 
 	def _GetUIState(self, autoinit) -> Optional[DependDict]:
 		parent = self.ParentHost
@@ -278,6 +282,7 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 					parinfo.advanced and {'display': 'parent.ModuleHost.par.Showadvanced'}
 				))
 		dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
+		self.controlsBuilt = True
 
 	def UpdateModuleHeight(self):
 		if not self.ownerComp.par.Autoheight:
@@ -414,9 +419,21 @@ class ModuleHost(ModuleHostBase):
 
 	def AttachToModule(self):
 		super().AttachToModule()
-		controls = self.ownerComp.op('controls_panel')
-		self.BuildControls(controls)
+		self._ClearControls()
+		self.BuildControlsIfNeeded()
 		self.UpdateModuleHeight()
+
+	def _ClearControls(self):
+		for o in self.ownerComp.ops('controls_panel/par__*'):
+			o.destroy()
+
+	def BuildControlsIfNeeded(self):
+		if self.ownerComp.par.Uimode == 'ctrl' and not self.ownerComp.par.Collapsed:
+			controls = self.ownerComp.op('controls_panel')
+			self.BuildControls(controls)
+
+	def OnTDPreSave(self):
+		self._ClearControls()
 
 
 class ModuleChainHost(ModuleHostBase):
@@ -427,6 +444,10 @@ class ModuleChainHost(ModuleHostBase):
 		# parent so they don't need to auto initialize on construction
 		if not self.ParentHost:
 			self.ownerComp.op('deferred_attach_module').run(delayFrames=1)
+
+	def OnTDPreSave(self):
+		for o in self.ownerComp.ops('controls_panel/par__*', 'sub_modules_panel/mod__*'):
+			o.destroy()
 
 	def AttachToModule(self):
 		super().AttachToModule()
@@ -471,6 +492,7 @@ class ModuleChainHost(ModuleHostBase):
 		hosts = []
 		for i, submod in enumerate(self.SubModules):
 			host = dest.copy(template, name='mod__' + submod.name)
+			host.par.Collapsed = True
 			host.par.Uibuilder.expr = 'parent.ModuleHost.par.Uibuilder or ""'
 			host.par.Module = submod.path
 			host.par.hmode = 'fill'
