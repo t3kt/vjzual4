@@ -1,5 +1,6 @@
 print('vjz4/control_mapping.py loading')
 
+from collections import OrderedDict
 from typing import Dict
 
 if False:
@@ -12,7 +13,7 @@ except ImportError:
 
 class ModuleControlMap:
 	def __init__(self, enable=True):
-		self.mappings = {}  # type: Dict[str, Mapping]
+		self.mappings = OrderedDict()  # type: Dict[str, Mapping]
 		self.Enable = enable
 
 	def GetAllMappings(self):
@@ -34,20 +35,20 @@ class ModuleControlMap:
 
 	def BuildMappingTable(self, dat):
 		dat.clear()
-		dat.appendRow(['param', 'control', 'rangelow', 'rangehigh', 'enable'])
+		dat.appendRow(['param', 'control', 'enable', 'rangelow', 'rangehigh'])
 		for parname, mapping in self.mappings.items():
 			dat.appendRow([
 				parname,
 				mapping.control or '',
+				int(mapping.enable),
 				mapping.rangelow,
 				mapping.rangehigh,
-				int(mapping.enable),
 			])
 
 class Mapping:
-	def __init__(self, control=None, rangelow=0, rangehigh=1, enable=True):
+	def __init__(self, control=None, enable=True, rangelow=0, rangehigh=1):
 		self.control = control
+		self.enable = enable
 		self.rangelow = rangelow
 		self.rangehigh = rangehigh
-		self.enable = enable
 

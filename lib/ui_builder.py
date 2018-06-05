@@ -348,6 +348,30 @@ class UiBuilder:
 			print('Unsupported par style: {!r})'.format(parinfo))
 			return None
 
+	def CreateMappingEditor(
+			self,
+			dest,
+			name,
+			paramname,
+			ctrltype='slider',
+			order=None,
+			nodepos=None,
+			parvals=None,
+			parexprs=None):
+		return _CreateFromTemplate(
+			template=self.ownerComp.op('mapping_editor'),
+			dest=dest,
+			name=name,
+			order=order,
+			nodepos=nodepos,
+			parvals=_mergedicts(
+				{
+					'Param': paramname,
+					'Controltype': ctrltype,
+				},
+				parvals),
+			parexprs=parexprs)
+
 
 def _UpdateComponent(
 		ctrl,

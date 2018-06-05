@@ -1,6 +1,6 @@
 print('vjz4/module_host.py loading')
 
-from typing import List, Optional
+from typing import Dict, List, Optional
 from operator import attrgetter
 
 if False:
@@ -57,15 +57,23 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 		self.DataNodes = []  # type: List[data_node.NodeInfo]
 		self.Params = []  # type: List[ModuleParamInfo]
 		self.SubModules = []
+		self.Mappings = control_mapping.ModuleControlMap()
 		self.HasBypass = tdu.Dependency(False)
 		self.HasAdvancedParams = tdu.Dependency(False)
-		self.controlsBuilt = False
 		self.SetProgressBar(None)
 
 		# trick pycharm
 		if False:
 			self.par = object()
 			self.storage = {}
+
+	@property
+	def _ControlsBuilt(self):
+		return not self.Params or any(self.ownerComp.ops('controls_panel/par__*'))
+
+	@property
+	def _MappingEditorsBuilt(self):
+		return not self.Params or any(self.ownerComp.ops('mappings_panel/map__*'))
 
 	def OnTDPreSave(self):
 		pass
@@ -282,14 +290,39 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 					parinfo.advanced and {'display': 'parent.ModuleHost.par.Showadvanced'}
 				))
 		dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
-		self.controlsBuilt = True
+
+	def BuildMappingEditors(self, dest):
+		uibuilder = self.UiBuilder
+		for edit in dest.ops('map__*'):
+			edit.destroy()
+		if not self.Module or not uibuilder:
+			return
+		for i, (parname, mapping) in enumerate(self.Mappings.GetAllMappings()):
+			uibuilder.CreateMappingEditor(
+				dest=dest,
+				name='map__' + parname,
+				paramname=parname,
+				ctrltype='slider', #TODO: FIX THIS
+				order=i,
+				nodepos=[100, -100 * i],
+				parvals=_mergedicts(
+					{
+						'Control': mapping.control,
+						'Enabled': mapping.enable,
+					}),
+				parexprs=_mergedicts(
+					{
+						# TODO: BIND WITH EXPRESSIONS!!
+					}
+				))
+		dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
 
 	def UpdateModuleHeight(self):
 		if not self.ownerComp.par.Autoheight:
 			return
 		maxheight = self.ownerComp.par.Maxheight
 		h = self.HeightOfVisiblePanels(self.ownerComp.ops(
-			'module_header', 'nodes_panel', 'controls_panel', 'sub_modules_panel'))
+			'module_header', 'nodes_panel', 'controls_panel', 'sub_modules_panel', 'mappings_panel'))
 		if 0 < maxheight < h:
 			h = maxheight
 		self.ownerComp.par.h = h
@@ -347,6 +380,9 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 			return uibuilder
 		if hasattr(op, 'UiBuilder'):
 			return op.UiBuilder
+
+	def BuildMappingTable(self, dat):
+		self.Mappings.BuildMappingTable(dat)
 
 def FindSubModules(parentComp):
 	if not parentComp:
@@ -428,9 +464,14 @@ class ModuleHost(ModuleHostBase):
 			o.destroy()
 
 	def BuildControlsIfNeeded(self):
-		if self.ownerComp.par.Uimode == 'ctrl' and not self.ownerComp.par.Collapsed:
+		if self.ownerComp.par.Uimode == 'ctrl' and not self.ownerComp.par.Collapsed and not self._ControlsBuilt:
 			controls = self.ownerComp.op('controls_panel')
 			self.BuildControls(controls)
+
+	def BuildMappingEditorsIfNeeded(self):
+		if self.ownerComp.par.Uimode == 'map' and not self.ownerComp.par.Collapsed and not self._MappingEditorsBuilt:
+			panel = self.ownerComp.op('mappings_panel')
+			self.BuildMappingEditors(panel)
 
 	def OnTDPreSave(self):
 		self._ClearControls()
