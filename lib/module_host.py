@@ -57,6 +57,8 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 		self.DataNodes = []  # type: List[data_node.NodeInfo]
 		self.Params = []  # type: List[ModuleParamInfo]
 		self.SubModules = []
+		self.controlsByParam = {}
+		self.paramsByControl = {}
 		self.Mappings = control_mapping.ModuleControlMap()
 		self.HasBypass = tdu.Dependency(False)
 		self.HasAdvancedParams = tdu.Dependency(False)
@@ -202,6 +204,15 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 		self._BuildParamTable(hostcore.op('set_param_table'))
 		self._BuildDataNodeTable(hostcore.op('set_data_nodes'))
 		self._BuildSubModuleTable(hostcore.op('set_sub_module_table'))
+		self._RebuildParamControlTable()
+
+	def _RebuildParamControlTable(self):
+		hostcore = self.ownerComp.op('host_core')
+		ctrltable = hostcore.op('set_param_control_table')
+		ctrltable.clear()
+		ctrltable.appendRow(['name', 'ctrl'])
+		for name, ctrl in self.controlsByParam.items():
+			ctrltable.appendRow([name, ctrl])
 
 	def _FindDataNodes(self):
 		if not self.Module:
@@ -275,7 +286,10 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 		uibuilder = self.UiBuilder
 		for ctrl in dest.ops('par__*'):
 			ctrl.destroy()
+		self.controlsByParam = {}
+		self.paramsByControl = {}
 		if not self.Module or not uibuilder:
+			self._RebuildParamControlTable()
 			return
 		for i, parinfo in enumerate(self.Params):
 			if parinfo.hidden or parinfo.specialtype.startswith('switch.'):
@@ -288,7 +302,13 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 				nodepos=[100, -100 * i],
 				parexprs=_mergedicts(
 					parinfo.advanced and {'display': 'parent.ModuleHost.par.Showadvanced'}
-				))
+				),
+				addtocontrolmap=self.controlsByParam)
+		self.paramsByControl = {
+			name: ctrl
+			for name, ctrl in self.controlsByParam.items()
+		}
+		self._RebuildParamControlTable()
 		dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
 
 	def BuildMappingEditors(self, dest):
@@ -582,6 +602,12 @@ class ModuleChainHost(ModuleHostBase):
 				callback=_subModuleHostParUpdater('Uimode', 'nodes')),
 		]
 		return items
+
+	def BuildControlsIfNeeded(self):
+		if self.ownerComp.par.Uimode == 'ctrl' and not self.ownerComp.par.Collapsed and not self._ControlsBuilt:
+			controls = self.ownerComp.op('controls_panel')
+			self.BuildControls(controls)
+
 
 
 # When the relevant metadata flag is empty/missing in the parameter table,

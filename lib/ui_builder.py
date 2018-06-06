@@ -116,6 +116,7 @@ class UiBuilder:
 					parinfo.style == 'RGBA' and {
 						'alpha': parinfo.createParExpression(index=3),
 					}))
+		sliders = []
 		for i in range(4):
 			slider = ctrl.op('slider{}'.format(i + 1))
 			if i >= n:
@@ -142,6 +143,8 @@ class UiBuilder:
 					}
 				)
 			)
+			sliders.append(slider)
+		return sliders
 
 	def CreateButton(
 			self,
@@ -289,10 +292,28 @@ class UiBuilder:
 			order=None,
 			nodepos=None,
 			parvals=None,
-			parexprs=None):
+			parexprs=None,
+			addtocontrolmap=None):
+
+		def _register(ctrlop):
+			if addtocontrolmap is not None:
+				# print('registering in control map {} -> {}'.format(parinfo.name, ctrlop))
+				addtocontrolmap[parinfo.name] = ctrlop.path
+			else:
+				# print('NOT registering in control map {} -> {}'.format(parinfo.name, ctrlop))
+				pass
+			return ctrlop
+
+		def _registerparts(ctrls):
+			if addtocontrolmap is not None:
+				for i, ctrlop in enumerate(ctrls):
+					# print('registering part in control map {} -> {}'.format(parinfo.parts[i].name, ctrlop))
+					addtocontrolmap[parinfo.parts[i].name] = ctrlop.path
+			return ctrls
+
 		if parinfo.style in ('Float', 'Int') and len(parinfo.parts) == 1:
 			# print('creating slider control for {}'.format(parinfo))
-			return self.CreateParSlider(
+			ctrl = self.CreateParSlider(
 				dest=dest,
 				name=name,
 				parinfo=parinfo,
@@ -306,7 +327,7 @@ class UiBuilder:
 			'UV', 'UVW', 'WH', 'XY', 'XYZ',
 		]:
 			# print('creating multi slider control for {}'.format(parinfo))
-			return self.CreateParMultiSlider(
+			sliders = self.CreateParMultiSlider(
 				dest=dest,
 				name=name,
 				parinfo=parinfo,
@@ -314,9 +335,11 @@ class UiBuilder:
 				nodepos=nodepos,
 				parvals=parvals,
 				parexprs=parexprs)
+			_registerparts(sliders)
+			ctrl = sliders[0].parent()
 		elif parinfo.style == 'Toggle':
 			# print('creating toggle control for {}'.format(parinfo))
-			return self.CreateParToggle(
+			ctrl = self.CreateParToggle(
 				dest=dest,
 				name=name,
 				parinfo=parinfo,
@@ -326,7 +349,7 @@ class UiBuilder:
 				parexprs=parexprs)
 		elif parinfo.style == 'Pulse':
 			# print('creating trigger control for {}'.format(parinfo))
-			return self.CreateParTrigger(
+			ctrl = self.CreateParTrigger(
 				dest=dest,
 				name=name,
 				parinfo=parinfo,
@@ -336,7 +359,7 @@ class UiBuilder:
 				parexprs=parexprs)
 		elif parinfo.style == 'Str' and not parinfo.isnode:
 			# print('creating text field control for plain string {}'.format(parinfo))
-			return self.CreateParTextField(
+			ctrl = self.CreateParTextField(
 				dest=dest,
 				name=name,
 				parinfo=parinfo,
@@ -347,6 +370,7 @@ class UiBuilder:
 		else:
 			print('Unsupported par style: {!r})'.format(parinfo))
 			return None
+		return _register(ctrl)
 
 	def CreateMappingEditor(
 			self,
