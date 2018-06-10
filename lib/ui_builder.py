@@ -4,6 +4,13 @@ if False:
 	from _stubs import *
 	from module_host import ModuleParamInfo
 
+try:
+	import common
+	from common import cleandict, mergedicts
+except ImportError:
+	common = mod.common
+	cleandict, mergedicts = common.cleandict, common.mergedicts
+
 
 class UiBuilder:
 	def __init__(self, ownerComp):
@@ -31,7 +38,7 @@ class UiBuilder:
 			dest=dest,
 			order=order,
 			nodepos=nodepos,
-			parvals=_mergedicts(
+			parvals=mergedicts(
 				label and {'Label': label},
 				helptext and {'Help': helptext},
 				defval is not None and {'Default1': defval},
@@ -41,7 +48,7 @@ class UiBuilder:
 				{'Integer': isint},
 				valueexpr and {'Push1': True},
 				parvals),
-			parexprs=_mergedicts(
+			parexprs=mergedicts(
 				valueexpr and {'Value1': valueexpr},
 				parexprs))
 
@@ -104,10 +111,10 @@ class UiBuilder:
 			preview.par.display = True
 			_UpdateComponent(
 				preview.op('set_color'),
-				parvals=_mergedicts(
+				parvals=mergedicts(
 					parinfo.style != 'RGBA' and {'alpha': 1},
 				),
-				parexprs=_mergedicts(
+				parexprs=mergedicts(
 					{
 						'colorr': parinfo.createParExpression(index=0),
 						'colorg': parinfo.createParExpression(index=1),
@@ -125,7 +132,7 @@ class UiBuilder:
 			part = parinfo.parts[i]
 			_UpdateComponent(
 				slider,
-				parvals=_mergedicts(
+				parvals=mergedicts(
 					{
 						'Label': '{} {}'.format(parinfo.label, suffixes[i]),
 						'Default1': part.default,
@@ -137,7 +144,7 @@ class UiBuilder:
 						'Integer': isint,
 					}
 				),
-				parexprs=_mergedicts(
+				parexprs=mergedicts(
 					{
 						'Value1': parinfo.createParExpression(index=i),
 					}
@@ -167,7 +174,7 @@ class UiBuilder:
 			name=name,
 			order=order,
 			nodepos=nodepos,
-			parvals=_mergedicts(
+			parvals=mergedicts(
 				label and {
 					'Texton': label,
 					'Textoff': label,
@@ -182,7 +189,7 @@ class UiBuilder:
 				behavior and {'Behavior': behavior},
 				valueexpr and {'Push1': True},
 				parvals),
-			parexprs=_mergedicts(
+			parexprs=mergedicts(
 				valueexpr and {'Value1': valueexpr},
 				parexprs))
 
@@ -247,7 +254,7 @@ class UiBuilder:
 			name=name,
 			order=order,
 			nodepos=nodepos,
-			parvals=_mergedicts(
+			parvals=mergedicts(
 				label and {'Label': label},
 				helptext and {'Help': helptext},
 				defval is not None and {'Default1': defval},
@@ -255,7 +262,7 @@ class UiBuilder:
 				{'Type': fieldtype or 'string'},
 				valueexpr and {'Push1': True},
 				parvals),
-			parexprs=_mergedicts(
+			parexprs=mergedicts(
 				valueexpr and {'Value1': valueexpr},
 				parexprs))
 
@@ -388,7 +395,7 @@ class UiBuilder:
 			name=name,
 			order=order,
 			nodepos=nodepos,
-			parvals=_mergedicts(
+			parvals=mergedicts(
 				{
 					'Param': paramname,
 					'Controltype': ctrltype,
@@ -436,11 +443,3 @@ def _CreateFromTemplate(
 		parvals=parvals,
 		parexprs=parexprs)
 	return ctrl
-
-
-def _mergedicts(*parts):
-	x = {}
-	for part in parts:
-		if part:
-			x.update(part)
-	return x

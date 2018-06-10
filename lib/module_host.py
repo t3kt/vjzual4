@@ -1,6 +1,6 @@
 print('vjz4/module_host.py loading')
 
-from typing import Dict, List, Optional
+from typing import List, Optional
 from operator import attrgetter
 
 if False:
@@ -20,8 +20,10 @@ except ImportError:
 
 try:
 	import common
+	from common import cleandict, mergedicts
 except ImportError:
 	common = mod.common
+	cleandict, mergedicts = common.cleandict, common.mergedicts
 
 try:
 	import control_mapping
@@ -300,7 +302,7 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 				parinfo=parinfo,
 				order=i,
 				nodepos=[100, -100 * i],
-				parexprs=_mergedicts(
+				parexprs=mergedicts(
 					parinfo.advanced and {'display': 'parent.ModuleHost.par.Showadvanced'}
 				),
 				addtocontrolmap=self.controlsByParam)
@@ -325,12 +327,12 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 				ctrltype='slider', #TODO: FIX THIS
 				order=i,
 				nodepos=[100, -100 * i],
-				parvals=_mergedicts(
+				parvals=mergedicts(
 					{
 						'Control': mapping.control,
 						'Enabled': mapping.enable,
 					}),
-				parexprs=_mergedicts(
+				parexprs=mergedicts(
 					{
 						# TODO: BIND WITH EXPRESSIONS!!
 					}
@@ -431,23 +433,6 @@ def _editComp(comp):
 	editor = _getActiveEditor()
 	if editor:
 		editor.owner = comp
-
-def _mergedicts(*parts):
-	x = {}
-	for part in parts:
-		if part:
-			x.update(part)
-	return x
-
-def _stripdict(d):
-	if not d:
-		return {}
-	return {
-		key: val
-		for key, val in d.items()
-		if val is not None
-	}
-
 
 def _parseAttributeTable(dat):
 	dat = op(dat)
@@ -639,7 +624,7 @@ class ModuleParamInfo:
 				specialtype = 'node.v'
 			elif par.style == 'CHOP':
 				specialtype = 'node.a'
-			elif par.isOP and par.style != 'DAT':
+			elif par.style in ('COMP', 'PanelCOMP', 'OBJ'):
 				specialtype = 'node'
 
 		if label.startswith('.') or label.startswith('+'):
@@ -704,7 +689,7 @@ class ModuleParamInfo:
 		return 'op({!r}).par.{}'.format(self.modpath, self.parts[index].name)
 
 	def __repr__(self):
-		return 'ParamInfo({!r})'.format(_stripdict({
+		return 'ParamInfo({!r})'.format(cleandict({
 			'name': self.name,
 			'style': self.style,
 			'modpath': self.modpath,
