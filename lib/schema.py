@@ -1,4 +1,4 @@
-from typing import List, Dict
+from typing import List, Dict, Tuple
 
 print('vjz4/schema.py loading')
 
@@ -7,23 +7,23 @@ if False:
 
 try:
 	import common
-	from common import cleandict, mergedicts
+	from common import cleandict, excludekeys, mergedicts
 except ImportError:
 	common = mod.common
-	cleandict, mergedicts = common.cleandict, common.mergedicts
+	cleandict, excludekeys, mergedicts = common.cleandict, common.excludekeys, common.mergedicts
 
 
-class _BaseRawInfo:
+class BaseRawInfo:
 	def __init__(self, **otherattrs):
 		self.otherattrs = otherattrs
 
-	def ToJsonDict(self):
+	def ToJsonDict(self) -> dict:
 		raise NotImplementedError()
 
 	def __repr__(self):
 		return '{}({!r})'.format(self.__class__.__name__, self.ToJsonDict())
 
-class RawAppInfo(_BaseRawInfo):
+class RawAppInfo(BaseRawInfo):
 	def __init__(
 			self,
 			name=None,
@@ -37,22 +37,34 @@ class RawAppInfo(_BaseRawInfo):
 		self.path = path
 		self.modpaths = modpaths  # type: List[str]
 
+	@classmethod
+	def FromJsonDict(cls, obj):
+		return cls(**obj)
+
+	tablekeys = [
+		'name',
+		'label',
+		'path',
+	]
+
 	def ToJsonDict(self):
 		return cleandict(mergedicts(self.otherattrs, {
 			'name': self.name,
 			'label': self.label,
-			'page': self.path,
+			'path': self.path,
 			'modpaths': self.modpaths,
 			'otherattrs': cleandict(self.otherattrs),
 		}))
 
-class RawParamInfo(_BaseRawInfo):
+class RawParamInfo(BaseRawInfo):
 	def __init__(
 			self,
 			name=None,
+			tupletname=None,
 			label=None,
 			style=None,
 			order=None,
+			vecindex=None,
 			pagename=None,
 			pageindex=None,
 			minlimit=None,
@@ -66,9 +78,11 @@ class RawParamInfo(_BaseRawInfo):
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.name = name
+		self.tupletname = tupletname
 		self.label = label
 		self.style = style
 		self.order = order
+		self.vecindex = vecindex
 		self.pagename = pagename
 		self.pageindex = pageindex
 		self.minlimit = minlimit
@@ -80,12 +94,37 @@ class RawParamInfo(_BaseRawInfo):
 		self.maxnorm = maxnorm
 		self.startsection = startsection
 
+	@classmethod
+	def FromJsonDict(cls, obj):
+		return cls(**obj)
+
+	tablekeys = [
+		'name',
+		'tupletname',
+		'label',
+		'style',
+		'order',
+		'vecindex',
+		'pagename',
+		'pageindex',
+		'minlimit',
+		'maxlimit',
+		'minnorm',
+		'maxnorm',
+		'default',
+		'menunames',
+		'menulabels',
+		'startsection',
+	]
+
 	def ToJsonDict(self):
 		return cleandict(mergedicts(self.otherattrs, {
 			'name': self.name,
+			'tupletname': self.tupletname,
 			'label': self.label,
 			'style': self.style,
 			'order': self.order,
+			'vecindex': self.vecindex,
 			'pagename': self.pagename,
 			'pageindex': self.pageindex,
 			'minlimit': self.minlimit,
@@ -99,7 +138,7 @@ class RawParamInfo(_BaseRawInfo):
 			'otherattrs': cleandict(self.otherattrs),
 		}))
 
-class RawModuleInfo(_BaseRawInfo):
+class RawModuleInfo(BaseRawInfo):
 	def __init__(
 			self,
 			path=None,
@@ -116,9 +155,31 @@ class RawModuleInfo(_BaseRawInfo):
 		self.label = label
 		self.parentpath = parentpath
 		self.childmodpaths = childmodpaths  # type: List[str]
-		self.partuplets = partuplets or []  # type: List[RawParamInfo]
+		self.partuplets = partuplets or []  # type: List[Tuple[RawParamInfo]]
 		self.parattrs = parattrs or {}  # type: Dict[Dict[str, str]]
 		# TODO: data nodes
+
+	@classmethod
+	def FromJsonDict(cls, obj):
+		DBGINFO['modobj'] = dict(obj)
+		partuplets = obj.get('partuplets')
+		DBGINFO['partuplets'] = partuplets
+		return cls(
+			partuplets=[
+				[
+					[RawParamInfo.FromJsonDict(pobj) for pobj in tobj]
+					for tobj in (partuplets or [])
+				]
+			],
+			**excludekeys(obj, ['partuplets'])
+		)
+
+	tablekeys = [
+		'path',
+		'name',
+		'label',
+		'parentpath',
+	]
 
 	def ToJsonDict(self):
 		return cleandict(mergedicts(self.otherattrs, {
@@ -127,8 +188,11 @@ class RawModuleInfo(_BaseRawInfo):
 			'label': self.label,
 			'parentpath': self.parentpath,
 			'childmodpaths': self.childmodpaths,
-			'partuplets': self.partuplets and [p.ToJsonDict() for p in self.partuplets],
+			'partuplets': self.partuplets and [
+				[p.ToJsonDict() for p in t] for t in self.partuplets
+			],
 			'parattrs': self.parattrs,
 			'otherattrs': cleandict(self.otherattrs),
 		}))
 
+DBGINFO = {}

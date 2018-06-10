@@ -1,5 +1,5 @@
 import json
-from typing import Dict
+from typing import Dict, List, Tuple
 
 print('vjz4/remote_client.py loading')
 
@@ -35,14 +35,26 @@ class RemoteClient(remote.RemoteBase):
 			})
 		self._AutoInitActionParams()
 		self.AppInfo = None  # type: schema.RawAppInfo
-		self.ModuleInfos = None  # type: Dict[str, schema.RawModuleInfo]
+		self.ModuleInfos = {}  # type: Dict[str, schema.RawModuleInfo]
 		self.moduleQueryQueue = None
+
+	def Detach(self):
+		self._LogBegin('Detach()')
+		try:
+			self.Connected.val = False
+			self.AppInfo = None
+			self.ModuleInfos = {}
+			self.moduleQueryQueue = None
+			self._BuildAppInfoTable()
+			self._ClearModuleTable()
+			self._ClearParamTable()
+		finally:
+			self._LogEnd('Detach()')
 
 	def Connect(self):
 		self._LogBegin('Connect()')
 		try:
-			self.Connected.val = False
-			self.moduleQueryQueue = None
+			self.Detach()
 			self.Connection.SendCommand('connect', {
 				'version': 1,
 				'clientAddress': 'foooooo',
@@ -74,8 +86,9 @@ class RemoteClient(remote.RemoteBase):
 			parsedarg = json.loads(arg) if arg else None
 			if not parsedarg:
 				raise Exception('No app info!')
-			appinfo = schema.RawAppInfo(**parsedarg)
+			appinfo = schema.RawAppInfo.FromJsonDict(parsedarg)
 			self.AppInfo = appinfo
+			self._BuildAppInfoTable()
 
 			if appinfo.modpaths:
 				self.moduleQueryQueue += appinfo.modpaths
@@ -84,6 +97,36 @@ class RemoteClient(remote.RemoteBase):
 			pass
 		finally:
 			self._LogEnd('_OnReceiveAppInfo()')
+
+	def _BuildAppInfoTable(self):
+		dat = self.ownerComp.op('set_app_info')
+		dat.clear()
+		if self.AppInfo:
+			for key, val in self.AppInfo.ToJsonDict().items():
+				if not isinstance(val, (list, tuple, dict)):
+					dat.appendRow([key, val])
+
+	def _ClearModuleTable(self):
+		dat = self.ownerComp.op('set_modules')
+		dat.clear()
+		dat.appendRow(schema.RawModuleInfo.tablekeys)
+
+	def _ClearParamTable(self):
+		dat = self.ownerComp.op('set_params')
+		dat.clear()
+		dat.appendRow(['key', 'modpath'] + schema.RawParamInfo.tablekeys)
+
+	def _AddParamsToTable(self, modpath, partuplets: List[Tuple[schema.RawParamInfo]]):
+		if not partuplets:
+			return
+		dat = self.ownerComp.op('set_params')
+		for partuplet in partuplets:
+			for parinfo in partuplet:
+				_AddRawInfoRow(
+					dat,
+					key=modpath + ':' + parinfo.name,
+					info=parinfo,
+					attrs={'modpath': modpath})
 
 	def QueryModule(self, modpath):
 		self._LogBegin('QueryModule({})'.format(modpath))
@@ -100,9 +143,11 @@ class RemoteClient(remote.RemoteBase):
 			parsedarg = json.loads(arg) if arg else None
 			if not parsedarg:
 				raise Exception('No app info!')
-			modinfo = schema.RawModuleInfo(**parsedarg)
+			modinfo = schema.RawModuleInfo.FromJsonDict(parsedarg)
 			self._LogEvent('module info: {!r}'.format(modinfo))
 			self.ModuleInfos[modinfo.path] = modinfo
+			_AddRawInfoRow(self.ownerComp.op('set_modules'), info=modinfo, key=modinfo.path)
+			self._AddParamsToTable(modinfo.path, modinfo.partuplets)
 
 			if self.moduleQueryQueue:
 				nextpath = self.moduleQueryQueue.pop(0)
@@ -112,3 +157,20 @@ class RemoteClient(remote.RemoteBase):
 			# TODO ....
 		finally:
 			self._LogEnd('_OnReceiveModuleInfo()')
+
+def _AddRawInfoRow(dat, key=None, info: schema.BaseRawInfo=None, attrs=None):
+	if key is None:
+		key = dat.numRows
+		dat.appendRow([])
+	elif dat.cell(key, 0) is None:
+		dat.appendRow([key])
+	obj = info.ToJsonDict() if info else None
+	if not attrs:
+		attrs = {}
+	for col in dat.row(0):
+		val = None
+		if attrs:
+			val = attrs.get(col.val)
+		if val is None and obj:
+			val = obj.get(col.val)
+		dat[key, col] = val if val is not None else ''

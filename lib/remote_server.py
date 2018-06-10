@@ -87,9 +87,10 @@ class RemoteServer(remote.RemoteBase):
 		finally:
 			self._LogEnd('SendAppInfo')
 
-	def _BuildModuleInfo(self, modpath) -> schema.RawModuleInfo:
-		self._LogBegin('_BuildModuleInfo({!r})'.format(modpath))
+	def _BuildModuleInfo(self, rawmodpath) -> schema.RawModuleInfo:
+		self._LogBegin('_BuildModuleInfo({!r})'.format(rawmodpath))
 		try:
+			modpath = json.loads(rawmodpath)
 			module = self.ownerComp.op(modpath)
 			if not module:
 				raise Exception('Module not found: {}'.format(modpath))
@@ -100,7 +101,10 @@ class RemoteServer(remote.RemoteBase):
 				name=module.name,
 				label=str(getattr(module.par, 'Uilabel', None) or getattr(module.par, 'Label', None) or '') or None,
 				childmodpaths=[c.path for c in submods],
-				partuplets=None,
+				partuplets=[
+					[self._BuildParamInfo(p) for p in t]
+					for t in module.customTuplets
+				],
 				parattrs=None,
 			)
 			return modinfo
@@ -115,4 +119,23 @@ class RemoteServer(remote.RemoteBase):
 		finally:
 			self._LogEnd('SendModuleInfo()')
 
-
+	@staticmethod
+	def _BuildParamInfo(par):
+		return schema.RawParamInfo(
+			name=par.name,
+			tupletname=par.tupletName,
+			label=par.label,
+			style=par.style,
+			order=par.order,
+			vecindex=par.vecIndex,
+			pagename=par.page.name,
+			pageindex=par.page.index,
+			minlimit=par.min if par.clampMin else None,
+			maxlimit=par.max if par.clampMax else None,
+			minnorm=par.normMin,
+			maxnorm=par.normMax,
+			default=par.default,
+			menunames=par.menuNames,
+			menulabels=par.menuLabels,
+			startsection=par.startSection,
+		)

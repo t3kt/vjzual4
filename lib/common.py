@@ -100,3 +100,12 @@ def mergedicts(*parts):
 		if part:
 			x.update(part)
 	return x
+
+def excludekeys(d, keys):
+	if not d:
+		return {}
+	return {
+		key: val
+		for key, val in d.items()
+		if key not in keys
+	}
