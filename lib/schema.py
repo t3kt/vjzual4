@@ -38,13 +38,13 @@ class RawAppInfo(_BaseRawInfo):
 		self.modpaths = modpaths  # type: List[str]
 
 	def ToJsonDict(self):
-		return cleandict({
+		return cleandict(mergedicts(self.otherattrs, {
 			'name': self.name,
 			'label': self.label,
 			'page': self.path,
 			'modpaths': self.modpaths,
 			'otherattrs': cleandict(self.otherattrs),
-		})
+		}))
 
 class RawParamInfo(_BaseRawInfo):
 	def __init__(
@@ -81,7 +81,7 @@ class RawParamInfo(_BaseRawInfo):
 		self.startsection = startsection
 
 	def ToJsonDict(self):
-		return cleandict({
+		return cleandict(mergedicts(self.otherattrs, {
 			'name': self.name,
 			'label': self.label,
 			'style': self.style,
@@ -97,7 +97,7 @@ class RawParamInfo(_BaseRawInfo):
 			'menulabels': self.menulabels,
 			'startsection': self.startsection,
 			'otherattrs': cleandict(self.otherattrs),
-		})
+		}))
 
 class RawModuleInfo(_BaseRawInfo):
 	def __init__(
@@ -121,7 +121,7 @@ class RawModuleInfo(_BaseRawInfo):
 		# TODO: data nodes
 
 	def ToJsonDict(self):
-		return cleandict({
+		return cleandict(mergedicts(self.otherattrs, {
 			'path': self.path,
 			'name': self.name,
 			'label': self.label,
@@ -130,5 +130,5 @@ class RawModuleInfo(_BaseRawInfo):
 			'partuplets': self.partuplets and [p.ToJsonDict() for p in self.partuplets],
 			'parattrs': self.parattrs,
 			'otherattrs': cleandict(self.otherattrs),
-		})
+		}))
 
