@@ -1,4 +1,5 @@
 import json
+from typing import Dict
 
 print('vjz4/remote_client.py loading')
 
@@ -30,13 +31,18 @@ class RemoteClient(remote.RemoteBase):
 			handlers={
 				'confirmConnect': self._OnConfirmConnect,
 				'appInfo': self._OnReceiveAppInfo,
+				'modInfo': self._OnReceiveModuleInfo,
 			})
 		self._AutoInitActionParams()
+		self.AppInfo = None  # type: schema.RawAppInfo
+		self.ModuleInfos = None  # type: Dict[str, schema.RawModuleInfo]
+		self.moduleQueryQueue = None
 
 	def Connect(self):
 		self._LogBegin('Connect()')
 		try:
 			self.Connected.val = False
+			self.moduleQueryQueue = None
 			self.Connection.SendCommand('connect', {
 				'version': 1,
 				'clientAddress': 'foooooo',
@@ -61,11 +67,48 @@ class RemoteClient(remote.RemoteBase):
 			self._LogEnd('QueryApp()')
 
 	def _OnReceiveAppInfo(self, arg):
-		parsedarg = arg and json.loads(arg)
-		if not parsedarg:
-			raise Exception('No app info!')
-		appinfo = schema.RawAppInfo.FromJsonDict(parsedarg)
+		self._LogBegin('_OnReceiveAppInfo({!r})'.format(arg))
+		self.moduleQueryQueue = []
+		self.ModuleInfos = {}
+		try:
+			parsedarg = json.loads(arg) if arg else None
+			if not parsedarg:
+				raise Exception('No app info!')
+			appinfo = schema.RawAppInfo(**parsedarg)
+			self.AppInfo = appinfo
 
-		# TODO: confirm
+			if appinfo.modpaths:
+				self.moduleQueryQueue += appinfo.modpaths
+				self.QueryModule(self.moduleQueryQueue.pop(0))
 		# TODO ....
-		pass
+			pass
+		finally:
+			self._LogEnd('_OnReceiveAppInfo()')
+
+	def QueryModule(self, modpath):
+		self._LogBegin('QueryModule({})'.format(modpath))
+		try:
+			if not self.Connected:
+				return
+			self.Connection.SendCommand('queryMod', modpath)
+		finally:
+			self._LogEnd('QueryModule()')
+
+	def _OnReceiveModuleInfo(self, arg):
+		self._LogBegin('_OnReceiveModuleInfo({!r})'.format(arg))
+		try:
+			parsedarg = json.loads(arg) if arg else None
+			if not parsedarg:
+				raise Exception('No app info!')
+			modinfo = schema.RawModuleInfo(**parsedarg)
+			self._LogEvent('module info: {!r}'.format(modinfo))
+			self.ModuleInfos[modinfo.path] = modinfo
+
+			if self.moduleQueryQueue:
+				nextpath = self.moduleQueryQueue.pop(0)
+				self._LogEvent('continuing to next module: {}'.format(nextpath))
+				self.QueryModule(nextpath)
+			# TODO: confirm
+			# TODO ....
+		finally:
+			self._LogEnd('_OnReceiveModuleInfo()')

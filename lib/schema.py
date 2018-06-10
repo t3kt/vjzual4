@@ -14,10 +14,6 @@ except ImportError:
 
 
 class _BaseRawInfo:
-	@classmethod
-	def FromJsonDict(cls, d: dict):
-		return cls(**d)
-
 	def __init__(self, **otherattrs):
 		self.otherattrs = otherattrs
 
@@ -33,20 +29,20 @@ class RawAppInfo(_BaseRawInfo):
 			name=None,
 			label=None,
 			path=None,
-			childmodpaths=None,
+			modpaths=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.name = name
 		self.label = label
 		self.path = path
-		self.childmodpaths = childmodpaths  # type: List[str]
+		self.modpaths = modpaths  # type: List[str]
 
 	def ToJsonDict(self):
 		return cleandict({
 			'name': self.name,
 			'label': self.label,
 			'page': self.path,
-			'childmodpaths': self.childmodpaths,
+			'modpaths': self.modpaths,
 			'otherattrs': cleandict(self.otherattrs),
 		})
 

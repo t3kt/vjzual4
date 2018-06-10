@@ -29,7 +29,7 @@ class RemoteServer(remote.RemoteBase):
 			handlers={
 				'connect': self._OnConnect,
 				'queryApp': lambda _: self.SendAppInfo(),
-				'queryModule': self.SendModuleInfo,
+				'queryMod': self.SendModuleInfo,
 			})
 		self._AutoInitActionParams()
 		self.AppRoot = None
@@ -37,7 +37,7 @@ class RemoteServer(remote.RemoteBase):
 	def _OnConnect(self, arg):
 		self._LogBegin('Connect({!r})'.format(arg))
 		try:
-			remoteinfo = arg and json.loads(arg)
+			remoteinfo = json.loads(arg) if arg else None
 			if not remoteinfo:
 				raise Exception('No remote info!')
 			# TODO: check version
@@ -47,7 +47,7 @@ class RemoteServer(remote.RemoteBase):
 		finally:
 			self._LogEnd('Connect()')
 
-	def _BuildAppInfo(self) -> schema.RawAppInfo:
+	def _BuildAppInfo(self):
 		self._LogBegin('_BuildAppInfo()')
 		try:
 			self.AppRoot = self.ownerComp.par.Approot.eval()
@@ -57,43 +57,61 @@ class RemoteServer(remote.RemoteBase):
 				name=str(getattr(self.AppRoot.par, 'Appname', None) or self.ownerComp.par.Appname or project.name),
 				label=str(getattr(self.AppRoot.par, 'Uilabel', None) or getattr(self.AppRoot.par, 'Label', None) or self.ownerComp.par.Applabel),
 				path=self.AppRoot.path,
-				childmodpaths=[m.path for m in self._FindSubModules(self.AppRoot)],
+				modpaths=[m.path for m in self._FindSubModules(self.AppRoot, recursive=True, sort=False)],
 			)
 		finally:
 			self._LogEnd('_BuildAppInfo()')
 
 	@staticmethod
-	def _FindSubModules(parentComp):
+	def _FindSubModules(parentComp, recursive=False, sort=True):
 		if not parentComp:
 			return []
-		submodules = parentComp.findChildren(tags=['vjzmod4', 'tmod'], maxDepth=1)
-		if all(hasattr(m.par, 'alignorder') for m in submodules):
-			submodules.sort(key=attrgetter('par.alignorder'))
-		else:
-			distx = abs(max(m.nodeX for m in submodules) - min(m.nodeX for m in submodules))
-			disty = abs(max(m.nodeY for m in submodules) - min(m.nodeY for m in submodules))
-			if distx > disty:
-				submodules.sort(key=attrgetter('nodeX'))
+		submodules = parentComp.findChildren(type=COMP, tags=['vjzmod4', 'tmod'], maxDepth=None if recursive else 1)
+		if sort:
+			if all(hasattr(m.par, 'alignorder') for m in submodules):
+				submodules.sort(key=attrgetter('par.alignorder'))
 			else:
-				submodules.sort(key=attrgetter('nodeY'))
+				distx = abs(max(m.nodeX for m in submodules) - min(m.nodeX for m in submodules))
+				disty = abs(max(m.nodeY for m in submodules) - min(m.nodeY for m in submodules))
+				if distx > disty:
+					submodules.sort(key=attrgetter('nodeX'))
+				else:
+					submodules.sort(key=attrgetter('nodeY'))
 		return submodules
 
 	def SendAppInfo(self):
 		self._LogBegin('SendAppInfo()')
 		try:
 			appinfo = self._BuildAppInfo()
-			self.Connection.SendCommand('appInfo', json.dumps(appinfo.ToJsonDict()))
+			self.Connection.SendCommand('appInfo', appinfo.ToJsonDict())
 		finally:
 			self._LogEnd('SendAppInfo')
 
 	def _BuildModuleInfo(self, modpath) -> schema.RawModuleInfo:
-		raise NotImplementedError()
+		self._LogBegin('_BuildModuleInfo({!r})'.format(modpath))
+		try:
+			module = self.ownerComp.op(modpath)
+			if not module:
+				raise Exception('Module not found: {}'.format(modpath))
+			submods = self._FindSubModules(module)
+			modinfo = schema.RawModuleInfo(
+				path=modpath,
+				parentpath=module.parent().path,
+				name=module.name,
+				label=str(getattr(module.par, 'Uilabel', None) or getattr(module.par, 'Label', None) or '') or None,
+				childmodpaths=[c.path for c in submods],
+				partuplets=None,
+				parattrs=None,
+			)
+			return modinfo
+		finally:
+			self._LogEnd('_BuildModuleInfo()')
 
 	def SendModuleInfo(self, modpath):
 		self._LogBegin('SendModuleInfo({!r})'.format(modpath))
 		try:
 			modinfo = self._BuildModuleInfo(modpath)
-			self.Connection.SendCommand('moduleInfo', json.dumps(modinfo.ToJsonDict()))
+			self.Connection.SendCommand('modInfo', modinfo.ToJsonDict())
 		finally:
 			self._LogEnd('SendModuleInfo()')
 

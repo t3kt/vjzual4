@@ -50,11 +50,12 @@ class RemoteConnection(common.ExtensionBase):
 			self.SendRawCommandMessages('!' + command + ':' + json.dumps(arg))
 
 	def RouteCommandMessage(self, message, peer):
-		self._LogBegin('RouteCommandMessage({!r}, {!r})'.format(message, peer))
+		command, arg = _ParseCommandMessage(message)
+		if not command:
+			self._LogEvent('RouteCommandMessage(raw: {!r})'.format(message))
+			return
+		self._LogBegin('RouteCommandMessage({!r}, {!r})'.format(command, arg))
 		try:
-			command, arg = _ParseCommandMessage(message)
-			if not command:
-				return
 			self._LogCommand(command, arg)
 			if not self._commandhandler:
 				# TODO: buffer commands received before handler set up?
@@ -66,7 +67,6 @@ class RemoteConnection(common.ExtensionBase):
 	def _LogCommand(self, command, arg):
 		if self.ownerComp.par.Logcommands:
 			self._commandlog.appendRow([command, arg or ''])
-		print(self.ownerComp, 'Received command', command, arg)
 
 
 def _ParseCommandMessage(message: str):

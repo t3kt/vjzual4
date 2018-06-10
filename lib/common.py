@@ -7,7 +7,7 @@ if False:
 
 def Log(msg, file=None):
 	print(
-		'[%s]' % datetime.datetime.now().strftime('%m.%d %H:%M:%S'),
+		#'[%s]' % datetime.datetime.now().strftime('%m.%d %H:%M:%S'),
 		msg,
 		file=file)
 
@@ -29,9 +29,11 @@ class IndentedLogger:
 
 	def LogEvent(self, path, opid, event):
 		if not path and not opid:
-			Log('%s %s' % (self._indentStr, event), file=self._outFile)
+			Log('%s%s' % (self._indentStr, event), file=self._outFile)
+		elif not opid:
+			Log('%s%s (%s)' % (self._indentStr, event, path or ''), file=self._outFile)
 		else:
-			Log('%s [%s] %s (%s)' % (self._indentStr, opid or '', event, path or ''), file=self._outFile)
+			Log('%s[%s] %s (%s)' % (self._indentStr, opid or '', event, path or ''), file=self._outFile)
 
 	def LogBegin(self, path, opid, event):
 		self.LogEvent(path, opid, event)
