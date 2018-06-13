@@ -333,3 +333,16 @@ class ModuleSchema(BaseSchemaNode):
 class SchemaProvider:
 	def GetModuleSchema(self, modpath) -> Optional[ModuleSchema]:
 		raise NotImplementedError()
+
+	@staticmethod
+	def _ParseParamLabel(label):
+		attrs = {
+			'hidden': label.startswith('.'),
+			'advanced': label.startswith('+'),
+			'isnode': label.endswith('~'),
+		}
+		if label.startswith('.') or label.startswith('+'):
+			label = label[1:]
+		if label.endswith('~'):
+			label = label[:-1]
+		return label, attrs

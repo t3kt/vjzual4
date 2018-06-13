@@ -622,18 +622,18 @@ class _LocalSchemaProvider(schema.SchemaProvider):
 			path=m.path,
 			params=params)
 
-	@staticmethod
-	def _GetParamSchema(partuplet, attrs=None) -> Optional[schema.ParamSchema]:
+	def _GetParamSchema(self, partuplet, attrs=None) -> Optional[schema.ParamSchema]:
 		attrs = attrs or {}
 		par = partuplet[0]
 		page = par.pagename
 		label = par.label
-		hidden = attrs['hidden'] == '1' if ('hidden' in attrs and attrs['hidden'] != '') else label.startswith('.')
-		advanced = attrs['advanced'] == '1' if ('advanced' in attrs and attrs['advanced'] != '') else label.startswith('+')
+		label, labelattrs = self._ParseParamLabel(label)
+		hidden = attrs['hidden'] == '1' if (attrs.get('hidden') not in ('', None)) else labelattrs.get('hidden', False)
+		advanced = attrs['advanced'] == '1' if (attrs.get('advanced') not in ('', None)) else labelattrs.get('advanced', False)
 		mappable = attrs.get('mappable')
 		specialtype = attrs.get('specialtype')
 		if not specialtype:
-			if label.endswith('~'):
+			if labelattrs.get('isnode'):
 				specialtype = 'node'
 			elif par.style == 'TOP':
 				specialtype = 'node.v'
@@ -642,17 +642,14 @@ class _LocalSchemaProvider(schema.SchemaProvider):
 			elif par.style in ('COMP', 'PanelCOMP', 'OBJ'):
 				specialtype = 'node'
 
-		if label.startswith('.') or label.startswith('+'):
-			label = label[1:]
-		if label.endswith('~'):
-			label = label[:-1]
 		label = attrs.get('label') or label
 
 		if page.startswith(':') or label.startswith(':'):
 			return None
 
 		if mappable is None:
-			mappable = (not advanced) and par.style in ('Float', 'Int', 'UV', 'UVW', 'XY', 'XYZ', 'RGB', 'RGBA', 'Toggle', 'Pulse')
+			mappable = (not advanced) and par.style in (
+				'Float', 'Int', 'UV', 'UVW', 'XY', 'XYZ', 'RGB', 'RGBA', 'Toggle', 'Pulse')
 
 		# backwards compatibility with vjzual3
 		if page == 'Module' and par.name in (
