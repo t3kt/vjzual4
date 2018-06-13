@@ -166,10 +166,8 @@ class RawModuleInfo(BaseRawInfo):
 		DBGINFO['partuplets'] = partuplets
 		return cls(
 			partuplets=[
-				[
-					[RawParamInfo.FromJsonDict(pobj) for pobj in tobj]
-					for tobj in (partuplets or [])
-				]
+				[RawParamInfo.FromJsonDict(pobj) for pobj in tobj]
+				for tobj in (partuplets or [])
 			],
 			**excludekeys(obj, ['partuplets'])
 		)

@@ -8,8 +8,10 @@ if False:
 
 try:
 	import common
+	from common import mergedicts
 except ImportError:
 	common = mod.common
+	mergedicts = common.mergedicts
 
 try:
 	import remote
@@ -124,9 +126,11 @@ class RemoteClient(remote.RemoteBase):
 			for parinfo in partuplet:
 				_AddRawInfoRow(
 					dat,
-					key=modpath + ':' + parinfo.name,
 					info=parinfo,
-					attrs={'modpath': modpath})
+					attrs={
+						'key': modpath + ':' + parinfo.name,
+						'modpath': modpath
+					})
 
 	def QueryModule(self, modpath):
 		self._LogBegin('QueryModule({})'.format(modpath))
@@ -146,7 +150,7 @@ class RemoteClient(remote.RemoteBase):
 			modinfo = schema.RawModuleInfo.FromJsonDict(parsedarg)
 			self._LogEvent('module info: {!r}'.format(modinfo))
 			self.ModuleInfos[modinfo.path] = modinfo
-			_AddRawInfoRow(self.ownerComp.op('set_modules'), info=modinfo, key=modinfo.path)
+			_AddRawInfoRow(self.ownerComp.op('set_modules'), info=modinfo)
 			self._AddParamsToTable(modinfo.path, modinfo.partuplets)
 
 			if self.moduleQueryQueue:
@@ -158,19 +162,10 @@ class RemoteClient(remote.RemoteBase):
 		finally:
 			self._LogEnd('_OnReceiveModuleInfo()')
 
-def _AddRawInfoRow(dat, key=None, info: schema.BaseRawInfo=None, attrs=None):
-	if key is None:
-		key = dat.numRows
-		dat.appendRow([])
-	elif dat.cell(key, 0) is None:
-		dat.appendRow([key])
+def _AddRawInfoRow(dat, info: schema.BaseRawInfo=None, attrs=None):
 	obj = info.ToJsonDict() if info else None
-	if not attrs:
-		attrs = {}
-	for col in dat.row(0):
-		val = None
-		if attrs:
-			val = attrs.get(col.val)
-		if val is None and obj:
-			val = obj.get(col.val)
-		dat[key, col] = val if val is not None else ''
+	attrs = mergedicts(obj, attrs)
+	dat.appendRow([
+		attrs.get(col.val, '')
+		for col in dat.row(0)
+	])
