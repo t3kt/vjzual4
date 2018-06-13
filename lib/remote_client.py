@@ -57,8 +57,8 @@ class RemoteClient(remote.RemoteBase):
 			self.Detach()
 			self.Connection.SendCommand('connect', {
 				'version': 1,
-				'clientAddress': 'foooooo',
-				'commandResponsePort': 9999,
+				'clientAddress': self.ownerComp.par.Localaddress.eval() or self.ownerComp.par.Localaddress.default,
+				'commandResponsePort': self.ownerComp.par.Commandreceiveport.eval(),
 				'oscClientSendPort': 8888,
 				'oscClientReceivePort': 7777,
 			})

@@ -41,7 +41,9 @@ class RemoteServer(remote.RemoteBase):
 			if not remoteinfo:
 				raise Exception('No remote info!')
 			# TODO: check version
-			# TODO: apply connection settings
+			self.ownerComp.par.Address = remoteinfo.get('clientAddress') or self.ownerComp.par.Address.default
+			self.ownerComp.par.Commandsendport = remoteinfo.get('commandResponsePort') or self.ownerComp.par.Commandsendport.default
+			# TODO: apply connection settings (OSC)
 			self.Connected.val = True
 			self.Connection.SendCommand('confirmConnect')
 		finally:

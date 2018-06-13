@@ -27,15 +27,12 @@ class CommandHandler:
 		print('Unsupported command: ', command, arg, peer)
 
 class RemoteConnection(common.ExtensionBase):
-	def __init__(self, ownerComp):
+	def __init__(self, ownerComp, commandhandler=None):
 		super().__init__(ownerComp)
 		self._sendport = ownerComp.op('send_command_tcpip')
 		self._recvport = ownerComp.op('receive_command_tcpip')
 		self._commandlog = ownerComp.op('command_log')
-		self._commandhandler = None  # type: CommandHandler
-
-	def SetCommandHandler(self, handler: CommandHandler):
-		self._commandhandler = handler
+		self._commandhandler = commandhandler  # type: CommandHandler
 
 	def SendRawCommandMessages(
 			self,
@@ -89,6 +86,5 @@ class RemoteBase(common.ExtensionBase, common.ActionsExt, CommandHandler):
 		common.ActionsExt.__init__(self, ownerComp, actions)
 		CommandHandler.__init__(self, handlers)
 		self.Connection = ownerComp.op('connection')  # type: RemoteConnection
-		self.Connection.SetCommandHandler(self)
 		self.Connected = tdu.Dependency(False)
 
