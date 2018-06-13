@@ -162,7 +162,7 @@ class RemoteClient(remote.RemoteBase):
 		finally:
 			self._LogEnd('_OnReceiveModuleInfo()')
 
-def _AddRawInfoRow(dat, info: schema.BaseRawInfo=None, attrs=None):
+def _AddRawInfoRow(dat, info: schema.BaseSchemaNode=None, attrs=None):
 	obj = info.ToJsonDict() if info else None
 	attrs = mergedicts(obj, attrs)
 	dat.appendRow([

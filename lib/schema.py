@@ -1,4 +1,4 @@
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 
 print('vjz4/schema.py loading')
 
@@ -13,7 +13,7 @@ except ImportError:
 	cleandict, excludekeys, mergedicts = common.cleandict, common.excludekeys, common.mergedicts
 
 
-class BaseRawInfo:
+class BaseSchemaNode:
 	def __init__(self, **otherattrs):
 		self.otherattrs = otherattrs
 
@@ -23,7 +23,7 @@ class BaseRawInfo:
 	def __repr__(self):
 		return '{}({!r})'.format(self.__class__.__name__, self.ToJsonDict())
 
-class RawAppInfo(BaseRawInfo):
+class RawAppInfo(BaseSchemaNode):
 	def __init__(
 			self,
 			name=None,
@@ -53,10 +53,9 @@ class RawAppInfo(BaseRawInfo):
 			'label': self.label,
 			'path': self.path,
 			'modpaths': self.modpaths,
-			'otherattrs': cleandict(self.otherattrs),
 		}))
 
-class RawParamInfo(BaseRawInfo):
+class RawParamInfo(BaseSchemaNode):
 	def __init__(
 			self,
 			name=None,
@@ -135,10 +134,9 @@ class RawParamInfo(BaseRawInfo):
 			'menunames': self.menunames,
 			'menulabels': self.menulabels,
 			'startsection': self.startsection,
-			'otherattrs': cleandict(self.otherattrs),
 		}))
 
-class RawModuleInfo(BaseRawInfo):
+class RawModuleInfo(BaseSchemaNode):
 	def __init__(
 			self,
 			path=None,
@@ -148,6 +146,7 @@ class RawModuleInfo(BaseRawInfo):
 			childmodpaths=None,
 			partuplets=None,
 			parattrs=None,
+			nodes=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.path = path
@@ -157,19 +156,21 @@ class RawModuleInfo(BaseRawInfo):
 		self.childmodpaths = childmodpaths  # type: List[str]
 		self.partuplets = partuplets or []  # type: List[Tuple[RawParamInfo]]
 		self.parattrs = parattrs or {}  # type: Dict[Dict[str, str]]
+		self.nodes = nodes or []  # type: List[DataNodeInfo]
 		# TODO: data nodes
 
 	@classmethod
 	def FromJsonDict(cls, obj):
-		DBGINFO['modobj'] = dict(obj)
-		partuplets = obj.get('partuplets')
-		DBGINFO['partuplets'] = partuplets
 		return cls(
 			partuplets=[
 				[RawParamInfo.FromJsonDict(pobj) for pobj in tobj]
-				for tobj in (partuplets or [])
+				for tobj in (obj.get('partuplets') or [])
 			],
-			**excludekeys(obj, ['partuplets'])
+			nodes=[
+				DataNodeInfo.FromJsonDict(nobj)
+				for nobj in (obj.get('nodes') or [])
+			],
+			**excludekeys(obj, ['partuplets', 'nodes'])
 		)
 
 	tablekeys = [
@@ -187,10 +188,148 @@ class RawModuleInfo(BaseRawInfo):
 			'parentpath': self.parentpath,
 			'childmodpaths': self.childmodpaths,
 			'partuplets': self.partuplets and [
-				[p.ToJsonDict() for p in t] for t in self.partuplets
+				[p.ToJsonDict() for p in t]
+				for t in self.partuplets
 			],
 			'parattrs': self.parattrs,
-			'otherattrs': cleandict(self.otherattrs),
+			'nodes': self.nodes and [n.ToJsonDict() for n in self.nodes],
 		}))
 
-DBGINFO = {}
+class ParamPartSchema(BaseSchemaNode):
+	def __init__(
+			self,
+			name,
+			default=None,
+			minnorm=0,
+			maxnorm=1,
+			minlimit=None,
+			maxlimit=None,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.name = name
+		self.default = default
+		self.minnorm = minnorm
+		self.maxnorm = maxnorm
+		self.minlimit = minlimit
+		self.maxlimit = maxlimit
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'name': self.name,
+			'minlimit': self.minlimit,
+			'maxlimit': self.maxlimit,
+			'minnorm': self.minnorm,
+			'maxnorm': self.maxnorm,
+			'default': self.default,
+		}))
+
+class ParamSchema(BaseSchemaNode):
+	def __init__(
+			self,
+			name=None,
+			label=None,
+			style=None,
+			order=0,
+			pagename=None,
+			pageindex=0,
+			hidden=False,
+			advanced=False,
+			specialtype=None,
+			mappable=True,
+			parts=None,  # type: List[ParamPartSchema]
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.parts = parts or []
+		self.name = name
+		self.label = label
+		self.style = style
+		self.order = order
+		self.pagename = pagename
+		self.pageindex = pageindex
+		self.hidden = hidden
+		self.advanced = advanced
+		self.specialtype = specialtype or ''
+		self.isnode = specialtype and specialtype.startswith('node')
+		self.mappable = mappable and not self.isnode
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'name': self.name,
+			'label': self.label,
+			'style': self.style,
+			'order': self.order,
+			'pagename': self.pagename,
+			'pageindex': self.pageindex,
+			'hidden': self.hidden,
+			'advanced': self.advanced,
+			'specialtype': self.specialtype,
+			'isnode': self.isnode,
+			'mappable': self.mappable,
+		}))
+
+class DataNodeInfo(BaseSchemaNode):
+	def __init__(
+			self,
+			name=None,
+			label=None,
+			path=None,
+			video=None,
+			audio=None,
+			texbuf=None,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.name = name
+		self.label = label
+		self.path = path
+		self.video = video
+		self.audio = audio
+		self.texbuf = texbuf
+
+	@classmethod
+	def FromJsonDict(cls, obj):
+		return cls(**obj)
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'name': self.name,
+			'label': self.label,
+			'path': self.path,
+			'video': self.video,
+			'audio': self.audio,
+			'texbuf': self.texbuf,
+		}))
+
+class ModuleSchema(BaseSchemaNode):
+	def __init__(
+			self,
+			name=None,
+			label=None,
+			path=None,
+			params=None,  # type: List[ParamSchema]
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.name = name
+		self.label = label or name
+		self.path = path
+		self.params = params or []
+		self.hasbypass = False
+		self.hasadvanced = False
+		for par in params:
+			if par.advanced:
+				self.hasadvanced = True
+			if par.specialtype == 'switch.bypass':
+				self.hasbypass = True
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'name': self.name,
+			'label': self.label,
+			'path': self.path,
+			'hasbypass': self.hasbypass,
+			'hasadvanced': self.hasadvanced,
+			'params': [p.ToJsonDict() for p in self.params],
+		}))
+
+class SchemaProvider:
+	def GetModuleSchema(self, modpath) -> Optional[ModuleSchema]:
+		raise NotImplementedError()

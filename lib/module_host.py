@@ -19,6 +19,11 @@ except ImportError:
 	data_node = mod.data_node
 
 try:
+	import schema
+except ImportError:
+	schema = mod.schema
+
+try:
 	import common
 	from common import cleandict, mergedicts
 except ImportError:
@@ -248,7 +253,7 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 			return
 		pattrs = _parseAttributeTable(self.getCorePar('Parameters'))
 		for partuplet in self.Module.customTuplets:
-			parinfo = ModuleParamInfo.fromParTuplet(partuplet, pattrs.get(partuplet[0].tupletName))
+			parinfo = ModuleParamInfo.FromParTuplet(partuplet, pattrs.get(partuplet[0].tupletName))
 			if parinfo:
 				self.Params.append(parinfo)
 				if parinfo.advanced:
@@ -447,6 +452,11 @@ def _parseAttributeTable(dat):
 		for cells in dat.rows()[1:]
 	}
 
+def _tryGetAttr(o, *names, default=None):
+	if o:
+		for p in o.pars(*names):
+			return p.eval()
+	return default
 
 
 class ModuleHost(ModuleHostBase):
@@ -594,6 +604,87 @@ class ModuleChainHost(ModuleHostBase):
 			self.BuildControls(controls)
 
 
+class _LocalSchemaProvider(schema.SchemaProvider):
+	def GetModuleSchema(self, modpath) -> Optional[schema.ModuleSchema]:
+		m = op(modpath)
+		if not m:
+			return None
+		modcore = m.op('core')
+		pattrs = _parseAttributeTable(_tryGetAttr(modcore, 'Parameters'))
+		params = []
+		for partuplet in m.customTuplets:
+			parinfo = self._GetParamSchema(partuplet, pattrs.get(partuplet[0].tupletName))
+			if parinfo:
+				params.append(parinfo)
+		return schema.ModuleSchema(
+			name=m.name,
+			label=_tryGetAttr(m, 'Uilabel'),
+			path=m.path,
+			params=params)
+
+	@staticmethod
+	def _GetParamSchema(partuplet, attrs=None) -> Optional[schema.ParamSchema]:
+		attrs = attrs or {}
+		par = partuplet[0]
+		page = par.pagename
+		label = par.label
+		hidden = attrs['hidden'] == '1' if ('hidden' in attrs and attrs['hidden'] != '') else label.startswith('.')
+		advanced = attrs['advanced'] == '1' if ('advanced' in attrs and attrs['advanced'] != '') else label.startswith('+')
+		mappable = attrs.get('mappable')
+		specialtype = attrs.get('specialtype')
+		if not specialtype:
+			if label.endswith('~'):
+				specialtype = 'node'
+			elif par.style == 'TOP':
+				specialtype = 'node.v'
+			elif par.style == 'CHOP':
+				specialtype = 'node.a'
+			elif par.style in ('COMP', 'PanelCOMP', 'OBJ'):
+				specialtype = 'node'
+
+		if label.startswith('.') or label.startswith('+'):
+			label = label[1:]
+		if label.endswith('~'):
+			label = label[:-1]
+		label = attrs.get('label') or label
+
+		if page.startswith(':') or label.startswith(':'):
+			return None
+
+		if mappable is None:
+			mappable = (not advanced) and par.style in ('Float', 'Int', 'UV', 'UVW', 'XY', 'XYZ', 'RGB', 'RGBA', 'Toggle', 'Pulse')
+
+		# backwards compatibility with vjzual3
+		if page == 'Module' and par.name in (
+				'Modname', 'Uilabel', 'Collapsed', 'Solo',
+				'Uimode', 'Showadvanced', 'Showviewers', 'Resetstate'):
+			return None
+
+		if not specialtype and par.name == 'Bypass':
+			specialtype = 'switch.bypass'
+
+		return schema.ParamSchema(
+			name=par.tupletName,
+			label=label,
+			style=par.style,
+			order=par.order,
+			pagename=par.page.name,
+			pageindex=par.page.index,
+			hidden=hidden,
+			advanced=advanced,
+			specialtype=specialtype,
+			mappable=mappable,
+			parts=[
+				schema.ParamPartSchema(
+					name=part.name,
+					default=part.default,
+					minnorm=part.normMin,
+					maxnorm=part.normMax,
+					minlimit=part.min if part.clampMin else None,
+					maxlimit=part.max if part.clampMax else None)
+				for part in partuplet
+			])
+
 
 # When the relevant metadata flag is empty/missing in the parameter table,
 # the following shortcuts can be used to specify it in the parameter label:
@@ -608,10 +699,65 @@ class ModuleChainHost(ModuleHostBase):
 
 class ModuleParamInfo:
 	@classmethod
-	def fromParTuplet(cls, partuplet, attrs):
+	def FromParTuplet(cls, partuplet, attrs):
 		attrs = attrs or {}
 		par = partuplet[0]
 		page = par.page.name
+		label = par.label
+		hidden = attrs['hidden'] == '1' if ('hidden' in attrs and attrs['hidden'] != '') else label.startswith('.')
+		advanced = attrs['advanced'] == '1' if ('advanced' in attrs and attrs['advanced'] != '') else label.startswith('+')
+		mappable = attrs.get('mappable')
+		specialtype = attrs.get('specialtype')
+		if not specialtype:
+			if label.endswith('~'):
+				specialtype = 'node'
+			elif par.style == 'TOP':
+				specialtype = 'node.v'
+			elif par.style == 'CHOP':
+				specialtype = 'node.a'
+			elif par.style in ('COMP', 'PanelCOMP', 'OBJ'):
+				specialtype = 'node'
+
+		if label.startswith('.') or label.startswith('+'):
+			label = label[1:]
+		if label.endswith('~'):
+			label = label[:-1]
+		label = attrs.get('label') or label
+
+		if page.startswith(':') or label.startswith(':'):
+			return None
+
+		if par.name == 'Bypass':
+			return cls(
+				partuplet,
+				label=label,
+				hidden=True,
+				advanced=False,
+				specialtype='switch.bypass',
+				mappable=True)
+
+		# backwards compatibility with vjzual3
+		if page == 'Module' and par.name in (
+				'Modname', 'Uilabel', 'Collapsed', 'Solo',
+				'Uimode', 'Showadvanced', 'Showviewers', 'Resetstate'):
+			return None
+
+		if mappable is None:
+			mappable = (not advanced) and par.style in ('Float', 'Int', 'UV', 'UVW', 'XY', 'XYZ', 'Toggle', 'Pulse')
+
+		return cls(
+			partuplet,
+			label=label,
+			hidden=hidden,
+			advanced=advanced,
+			specialtype=specialtype,
+			mappable=mappable)
+
+	@classmethod
+	def FromRawParInfoTuplet(cls, partuplet: List[schema.RawParamInfo], attrs):
+		attrs = attrs or {}
+		par = partuplet[0]
+		page = par.pagename
 		label = par.label
 		hidden = attrs['hidden'] == '1' if ('hidden' in attrs and attrs['hidden'] != '') else label.startswith('.')
 		advanced = attrs['advanced'] == '1' if ('advanced' in attrs and attrs['advanced'] != '') else label.startswith('+')
@@ -698,7 +844,6 @@ class ModuleParamInfo:
 
 	def __str__(self):
 		return repr(self)
-
 
 # TODO: move this menu stuff elsewhere
 
