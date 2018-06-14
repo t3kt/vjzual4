@@ -11,33 +11,30 @@ except ImportError:
 	common = mod.common
 	cleandict, mergedicts = common.cleandict, common.mergedicts
 
+try:
+	import schema
+except ImportError:
+	schema = mod.schema
+
 
 class UiBuilder:
 	def __init__(self, ownerComp):
 		self.ownerComp = ownerComp
 
 	def CreateSlider(
-			self,
-			dest,
-			name,
+			self, dest, name,
 			label=None,
 			helptext=None,
 			isint=False,
-			value=None,
-			valueexpr=None,
+			value=None, valueexpr=None,
 			defval=None,
-			valrange=None,
-			clamp=None,
-			order=None,
-			nodepos=None,
+			valrange=None, clamp=None,
+			order=None, nodepos=None,
 			parvals=None,
 			parexprs=None):
 		return _CreateFromTemplate(
 			template=self.ownerComp.op('sliderL'),
-			name=name,
-			dest=dest,
-			order=order,
-			nodepos=nodepos,
+			dest=dest, name=name, order=order, nodepos=nodepos,
 			parvals=mergedicts(
 				label and {'Label': label},
 				helptext and {'Help': helptext},
@@ -53,17 +50,13 @@ class UiBuilder:
 				parexprs))
 
 	def CreateParSlider(
-			self,
-			dest,
-			name,
+			self, dest, name,
 			parinfo,  # type: ModuleParamInfo
-			order=None,
-			nodepos=None,
+			order=None, nodepos=None,
 			parvals=None,
 			parexprs=None):
 		return self.CreateSlider(
-			dest=dest,
-			name=name,
+			dest=dest, name=name, order=order, nodepos=nodepos,
 			label=parinfo.label,
 			isint=parinfo.style == 'Int',
 			valueexpr=parinfo.createParExpression(),
@@ -76,27 +69,106 @@ class UiBuilder:
 				parinfo.parts[0].min if parinfo.parts[0].clampMin else parinfo.parts[0].normMin,
 				parinfo.parts[0].max if parinfo.parts[0].clampMax else parinfo.parts[0].normMax,
 			],
-			order=order,
 			parvals=parvals,
-			parexprs=parexprs,
-			nodepos=nodepos)
+			parexprs=parexprs)
 
-	def CreateParMultiSlider(
-			self,
-			dest,
-			name,
-			parinfo,  # type: ModuleParamInfo
-			order=None,
-			nodepos=None,
+	def CreateParSlider_SCHEMA(
+			self, dest, name,
+			parinfo,  # type: schema.ParamSchema
+			order=None, nodepos=None,
+			parvals=None,
+			parexprs=None):
+		# TODO: value expr
+		return self.CreateSlider(
+			dest=dest, name=name, order=order, nodepos=nodepos,
+			label=parinfo.label,
+			isint=parinfo.style == 'Int',
+			defval=parinfo.parts[0].default,
+			clamp=[
+				parinfo.parts[0].minlimit is not None,
+				parinfo.parts[0].maxlimit is not None,
+			],
+			valrange=[
+				parinfo.parts[0].minnorm if parinfo.parts[0].minlimit is None else parinfo.parts[0].minlimit,
+				parinfo.parts[0].maxnorm if parinfo.parts[0].maxlimit is None else parinfo.parts[0].maxlimit,
+			],
+			parvals=parvals,
+			parexprs=parexprs)
+
+	def CreateParMultiSlider_SCHEMA(
+			self, dest, name,
+			parinfo,  # type: schema.ParamSchema
+			order=None, nodepos=None,
 			parvals=None,
 			parexprs=None):
 		n = len(parinfo.parts)
 		ctrl = _CreateFromTemplate(
 			template=self.ownerComp.op('multi_slider'),
-			dest=dest,
-			name=name,
-			order=order,
-			nodepos=nodepos,
+			dest=dest, name=name, order=order, nodepos=nodepos,
+			parvals=parvals,
+			parexprs=parexprs)
+		isint = parinfo.style == 'Int'
+		if parinfo.style in ('Int', 'Float'):
+			suffixes = list(range(1, n + 1))
+		else:
+			suffixes = parinfo.style
+		preview = ctrl.op('preview')
+		if parinfo.style not in ('RGB', 'RGBA'):
+			preview.par.display = False
+		else:
+			preview.par.display = True
+			_UpdateComponent(
+				preview.op('set_color'),
+				parvals=mergedicts(
+					parinfo.style != 'RGBA' and {'alpha': 1},
+				),
+				parexprs=mergedicts(
+					{
+						'colorr': 'op("../slider1").par.Value1',
+						'colorg': 'op("../slider2").par.Value1',
+						'colorb': 'op("../slider3").par.Value1',
+					},
+					parinfo.style == 'RGBA' and {
+						'alpha': 'op("../slider4").par.Value1',
+					}))
+		sliders = []
+		for i in range(4):
+			slider = ctrl.op('slider{}'.format(i + 1))
+			if i >= n:
+				slider.destroy()
+				continue
+			part = parinfo.parts[i]
+			_UpdateComponent(
+				slider,
+				parvals=mergedicts(
+					{
+						'Label': '{} {}'.format(parinfo.label, suffixes[i]),
+						'Default1': part.default,
+						'Clamplow1': part.minlimit is not None,
+						'Clamphigh1': part.maxlimit is not None,
+						'Rangelow1': part.minnorm if part.minlimit is None else part.minlimit,
+						'Rangehigh1': part.maxnorm if part.maxlimit is None else part.maxlimit,
+						'Push1': True,
+						'Integer': isint,
+					}
+				),
+				parexprs=mergedicts(
+					# TODO: value expr
+				)
+			)
+			sliders.append(slider)
+		return sliders
+
+	def CreateParMultiSlider(
+			self, dest, name,
+			parinfo,  # type: ModuleParamInfo
+			order=None, nodepos=None,
+			parvals=None,
+			parexprs=None):
+		n = len(parinfo.parts)
+		ctrl = _CreateFromTemplate(
+			template=self.ownerComp.op('multi_slider'),
+			dest=dest, name=name, order=order, nodepos=nodepos,
 			parvals=parvals,
 			parexprs=parexprs)
 		isint = parinfo.style == 'Int'
@@ -154,26 +226,19 @@ class UiBuilder:
 		return sliders
 
 	def CreateButton(
-			self,
-			dest,
-			name,
+			self, dest, name,
 			label=None,
 			behavior=None,
 			helptext=None,
-			value=None,
-			valueexpr=None,
+			value=None, valueexpr=None,
 			runofftoon=None,
 			defval=None,
-			order=None,
-			nodepos=None,
+			order=None, nodepos=None,
 			parvals=None,
 			parexprs=None):
 		return _CreateFromTemplate(
 			template=self.ownerComp.op('binaryC'),
-			dest=dest,
-			name=name,
-			order=order,
-			nodepos=nodepos,
+			dest=dest, name=name, order=order, nodepos=nodepos,
 			parvals=mergedicts(
 				label and {
 					'Texton': label,
@@ -194,66 +259,76 @@ class UiBuilder:
 				parexprs))
 
 	def CreateParToggle(
-			self,
-			dest,
-			name,
+			self, dest, name,
 			parinfo,  # type: ModuleParamInfo
-			order=None,
-			nodepos=None,
+			order=None, nodepos=None,
 			parvals=None,
 			parexprs=None):
 		return self.CreateButton(
-			dest=dest,
-			name=name,
+			dest=dest, name=name, order=order, nodepos=nodepos,
 			label=parinfo.label,
 			behavior='toggledown',
 			valueexpr=parinfo.createParExpression(),
 			defval=parinfo.parts[0].default,
-			order=order,
-			nodepos=nodepos,
+			parvals=parvals,
+			parexprs=parexprs)
+
+	def CreateParToggle_SCHEMA(
+			self, dest, name,
+			parinfo,  # type: schema.ParamSchema
+			order=None, nodepos=None,
+			parvals=None,
+			parexprs=None):
+		return self.CreateButton(
+			dest=dest, name=name, order=order, nodepos=nodepos,
+			label=parinfo.label,
+			behavior='toggledown',
+			# TODO: value expr
+			defval=parinfo.parts[0].default,
 			parvals=parvals,
 			parexprs=parexprs)
 
 	def CreateParTrigger(
-			self,
-			dest,
-			name,
+			self, dest, name,
 			parinfo,  # type: ModuleParamInfo
-			order=None,
-			nodepos=None,
+			order=None, nodepos=None,
 			parvals=None,
 			parexprs=None):
 		return self.CreateButton(
-			dest=dest,
-			name=name,
+			dest=dest, name=name, order=order, nodepos=nodepos,
 			label=parinfo.label,
 			behavior='pulse',
 			runofftoon='op({!r}).par.{}.pulse()'.format(parinfo.modpath, parinfo.parts[0].name),
-			order=order,
-			nodepos=nodepos,
+			parvals=parvals,
+			parexprs=parexprs)
+
+	def CreateParTrigger_SCHEMA(
+			self, dest, name,
+			parinfo,  # type: schema.ParamSchema
+			order=None, nodepos=None,
+			parvals=None,
+			parexprs=None):
+		return self.CreateButton(
+			dest=dest, name=name, order=order, nodepos=nodepos,
+			label=parinfo.label,
+			behavior='pulse',
+			# TODO: off to on action
 			parvals=parvals,
 			parexprs=parexprs)
 
 	def CreateTextField(
-			self,
-			dest,
-			name,
+			self, dest, name,
 			label=None,
 			helptext=None,
 			fieldtype=None,
-			value=None,
-			valueexpr=None,
+			value=None, valueexpr=None,
 			defval=None,
-			order=None,
-			nodepos=None,
+			order=None, nodepos=None,
 			parvals=None,
 			parexprs=None):
 		return _CreateFromTemplate(
 			template=self.ownerComp.op('string'),
-			dest=dest,
-			name=name,
-			order=order,
-			nodepos=nodepos,
+			dest=dest, name=name, order=order, nodepos=nodepos,
 			parvals=mergedicts(
 				label and {'Label': label},
 				helptext and {'Help': helptext},
@@ -291,16 +366,43 @@ class UiBuilder:
 		celldat[0, 0] = parinfo.parts[0].eval()
 		return ctrl
 
+	def CreateParTextField_SCHEMA(
+			self,
+			dest,
+			name,
+			parinfo,  # type: schema.ParamSchema
+			order=None,
+			nodepos=None,
+			parvals=None,
+			parexprs=None):
+		ctrl = self.CreateTextField(
+			dest=dest,
+			name=name,
+			label=parinfo.label,
+			fieldtype='string',
+			# TODO: value expr
+			defval=parinfo.parts[0].default,
+			order=order,
+			nodepos=nodepos,
+			parvals=parvals,
+			parexprs=parexprs)
+		celldat = ctrl.par.Celldat.eval()
+		# TODO: workaround for bug with initial value not being loaded
+		# celldat[0, 0] = parinfo.parts[0].eval()
+		return ctrl
+
 	def CreateParControl(
 			self,
 			dest,
 			name,
-			parinfo,  # type: ModuleParamInfo
+			parinfo_raw,  # type: ModuleParamInfo
 			order=None,
 			nodepos=None,
 			parvals=None,
 			parexprs=None,
 			addtocontrolmap=None):
+
+		parinfo = parinfo_raw.CONVERT_toSchema()
 
 		def _register(ctrlop):
 			if addtocontrolmap is not None:
@@ -320,7 +422,7 @@ class UiBuilder:
 
 		if parinfo.style in ('Float', 'Int') and len(parinfo.parts) == 1:
 			# print('creating slider control for {}'.format(parinfo))
-			ctrl = self.CreateParSlider(
+			ctrl = self.CreateParSlider_SCHEMA(
 				dest=dest,
 				name=name,
 				parinfo=parinfo,
@@ -334,7 +436,7 @@ class UiBuilder:
 			'UV', 'UVW', 'WH', 'XY', 'XYZ',
 		]:
 			# print('creating multi slider control for {}'.format(parinfo))
-			sliders = self.CreateParMultiSlider(
+			sliders = self.CreateParMultiSlider_SCHEMA(
 				dest=dest,
 				name=name,
 				parinfo=parinfo,
@@ -346,7 +448,7 @@ class UiBuilder:
 			ctrl = sliders[0].parent()
 		elif parinfo.style == 'Toggle':
 			# print('creating toggle control for {}'.format(parinfo))
-			ctrl = self.CreateParToggle(
+			ctrl = self.CreateParToggle_SCHEMA(
 				dest=dest,
 				name=name,
 				parinfo=parinfo,
@@ -356,7 +458,7 @@ class UiBuilder:
 				parexprs=parexprs)
 		elif parinfo.style == 'Pulse':
 			# print('creating trigger control for {}'.format(parinfo))
-			ctrl = self.CreateParTrigger(
+			ctrl = self.CreateParTrigger_SCHEMA(
 				dest=dest,
 				name=name,
 				parinfo=parinfo,
@@ -366,7 +468,7 @@ class UiBuilder:
 				parexprs=parexprs)
 		elif parinfo.style == 'Str' and not parinfo.isnode:
 			# print('creating text field control for plain string {}'.format(parinfo))
-			ctrl = self.CreateParTextField(
+			ctrl = self.CreateParTextField_SCHEMA(
 				dest=dest,
 				name=name,
 				parinfo=parinfo,

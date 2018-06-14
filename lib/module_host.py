@@ -304,7 +304,7 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 			uibuilder.CreateParControl(
 				dest=dest,
 				name='par__' + parinfo.name,
-				parinfo=parinfo,
+				parinfo_raw=parinfo,
 				order=i,
 				nodepos=[100, -100 * i],
 				parexprs=mergedicts(
@@ -683,6 +683,10 @@ class _LocalSchemaProvider(schema.SchemaProvider):
 			])
 
 
+class ParameterBindingProvider:
+	pass
+
+
 # When the relevant metadata flag is empty/missing in the parameter table,
 # the following shortcuts can be used to specify it in the parameter label:
 #  ":Some Param" - special parameter (not included in param list)
@@ -841,6 +845,21 @@ class ModuleParamInfo:
 
 	def __str__(self):
 		return repr(self)
+
+	def CONVERT_toSchema(self):
+		return schema.ParamSchema(
+			name=self.name, label=self.label, style=self.style, order=self.order,
+			pagename=self.page, pageindex=self.pageindex,
+			hidden=self.hidden, advanced=self.advanced, mappable=self.mappable,
+			parts=[
+				schema.ParamPartSchema(
+					name=part.name, default=part.default,
+					minnorm=part.normMin, maxnorm=part.normMax,
+					minlimit=part.min if part.clampMin else None,
+					maxlimit=part.max if part.clampMax else None)
+				for part in self.parts
+			]
+		)
 
 # TODO: move this menu stuff elsewhere
 
