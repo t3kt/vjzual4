@@ -6,10 +6,11 @@ if False:
 
 try:
 	import common
-	from common import cleandict, mergedicts
+	from common import cleandict, mergedicts, UpdateComponent, CreateFromTemplate
 except ImportError:
 	common = mod.common
 	cleandict, mergedicts = common.cleandict, common.mergedicts
+	UpdateComponent, CreateFromTemplate = common.UpdateComponent, common.CreateFromTemplate
 
 try:
 	import schema
@@ -32,7 +33,7 @@ class UiBuilder:
 			order=None, nodepos=None,
 			parvals=None,
 			parexprs=None):
-		return _CreateFromTemplate(
+		return CreateFromTemplate(
 			template=self.ownerComp.op('sliderL'),
 			dest=dest, name=name, order=order, nodepos=nodepos,
 			parvals=mergedicts(
@@ -102,7 +103,7 @@ class UiBuilder:
 			parvals=None,
 			parexprs=None):
 		n = len(parinfo.parts)
-		ctrl = _CreateFromTemplate(
+		ctrl = CreateFromTemplate(
 			template=self.ownerComp.op('multi_slider'),
 			dest=dest, name=name, order=order, nodepos=nodepos,
 			parvals=parvals,
@@ -117,7 +118,7 @@ class UiBuilder:
 			preview.par.display = False
 		else:
 			preview.par.display = True
-			_UpdateComponent(
+			UpdateComponent(
 				preview.op('set_color'),
 				parvals=mergedicts(
 					parinfo.style != 'RGBA' and {'alpha': 1},
@@ -138,7 +139,7 @@ class UiBuilder:
 				slider.destroy()
 				continue
 			part = parinfo.parts[i]
-			_UpdateComponent(
+			UpdateComponent(
 				slider,
 				parvals=mergedicts(
 					{
@@ -166,7 +167,7 @@ class UiBuilder:
 			parvals=None,
 			parexprs=None):
 		n = len(parinfo.parts)
-		ctrl = _CreateFromTemplate(
+		ctrl = CreateFromTemplate(
 			template=self.ownerComp.op('multi_slider'),
 			dest=dest, name=name, order=order, nodepos=nodepos,
 			parvals=parvals,
@@ -181,7 +182,7 @@ class UiBuilder:
 			preview.par.display = False
 		else:
 			preview.par.display = True
-			_UpdateComponent(
+			UpdateComponent(
 				preview.op('set_color'),
 				parvals=mergedicts(
 					parinfo.style != 'RGBA' and {'alpha': 1},
@@ -202,7 +203,7 @@ class UiBuilder:
 				slider.destroy()
 				continue
 			part = parinfo.parts[i]
-			_UpdateComponent(
+			UpdateComponent(
 				slider,
 				parvals=mergedicts(
 					{
@@ -236,7 +237,7 @@ class UiBuilder:
 			order=None, nodepos=None,
 			parvals=None,
 			parexprs=None):
-		return _CreateFromTemplate(
+		return CreateFromTemplate(
 			template=self.ownerComp.op('binaryC'),
 			dest=dest, name=name, order=order, nodepos=nodepos,
 			parvals=mergedicts(
@@ -326,7 +327,7 @@ class UiBuilder:
 			order=None, nodepos=None,
 			parvals=None,
 			parexprs=None):
-		return _CreateFromTemplate(
+		return CreateFromTemplate(
 			template=self.ownerComp.op('string'),
 			dest=dest, name=name, order=order, nodepos=nodepos,
 			parvals=mergedicts(
@@ -491,7 +492,7 @@ class UiBuilder:
 			nodepos=None,
 			parvals=None,
 			parexprs=None):
-		return _CreateFromTemplate(
+		return CreateFromTemplate(
 			template=self.ownerComp.op('mapping_editor'),
 			dest=dest,
 			name=name,
@@ -504,44 +505,3 @@ class UiBuilder:
 				},
 				parvals),
 			parexprs=parexprs)
-
-
-def _UpdateComponent(
-		ctrl,
-		order=None,
-		nodepos=None,
-		parvals=None,
-		parexprs=None):
-	if parvals:
-		for key, val in parvals.items():
-			setattr(ctrl.par, key, val)
-	if parexprs:
-		for key, expr in parexprs.items():
-			getattr(ctrl.par, key).expr = expr
-	if order is not None:
-		ctrl.par.alignorder = order
-	if nodepos:
-		ctrl.nodeCenterX = nodepos[0]
-		ctrl.nodeCenterY = nodepos[1]
-
-
-def _CreateFromTemplate(
-		template,
-		dest,
-		name,
-		order=None,
-		nodepos=None,
-		parvals=None,
-		parexprs=None):
-	deststr = str(dest)
-	dest = op(dest)
-	if not dest or not dest.isPanel:
-		raise Exception('Invalid destination: {}'.format(deststr))
-	ctrl = dest.copy(template, name=name)
-	_UpdateComponent(
-		ctrl=ctrl,
-		order=order,
-		nodepos=nodepos,
-		parvals=parvals,
-		parexprs=parexprs)
-	return ctrl

@@ -70,6 +70,8 @@ class Par:
 class COMP:
 	pass
 
+baseCOMP = COMP
+
 class app:
 	name = ''
 

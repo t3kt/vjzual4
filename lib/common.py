@@ -109,3 +109,63 @@ def excludekeys(d, keys):
 		for key, val in d.items()
 		if key not in keys
 	}
+
+def UpdateComponent(
+		comp,
+		order=None,
+		nodepos=None,
+		tags=None,
+		parvals=None,
+		parexprs=None):
+	if parvals:
+		for key, val in parvals.items():
+			setattr(comp.par, key, val)
+	if parexprs:
+		for key, expr in parexprs.items():
+			getattr(comp.par, key).expr = expr
+	if order is not None:
+		comp.par.alignorder = order
+	if nodepos:
+		comp.nodeCenterX = nodepos[0]
+		comp.nodeCenterY = nodepos[1]
+	if tags:
+		comp.tags.update(tags)
+
+def _ResolveDest(dest):
+	deststr = str(dest)
+	dest = op(dest)
+	if not dest or not dest.isCOMP:
+		raise Exception('Invalid destination: {}'.format(deststr))
+	return dest
+
+def CreateFromTemplate(
+		template,
+		dest,
+		name,
+		order=None,
+		nodepos=None,
+		tags=None,
+		parvals=None,
+		parexprs=None):
+	dest = _ResolveDest(dest)
+	comp = dest.copy(template, name=name)
+	UpdateComponent(
+		comp=comp, order=order, nodepos=nodepos,
+		tags=tags, parvals=parvals, parexprs=parexprs)
+	return comp
+
+def CreateComponent(
+		optype,
+		dest,
+		name,
+		order=None,
+		nodepos=None,
+		tags=None,
+		parvals=None,
+		parexprs=None):
+	dest = _ResolveDest(dest)
+	comp = dest.create(optype, name=name)
+	UpdateComponent(
+		comp=comp, order=order, nodepos=nodepos,
+		tags=tags, parvals=parvals, parexprs=parexprs)
+	return comp
