@@ -13,25 +13,69 @@ except ImportError:
 	common = mod.common
 
 class CommandMessage(namedtuple('CommandMessage', ['cmd', 'arg', 'cmdid', 'kind'])):
+	COMMAND = 'cmd'
+	REQUEST = 'req'
+	RESPONSE = 'resp'
+	ERROR = 'err'
+
 	@classmethod
 	def forResponse(cls, cmdid, arg=None):
-		return cls('!response', arg, cmdid, kind='resp')
+		return cls(':', arg, cmdid, kind=CommandMessage.RESPONSE)
 
 	@classmethod
 	def forError(cls, cmdid, arg=None):
-		return cls('!response', arg, cmdid, kind='err')
+		return cls('!', arg, cmdid, kind=CommandMessage.ERROR)
+
+	@classmethod
+	def forRequest(cls, cmd, cmdid, arg=None):
+		return cls(cmd, arg, cmdid, kind=CommandMessage.REQUEST)
+
+	@classmethod
+	def forCommand(cls, cmd, arg=None):
+		return cls(cmd, arg, cmdid=None, kind=CommandMessage.COMMAND)
+
+	@classmethod
+	def fromJsonDict(cls, obj):
+		kind = obj.get('kind')
+		cmd = obj.get('cmd')
+		cmdid = obj.get('cmdid')
+		arg = obj.get('arg')
+		if kind == CommandMessage.REQUEST:
+			if not cmd:
+				return None
+			return cls.forRequest(cmd=cmd, cmdid=cmdid, arg=arg)
+		if kind == CommandMessage.ERROR:
+			if not cmdid:
+				return None
+			return cls.forError(cmdid=cmdid, arg=None)
+		if kind == CommandMessage.RESPONSE:
+			if not cmdid:
+				return None
+			return cls.forResponse(cmdid=cmdid, arg=arg)
+		# if kind == CommandMessage.COMMAND:
+		if not cmd:
+			return None
+		return cls.forCommand(cmd=cmd, arg=arg)
 
 	@property
 	def isSuccessResponse(self):
-		return self.kind == 'resp'
+		return self.kind == CommandMessage.RESPONSE
 
 	@property
 	def isResponse(self):
-		return self.kind in ['resp', 'err']
+		return self.kind in [CommandMessage.RESPONSE, CommandMessage.ERROR]
 
 	@property
 	def isError(self):
-		return self.kind == 'err'
+		return self.kind == CommandMessage.ERROR
+
+	@property
+	def isCommand(self):
+		return self.kind == CommandMessage.COMMAND
+
+	@property
+	def isRequest(self):
+		return self.kind == CommandMessage.REQUEST
 
 	def ToJsonDict(self):
 		return self._asdict()
@@ -126,7 +170,7 @@ class RemoteConnection(common.ExtensionBase):
 		if cmdid in self._responsefutures:
 			del self._responsefutures[cmdid]
 
-	def SendCommand(self, command, arg=None, expectresponse=False, kind=None, responseto=None):
+	def SendCommand_OLD(self, command, arg=None, expectresponse=False, kind=None, responseto=None):
 		self._LogEvent('SendCommand({!r}, {!r})'.format(command, arg))
 		if responseto is not None:
 			cmdid = responseto
@@ -145,6 +189,30 @@ class RemoteConnection(common.ExtensionBase):
 			responsefuture = None
 		self.SendRawCommandMessages(json.dumps(message.ToJsonDict()))
 		return responsefuture
+
+	def _SendCommandMessage(self, cmdmesg: CommandMessage):
+		self._LogEvent('_SendCommandMessage({})'.format(cmdmesg))
+		self.SendRawCommandMessages(json.dumps(cmdmesg.ToJsonDict()))
+		if cmdmesg.isRequest:
+			responsefuture = ResponseFuture(
+				onlisten=lambda: self._AddResponseFuture(cmdmesg.cmdid, responsefuture),
+				oninvoke=lambda: self._RemoveResponseFuture(cmdmesg.cmdid))
+			return responsefuture
+
+	def SendCommand(self, cmd, arg=None):
+		self._SendCommandMessage(CommandMessage.forCommand(cmd=cmd, arg=arg))
+
+	def SendRequest(self, cmd, arg=None):
+		cmdid = self._nextcmdid
+		self._nextcmdid += 1
+		return self._SendCommandMessage(
+			CommandMessage.forRequest(cmd=cmd, cmdid=cmdid, arg=arg))
+
+	def SendResponse(self, cmdid, arg=None):
+		self._SendCommandMessage(CommandMessage.forResponse(cmdid=cmdid, arg=arg))
+
+	def SendErrorResponse(self, cmdid, arg=None):
+		self._SendCommandMessage(CommandMessage.forError(cmdid=cmdid, arg=arg))
 
 	def RouteCommandMessage(self, message, peer):
 		cmdmesg = self._ParseCommandMessage(message)
@@ -184,11 +252,7 @@ class RemoteConnection(common.ExtensionBase):
 		except json.JSONDecodeError:
 			self._LogEvent('Unable to parse command message: {!r}'.format(message))
 			return None
-		return CommandMessage(
-			obj.get('cmd'),
-			obj.get('arg'),
-			obj.get('cmdid'),
-			kind=obj.get('kind'))
+		return CommandMessage.fromJsonDict(obj)
 
 class RemoteBase(common.ExtensionBase, common.ActionsExt, CommandHandler):
 	def __init__(self, ownerComp, actions=None, handlers=None):

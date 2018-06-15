@@ -56,13 +56,16 @@ class RemoteClient(remote.RemoteBase):
 		self._LogBegin('Connect()')
 		try:
 			self.Detach()
-			self.Connection.SendCommand('connect', {
+			info = {
 				'version': 1,
 				'clientAddress': self.ownerComp.par.Localaddress.eval() or self.ownerComp.par.Localaddress.default,
 				'commandResponsePort': self.ownerComp.par.Commandreceiveport.eval(),
 				'oscClientSendPort': 8888,
 				'oscClientReceivePort': 7777,
-			})
+			}
+			self.Connection.SendRequest('connect', info).then(
+				success=self._OnConfirmConnect,
+				failure=self._OnConnectFailure)
 		finally:
 			self._LogEnd('Connect()')
 
@@ -70,12 +73,15 @@ class RemoteClient(remote.RemoteBase):
 		self.Connected.val = True
 		self.QueryApp()
 
+	def _OnConnectFailure(self, cmdmesg: remote.CommandMessage):
+		self._LogEvent('_OnConnectFailure({})'.format(cmdmesg))
+
 	def QueryApp(self):
 		self._LogBegin('QueryApp()')
 		try:
 			if not self.Connected:
 				return
-			self.Connection.SendCommand('queryApp')
+			self.Connection.SendCommand_OLD('queryApp')
 		finally:
 			self._LogEnd('QueryApp()')
 
@@ -135,13 +141,14 @@ class RemoteClient(remote.RemoteBase):
 		try:
 			if not self.Connected:
 				return
-			self.Connection.SendCommand('queryMod', modpath)
+			self.Connection.SendCommand_OLD('queryMod', modpath)
 		finally:
 			self._LogEnd('QueryModule()')
 
-	def _OnReceiveModuleInfo(self, arg):
-		self._LogBegin('_OnReceiveModuleInfo({!r})'.format(arg))
+	def _OnReceiveModuleInfo(self, cmdmesg: remote.CommandMessage):
+		self._LogBegin('_OnReceiveModuleInfo({!r})'.format(cmdmesg))
 		try:
+			arg = cmdmesg.arg
 			if not arg:
 				raise Exception('No app info!')
 			modinfo = schema.RawModuleInfo.FromJsonDict(arg)
@@ -160,7 +167,7 @@ class RemoteClient(remote.RemoteBase):
 			self._LogEnd('_OnReceiveModuleInfo()')
 
 	def TEST_query(self, x):
-		respfuture = self.Connection.SendCommand(
+		respfuture = self.Connection.SendCommand_OLD(
 			command='TESTQUERY',
 			arg=x,
 			expectresponse=True)

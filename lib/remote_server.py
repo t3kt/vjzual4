@@ -38,9 +38,9 @@ class RemoteServer(remote.RemoteBase):
 		self._LogEvent('_OnTESTQUERY({})'.format(cmdmesg))
 		x = cmdmesg.arg
 		if x == 5:
-			self.Connection.SendCommand('TESTRESPONSE', 'OMG ERRRRRROOOORR', kind='err', responseto=cmdmesg.cmdid)
+			self.Connection.SendCommand_OLD('TESTRESPONSE', 'OMG ERRRRRROOOORR', kind='err', responseto=cmdmesg.cmdid)
 		else:
-			self.Connection.SendCommand('TESTRESPONSE', {'SUCCESS': x * 100}, responseto=cmdmesg.cmdid)
+			self.Connection.SendCommand_OLD('TESTRESPONSE', {'SUCCESS': x * 100}, responseto=cmdmesg.cmdid)
 
 	def _OnConnect(self, cmdmesg: remote.CommandMessage):
 		self._LogBegin('Connect({!r})'.format(cmdmesg.arg))
@@ -53,7 +53,7 @@ class RemoteServer(remote.RemoteBase):
 			self.ownerComp.par.Commandsendport = remoteinfo.get('commandResponsePort') or self.ownerComp.par.Commandsendport.default
 			# TODO: apply connection settings (OSC)
 			self.Connected.val = True
-			self.Connection.SendCommand('confirmConnect')
+			self.Connection.SendResponse(cmdmesg.cmdid)
 		finally:
 			self._LogEnd('Connect()')
 
@@ -93,7 +93,7 @@ class RemoteServer(remote.RemoteBase):
 		self._LogBegin('SendAppInfo()')
 		try:
 			appinfo = self._BuildAppInfo()
-			self.Connection.SendCommand('appInfo', appinfo.ToJsonDict())
+			self.Connection.SendCommand_OLD('appInfo', appinfo.ToJsonDict())
 		finally:
 			self._LogEnd('SendAppInfo')
 
@@ -125,7 +125,7 @@ class RemoteServer(remote.RemoteBase):
 		self._LogBegin('SendModuleInfo({!r})'.format(modpath))
 		try:
 			modinfo = self._BuildModuleInfo(modpath)
-			self.Connection.SendCommand('modInfo', modinfo.ToJsonDict())
+			self.Connection.SendCommand_OLD('modInfo', modinfo.ToJsonDict())
 		finally:
 			self._LogEnd('SendModuleInfo()')
 
