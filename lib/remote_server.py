@@ -29,14 +29,23 @@ class RemoteServer(remote.RemoteBase):
 				'connect': self._OnConnect,
 				'queryApp': lambda _: self.SendAppInfo(),
 				'queryMod': self.SendModuleInfo,
+				'TESTQUERY': self._OnTESTQUERY,
 			})
 		self._AutoInitActionParams()
 		self.AppRoot = None
 
-	def _OnConnect(self, arg):
-		self._LogBegin('Connect({!r})'.format(arg))
+	def _OnTESTQUERY(self, cmdmesg: remote.CommandMessage):
+		self._LogEvent('_OnTESTQUERY({})'.format(cmdmesg))
+		x = cmdmesg.arg
+		if x == 5:
+			self.Connection.SendCommand('TESTRESPONSE', 'OMG ERRRRRROOOORR', kind='err', responseto=cmdmesg.cmdid)
+		else:
+			self.Connection.SendCommand('TESTRESPONSE', {'SUCCESS': x * 100}, responseto=cmdmesg.cmdid)
+
+	def _OnConnect(self, cmdmesg: remote.CommandMessage):
+		self._LogBegin('Connect({!r})'.format(cmdmesg.arg))
 		try:
-			remoteinfo = arg
+			remoteinfo = cmdmesg.arg
 			if not remoteinfo:
 				raise Exception('No remote info!')
 			# TODO: check version
@@ -111,7 +120,8 @@ class RemoteServer(remote.RemoteBase):
 		finally:
 			self._LogEnd('_BuildModuleInfo()')
 
-	def SendModuleInfo(self, modpath):
+	def SendModuleInfo(self, cmdmesg: remote.CommandMessage):
+		modpath = cmdmesg.arg
 		self._LogBegin('SendModuleInfo({!r})'.format(modpath))
 		try:
 			modinfo = self._BuildModuleInfo(modpath)

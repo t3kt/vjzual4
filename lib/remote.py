@@ -1,6 +1,6 @@
 from collections import namedtuple
 import json
-from typing import Callable, Dict, Optional, Tuple
+from typing import Callable, Dict, Optional
 
 print('vjz4/remote.py loading')
 
@@ -12,20 +12,44 @@ try:
 except ImportError:
 	common = mod.common
 
+class CommandMessage(namedtuple('CommandMessage', ['cmd', 'arg', 'cmdid', 'kind'])):
+	@classmethod
+	def forResponse(cls, cmdid, arg=None):
+		return cls('!response', arg, cmdid, kind='resp')
+
+	@classmethod
+	def forError(cls, cmdid, arg=None):
+		return cls('!response', arg, cmdid, kind='err')
+
+	@property
+	def isSuccessResponse(self):
+		return self.kind == 'resp'
+
+	@property
+	def isResponse(self):
+		return self.kind in ['resp', 'err']
+
+	@property
+	def isError(self):
+		return self.kind == 'err'
+
+	def ToJsonDict(self):
+		return self._asdict()
+
 class CommandHandler:
 	def __init__(self, handlers=None):
 		self.handlers = handlers or {}
 
-	def HandleCommand(self, command, arg, peer):
-		if command not in self.handlers:
-			self.UnsupportedCommand(command, arg, peer)
+	def HandleCommand(self, cmdmesg: CommandMessage, peer):
+		if cmdmesg.cmd not in self.handlers:
+			self.UnsupportedCommand(cmdmesg, peer)
 		else:
-			handler = self.handlers[command]
-			handler(arg)
+			handler = self.handlers[cmdmesg.cmd]
+			handler(cmdmesg)
 
 	@staticmethod
-	def UnsupportedCommand(command, arg, peer):
-		print('Unsupported command: ', command, arg, peer)
+	def UnsupportedCommand(cmdmesg: CommandMessage, peer):
+		print('Unsupported command: ', cmdmesg, peer)
 
 class ResponseFuture:
 	def __init__(self, onlisten=None, oninvoke=None):
@@ -80,8 +104,6 @@ class ResponseFuture:
 		else:
 			return '{}[success: {!r}]'.format(self.__class__.__name__, self._result)
 
-_CommandMessage = namedtuple('CommandMessage', ['cmd', 'arg', 'cmdid', 'isresponse'])
-
 class RemoteConnection(common.ExtensionBase):
 	def __init__(self, ownerComp, commandhandler=None):
 		super().__init__(ownerComp)
@@ -104,21 +126,24 @@ class RemoteConnection(common.ExtensionBase):
 		if cmdid in self._responsefutures:
 			del self._responsefutures[cmdid]
 
-	def SendCommand(self, command, arg=None, expectresponse=False, isresponse=False):
+	def SendCommand(self, command, arg=None, expectresponse=False, kind=None, responseto=None):
 		self._LogEvent('SendCommand({!r}, {!r})'.format(command, arg))
-		if expectresponse:
+		if responseto is not None:
+			cmdid = responseto
+			kind = kind or 'resp'
+		elif expectresponse:
 			cmdid = self._nextcmdid
 			self._nextcmdid += 1
 		else:
 			cmdid = None
-		message = _CommandMessage(command, arg, cmdid, isresponse=isresponse)
+		message = CommandMessage(command, arg, cmdid, kind=kind or '')
 		if expectresponse:
 			responsefuture = ResponseFuture(
 				onlisten=lambda: self._AddResponseFuture(cmdid, responsefuture),
 				oninvoke=lambda: self._RemoveResponseFuture(cmdid))
 		else:
 			responsefuture = None
-		self.SendRawCommandMessages(json.dumps(message._asdict()))
+		self.SendRawCommandMessages(json.dumps(message.ToJsonDict()))
 		return responsefuture
 
 	def RouteCommandMessage(self, message, peer):
@@ -129,25 +154,28 @@ class RemoteConnection(common.ExtensionBase):
 		self._LogBegin('RouteCommandMessage({!r})'.format(cmdmesg))
 		try:
 			self._LogCommand(cmdmesg)
-			if cmdmesg.isresponse:
+			if cmdmesg.isResponse:
 				if not cmdmesg.cmdid or cmdmesg.cmdid not in self._responsefutures:
 					self._LogEvent('RouteCommandMessage() - no response handler waiting for {}'.format(cmdmesg))
 					return
 				resp = self._responsefutures[cmdmesg.cmdid]
-				resp.resolve(cmdmesg)
+				if cmdmesg.isError:
+					resp.fail(cmdmesg.arg)
+				else:
+					resp.resolve(cmdmesg)
 			else:
 				if not self._commandhandler:
 					# TODO: buffer commands received before handler set up?
 					return
-				self._commandhandler.HandleCommand(cmdmesg.cmd, cmdmesg.arg, peer)
+				self._commandhandler.HandleCommand(cmdmesg, peer)
 		finally:
 			self._LogEnd('RouteCommandMessage()')
 
-	def _LogCommand(self, cmdmesg: _CommandMessage):
+	def _LogCommand(self, cmdmesg: CommandMessage):
 		if self.ownerComp.par.Logcommands:
 			self._commandlog.appendRow([cmdmesg.cmd, cmdmesg.arg or ''])
 
-	def _ParseCommandMessage(self, message: str) -> Optional[_CommandMessage]:
+	def _ParseCommandMessage(self, message: str) -> Optional[CommandMessage]:
 		# TODO: optimize this...
 		if not message or not message.startswith('{'):
 			return None
@@ -156,11 +184,11 @@ class RemoteConnection(common.ExtensionBase):
 		except json.JSONDecodeError:
 			self._LogEvent('Unable to parse command message: {!r}'.format(message))
 			return None
-		return _CommandMessage(
+		return CommandMessage(
 			obj.get('cmd'),
 			obj.get('arg'),
 			obj.get('cmdid'),
-			bool(obj.get('isresponse')))
+			kind=obj.get('kind'))
 
 class RemoteBase(common.ExtensionBase, common.ActionsExt, CommandHandler):
 	def __init__(self, ownerComp, actions=None, handlers=None):

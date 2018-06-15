@@ -79,14 +79,14 @@ class RemoteClient(remote.RemoteBase):
 		finally:
 			self._LogEnd('QueryApp()')
 
-	def _OnReceiveAppInfo(self, arg):
-		self._LogBegin('_OnReceiveAppInfo({!r})'.format(arg))
+	def _OnReceiveAppInfo(self, cmdmesg: remote.CommandMessage):
+		self._LogBegin('_OnReceiveAppInfo({!r})'.format(cmdmesg.arg))
 		self.moduleQueryQueue = []
 		self.ModuleInfos = {}
 		try:
-			if not arg:
+			if not cmdmesg.arg:
 				raise Exception('No app info!')
-			appinfo = schema.RawAppInfo.FromJsonDict(arg)
+			appinfo = schema.RawAppInfo.FromJsonDict(cmdmesg.arg)
 			self.AppInfo = appinfo
 			self._BuildAppInfoTable()
 
@@ -158,6 +158,15 @@ class RemoteClient(remote.RemoteBase):
 			# TODO ....
 		finally:
 			self._LogEnd('_OnReceiveModuleInfo()')
+
+	def TEST_query(self, x):
+		respfuture = self.Connection.SendCommand(
+			command='TESTQUERY',
+			arg=x,
+			expectresponse=True)
+		respfuture.then(
+			success=lambda resp: print('OMG GOT A RESPONSE!', resp),
+			failure=lambda resp: print('WTF GOT AN ERROR!', resp))
 
 def _AddRawInfoRow(dat, info: schema.BaseSchemaNode=None, attrs=None):
 	obj = info.ToJsonDict() if info else None
