@@ -1,4 +1,3 @@
-import json
 from operator import attrgetter
 
 print('vjz4/remote_server.py loading')
@@ -37,7 +36,7 @@ class RemoteServer(remote.RemoteBase):
 	def _OnConnect(self, arg):
 		self._LogBegin('Connect({!r})'.format(arg))
 		try:
-			remoteinfo = json.loads(arg) if arg else None
+			remoteinfo = arg
 			if not remoteinfo:
 				raise Exception('No remote info!')
 			# TODO: check version
@@ -89,10 +88,9 @@ class RemoteServer(remote.RemoteBase):
 		finally:
 			self._LogEnd('SendAppInfo')
 
-	def _BuildModuleInfo(self, rawmodpath) -> schema.RawModuleInfo:
-		self._LogBegin('_BuildModuleInfo({!r})'.format(rawmodpath))
+	def _BuildModuleInfo(self, modpath) -> schema.RawModuleInfo:
+		self._LogBegin('_BuildModuleInfo({!r})'.format(modpath))
 		try:
-			modpath = json.loads(rawmodpath)
 			module = self.ownerComp.op(modpath)
 			if not module:
 				raise Exception('Module not found: {}'.format(modpath))

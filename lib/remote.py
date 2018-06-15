@@ -80,6 +80,8 @@ class ResponseFuture:
 		else:
 			return '{}[success: {!r}]'.format(self.__class__.__name__, self._result)
 
+_CommandMessage = namedtuple('CommandMessage', ['cmd', 'arg', 'cmdid', 'isresponse'])
+
 class RemoteConnection(common.ExtensionBase):
 	def __init__(self, ownerComp, commandhandler=None):
 		super().__init__(ownerComp)
@@ -95,104 +97,70 @@ class RemoteConnection(common.ExtensionBase):
 			*messages):
 		self._sendport.send(*messages, terminator='\n')
 
-	def SendCommand(self, command, arg=None, expectresponse=False):
+	def _AddResponseFuture(self, cmdid, resp: ResponseFuture):
+		self._responsefutures[cmdid] = resp
+
+	def _RemoveResponseFuture(self, cmdid):
+		if cmdid in self._responsefutures:
+			del self._responsefutures[cmdid]
+
+	def SendCommand(self, command, arg=None, expectresponse=False, isresponse=False):
 		self._LogEvent('SendCommand({!r}, {!r})'.format(command, arg))
-		cmdid = None
-		idtag = ''
 		if expectresponse:
 			cmdid = self._nextcmdid
 			self._nextcmdid += 1
-			idtag = '[' + str(cmdid) + ']'
-		if arg is None or (isinstance(arg, (str, list, tuple, dict)) and not len(arg)):
-			self.SendRawCommandMessages('+' + idtag + command)
 		else:
-			arg = json.dumps(arg)
-			message = '!' + idtag + command
-			self.SendRawCommandMessages('!' + command + ':' + json.dumps(arg))
-
-	def SendCommand_withResponseSupport(self, command, arg=None):
-		pass
+			cmdid = None
+		message = _CommandMessage(command, arg, cmdid, isresponse=isresponse)
+		if expectresponse:
+			responsefuture = ResponseFuture(
+				onlisten=lambda: self._AddResponseFuture(cmdid, responsefuture),
+				oninvoke=lambda: self._RemoveResponseFuture(cmdid))
+		else:
+			responsefuture = None
+		self.SendRawCommandMessages(json.dumps(message._asdict()))
+		return responsefuture
 
 	def RouteCommandMessage(self, message, peer):
-		cmdmesg = _ParseCommandMessage(message)
+		cmdmesg = self._ParseCommandMessage(message)
 		if not cmdmesg:
 			self._LogEvent('RouteCommandMessage(raw: {!r})'.format(message))
 			return
 		self._LogBegin('RouteCommandMessage({!r})'.format(cmdmesg))
 		try:
 			self._LogCommand(cmdmesg)
-			if not self._commandhandler:
-				# TODO: buffer commands received before handler set up?
-				return
-			self._commandhandler.HandleCommand(cmdmesg.cmd, cmdmesg.arg, peer)
+			if cmdmesg.isresponse:
+				if not cmdmesg.cmdid or cmdmesg.cmdid not in self._responsefutures:
+					self._LogEvent('RouteCommandMessage() - no response handler waiting for {}'.format(cmdmesg))
+					return
+				resp = self._responsefutures[cmdmesg.cmdid]
+				resp.resolve(cmdmesg)
+			else:
+				if not self._commandhandler:
+					# TODO: buffer commands received before handler set up?
+					return
+				self._commandhandler.HandleCommand(cmdmesg.cmd, cmdmesg.arg, peer)
 		finally:
 			self._LogEnd('RouteCommandMessage()')
 
-	def _LogCommand(self, cmdmesg: '_CommandMessage'):
+	def _LogCommand(self, cmdmesg: _CommandMessage):
 		if self.ownerComp.par.Logcommands:
 			self._commandlog.appendRow([cmdmesg.cmd, cmdmesg.arg or ''])
 
-class _CommandMessage(namedtuple('CommandMessage', ['cmd', 'arg', 'id'])):
-	@classmethod
-	def parse(cls, message: str):
+	def _ParseCommandMessage(self, message: str) -> Optional[_CommandMessage]:
 		# TODO: optimize this...
-		if not message or len(message) < 2:
+		if not message or not message.startswith('{'):
 			return None
-		if message.startswith('+'):
-			# message has no arg
-			cmd, arg = message[1:], None
-		elif message.startswith('!'):
-			if ':' not in message:
-				cmd, arg = message[1:], None
-			else:
-				# message has arg
-				cmd, arg = message[1:].split(':', maxsplit=1)
-		else:
+		try:
+			obj = json.loads(message)
+		except json.JSONDecodeError:
+			self._LogEvent('Unable to parse command message: {!r}'.format(message))
 			return None
-		if cmd.startswith('['):
-			if len(cmd) < 3:
-				return None
-			endpos = cmd.index(']')
-			if endpos < 2:
-				return None
-			cmdid = int(cmd[1:endpos])
-			cmd = cmd[endpos:]
-		else:
-			cmdid = None
-		return cls(cmd, arg, cmdid)
-
-	def format(self):
-		msg = '+' if self.arg is None else '!'
-
-		pass
-	pass
-
-def _ParseCommandMessage(message: str) -> Optional[_CommandMessage]:
-	# TODO: optimize this...
-	if not message or len(message) < 2:
-		return None
-	if message.startswith('+'):
-		# message has no arg
-		cmd, arg = message[1:], None
-	elif message.startswith('!'):
-		if ':' not in message:
-			cmd, arg = message[1:], None
-		else:
-			# message has arg
-			cmd, arg = message[1:].split(':', maxsplit=1)
-	else:
-		return None
-	if cmd.startswith('['):
-		if len(cmd) < 3:
-			return None
-		endpos = cmd.index(']')
-		if endpos < 2:
-			return None
-		cmdid = int(cmd[1:endpos])
-		cmd = cmd[endpos:]
-	else:
-		cmdid = None
-	return _CommandMessage(cmd, arg, cmdid)
+		return _CommandMessage(
+			obj.get('cmd'),
+			obj.get('arg'),
+			obj.get('cmdid'),
+			bool(obj.get('isresponse')))
 
 class RemoteBase(common.ExtensionBase, common.ActionsExt, CommandHandler):
 	def __init__(self, ownerComp, actions=None, handlers=None):

@@ -1,4 +1,3 @@
-import json
 from typing import Dict, List, Tuple
 
 print('vjz4/remote_client.py loading')
@@ -85,10 +84,9 @@ class RemoteClient(remote.RemoteBase):
 		self.moduleQueryQueue = []
 		self.ModuleInfos = {}
 		try:
-			parsedarg = json.loads(arg) if arg else None
-			if not parsedarg:
+			if not arg:
 				raise Exception('No app info!')
-			appinfo = schema.RawAppInfo.FromJsonDict(parsedarg)
+			appinfo = schema.RawAppInfo.FromJsonDict(arg)
 			self.AppInfo = appinfo
 			self._BuildAppInfoTable()
 
@@ -144,10 +142,9 @@ class RemoteClient(remote.RemoteBase):
 	def _OnReceiveModuleInfo(self, arg):
 		self._LogBegin('_OnReceiveModuleInfo({!r})'.format(arg))
 		try:
-			parsedarg = json.loads(arg) if arg else None
-			if not parsedarg:
+			if not arg:
 				raise Exception('No app info!')
-			modinfo = schema.RawModuleInfo.FromJsonDict(parsedarg)
+			modinfo = schema.RawModuleInfo.FromJsonDict(arg)
 			self._LogEvent('module info: {!r}'.format(modinfo))
 			self.ModuleInfos[modinfo.path] = modinfo
 			_AddRawInfoRow(self.ownerComp.op('set_modules'), info=modinfo)
