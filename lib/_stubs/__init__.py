@@ -67,10 +67,15 @@ del _Expando
 class Par:
 	pass
 
-class COMP:
-	pass
+class OP:
+	def __init__(self):
+		self.par = Par()
+
+COMP = OP
+DAT = OP
 
 baseCOMP = COMP
+parameterexecuteDAT = DAT
 
 class app:
 	name = ''

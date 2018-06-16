@@ -67,9 +67,18 @@ class ExtensionBase:
 			_logger.LogEnd(self.ownerComp.path, self._GetLogId(), event)
 
 class ActionsExt:
-	def __init__(self, ownerComp, actions=None):
+	def __init__(self, ownerComp, actions=None, autoinitparexec=True):
 		self.ownerComp = ownerComp
 		self.Actions = actions or {}
+		parexec = ownerComp.op('perform_action_on_pulse')
+		if autoinitparexec and not parexec:
+			parexec = ownerComp.create(parameterexecuteDAT, 'perform_action_on_pulse')
+			parexec.python = True
+			parexec.par.op.expr = 'parent()'
+			parexec.par.pars = '*'
+			parexec.par.valuechange = False
+			parexec.par.onpulse = True
+			parexec.text = 'def onPulse(par): par.owner.PerformAction(par.name)'
 
 	def PerformAction(self, name):
 		if name not in self.Actions:
@@ -164,7 +173,7 @@ def CreateComponent(
 		parvals=None,
 		parexprs=None):
 	dest = _ResolveDest(dest)
-	comp = dest.create(optype, name=name)
+	comp = dest.create(optype, name)
 	UpdateComponent(
 		comp=comp, order=order, nodepos=nodepos,
 		tags=tags, parvals=parvals, parexprs=parexprs)
