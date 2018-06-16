@@ -620,6 +620,7 @@ class _LocalSchemaProvider(schema.SchemaProvider):
 			name=m.name,
 			label=_tryGetAttr(m, 'Uilabel'),
 			path=m.path,
+			parentpath=m.parent().path,
 			params=params)
 
 	def _GetParamSchema(self, partuplet, attrs=None) -> Optional[schema.ParamSchema]:
@@ -678,7 +679,10 @@ class _LocalSchemaProvider(schema.SchemaProvider):
 					minnorm=part.normMin,
 					maxnorm=part.normMax,
 					minlimit=part.min if part.clampMin else None,
-					maxlimit=part.max if part.clampMax else None)
+					maxlimit=part.max if part.clampMax else None,
+					menunames=part.menuNames,
+					menulabels=part.menuLabels,
+				)
 				for part in partuplet
 			])
 
@@ -856,7 +860,10 @@ class ModuleParamInfo:
 					name=part.name, default=part.default,
 					minnorm=part.normMin, maxnorm=part.normMax,
 					minlimit=part.min if part.clampMin else None,
-					maxlimit=part.max if part.clampMax else None)
+					maxlimit=part.max if part.clampMax else None,
+					menunames=part.menuNames,
+					menulabels=part.menuLabels,
+				)
 				for part in self.parts
 			]
 		)

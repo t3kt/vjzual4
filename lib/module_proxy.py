@@ -20,41 +20,69 @@ class ModuleProxyManager(common.ExtensionBase, common.ActionsExt):
 	def __init__(self, ownerComp):
 		common.ExtensionBase.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions={
-
+			'Clearproxies': self.ClearProxies,
 		})
 		self._AutoInitActionParams()
 
 	def ClearProxies(self):
-		raise NotImplementedError()
+		for o in self.ownerComp.findChildren(maxDepth=1, tags=['vjzmodproxy']):
+			o.destroy()
 
 	def GetProxy(self, modpath):
-		raise NotImplementedError()
+		rootpath = self._RootPath
+		if modpath == rootpath:
+			self._LogEvent('GetProxy({}) - cannot get proxy for root'.format(modpath))
+			return None
+		if not modpath.startswith(rootpath):
+			self._LogEvent('GetProxy({}) - modpath does not match root ({})'.format(modpath, rootpath))
+			return None
+		relpath = modpath[len(rootpath):]
+		if relpath.startswith('/'):
+			relpath = relpath[1:]
+		proxy = self.ownerComp.op(relpath)
+		if not proxy:
+			self._LogEvent('GetProxy({}) - proxy not found for relpath: {}'.format(modpath, relpath))
+		return proxy
 
 	@property
 	def _RootPath(self):
 		return self.ownerComp.par.Rootpath.eval() or '/'
 
 	def AddProxy(self, modschema: schema.ModuleSchema):
-		modpath = modschema.path
-		proxy = self.GetProxy(modpath)
-		if proxy:
-			raise Exception('Already have proxy for module {}'.format(modpath))
-		rootpath = self._RootPath
-		if modpath == rootpath:
-			pass
-		pass
+		self._LogBegin('AddProxy({})'.format(modschema))
+		try:
+			modpath = modschema.path
+			proxy = self.GetProxy(modpath)
+			if proxy:
+				raise Exception('Already have proxy for module {}'.format(modpath))
+			rootpath = self._RootPath
+			if modpath == rootpath:
+				dest = self.ownerComp
+			else:
+				dest = self.GetProxy(modschema.parentpath)
+				if not dest:
+					raise Exception('Parent proxy not found: ({}) {}'.format(modschema.path, modschema.parentpath))
+			self._CreateModuleProxy(
+				dest=dest,
+				modschema=modschema,
+				nodepos=[
+					0,
+					(len(dest.children) * 100) - 300
+				]
+			)
+		finally:
+			self._LogEnd('AddProxy()')
 
 	def _CreateModuleProxy(
 			self,
 			dest,
-			name,
 			modschema: schema.ModuleSchema,
 			nodepos=None,
 			parvals=None,
 			parexprs=None):
 		proxycomp = CreateComponent(
 			baseCOMP,
-			dest=dest, name=name, nodepos=nodepos,
+			dest=dest, name=modschema.name, nodepos=nodepos,
 			tags=['vjzmodproxy'],
 			parvals=parvals,
 			parexprs=parexprs)
@@ -88,43 +116,9 @@ class ModuleProxyManager(common.ExtensionBase, common.ActionsExt):
 					par.max = part.maxlimit
 				par.default = part.default
 				par.normMin, par.normMax = part.minnorm, part.maxnorm
-		if style in 'Toggle':
+		if style in ('Toggle', 'Str'):
 			partuplet[0].default = param.parts[0].default
-		# TODO: startSection
-		if style in (
-				'Float', 'Int', 'UV', 'UVW', 'XY', 'XYZ', 'RGB', 'RGBA', 'Toggle', 'Pulse'):
-			pass
-		pass
-
-
-# class _ModuleProxyBuilder:
-# 	def __init__(
-# 			self,
-# 			manager: ModuleProxyManager,
-# 			modschema: schema.ModuleSchema):
-# 		self.manager = manager
-# 		self.modschema = modschema
-# 		self.proxycomp = None
-# 		self._LogEvent, self._LogBegin, self._LogEnd = manager._LogEvent, manager._LogBegin, manager._LogEnd
-#
-# 	def Build(
-# 			self,
-# 			dest,
-# 			name,
-# 			nodepos=None,
-# 			parvals=None,
-# 			parexprs=None):
-# 		self.proxycomp = CreateComponent(
-# 			baseCOMP, dest=dest, name=name, nodepos=nodepos,
-# 			tags=['vjzmodproxy'],
-# 			parvals=parvals, parexprs=parexprs)
-# 		self.proxycomp.destroyCustomPars()
-# 		for param in self.modschema.params:
-# 			self._AddParam(param)
-# 		# TODO
-# 		return self.proxycomp
-#
-# 	def _AddParam(
-# 			self,
-# 			param: schema.ParamSchema):
-# 		pass
+		if style in ('Menu', 'StrMenu'):
+			partuplet[0].default = param.parts[0].default
+			partuplet[0].menuNames = param.parts[0].menunames
+			partuplet[0].menuLabels = param.parts[0].menulabels

@@ -204,6 +204,8 @@ class ParamPartSchema(BaseSchemaNode):
 			maxnorm=1,
 			minlimit=None,
 			maxlimit=None,
+			menunames=None,
+			menulabels=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.name = name
@@ -212,6 +214,8 @@ class ParamPartSchema(BaseSchemaNode):
 		self.maxnorm = maxnorm
 		self.minlimit = minlimit
 		self.maxlimit = maxlimit
+		self.menunames = menunames
+		self.menulabels = menulabels
 
 	def ToJsonDict(self):
 		return cleandict(mergedicts(self.otherattrs, {
@@ -221,6 +225,8 @@ class ParamPartSchema(BaseSchemaNode):
 			'minnorm': self.minnorm,
 			'maxnorm': self.maxnorm,
 			'default': self.default,
+			'menunames': self.menunames,
+			'menulabels': self.menulabels,
 		}))
 
 class ParamSchema(BaseSchemaNode):
@@ -305,12 +311,14 @@ class ModuleSchema(BaseSchemaNode):
 			name=None,
 			label=None,
 			path=None,
+			parentpath=None,
 			params=None,  # type: List[ParamSchema]
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.name = name
 		self.label = label or name
 		self.path = path
+		self.parentpath = parentpath
 		self.params = params or []
 		self.hasbypass = False
 		self.hasadvanced = False
@@ -325,6 +333,7 @@ class ModuleSchema(BaseSchemaNode):
 			'name': self.name,
 			'label': self.label,
 			'path': self.path,
+			'parentpath': self.parentpath,
 			'hasbypass': self.hasbypass,
 			'hasadvanced': self.hasadvanced,
 			'params': [p.ToJsonDict() for p in self.params],
