@@ -27,20 +27,11 @@ class RemoteServer(remote.RemoteBase):
 			actions={},
 			handlers={
 				'connect': self._OnConnect,
-				'queryApp': lambda _: self.SendAppInfo(),
+				'queryApp': self.SendAppInfo,
 				'queryMod': self.SendModuleInfo,
-				'TESTQUERY': self._OnTESTQUERY,
 			})
 		self._AutoInitActionParams()
 		self.AppRoot = None
-
-	def _OnTESTQUERY(self, cmdmesg: remote.CommandMessage):
-		self._LogEvent('_OnTESTQUERY({})'.format(cmdmesg))
-		x = cmdmesg.arg
-		if x == 5:
-			self.Connection.SendCommand_OLD('TESTRESPONSE', 'OMG ERRRRRROOOORR', kind='err', responseto=cmdmesg.cmdid)
-		else:
-			self.Connection.SendCommand_OLD('TESTRESPONSE', {'SUCCESS': x * 100}, responseto=cmdmesg.cmdid)
 
 	def _OnConnect(self, cmdmesg: remote.CommandMessage):
 		self._LogBegin('Connect({!r})'.format(cmdmesg.arg))
@@ -89,11 +80,14 @@ class RemoteServer(remote.RemoteBase):
 					submodules.sort(key=attrgetter('nodeY'))
 		return submodules
 
-	def SendAppInfo(self):
-		self._LogBegin('SendAppInfo()')
+	def SendAppInfo(self, request: remote.CommandMessage=None):
+		self._LogBegin('SendAppInfo({})'.format(request or ''))
 		try:
 			appinfo = self._BuildAppInfo()
-			self.Connection.SendCommand_OLD('appInfo', appinfo.ToJsonDict())
+			if request:
+				self.Connection.SendResponse(request.cmdid, appinfo.ToJsonDict())
+			else:
+				self.Connection.SendCommand('appInfo', appinfo.ToJsonDict())
 		finally:
 			self._LogEnd('SendAppInfo')
 
@@ -120,12 +114,12 @@ class RemoteServer(remote.RemoteBase):
 		finally:
 			self._LogEnd('_BuildModuleInfo()')
 
-	def SendModuleInfo(self, cmdmesg: remote.CommandMessage):
-		modpath = cmdmesg.arg
+	def SendModuleInfo(self, request: remote.CommandMessage):
+		modpath = request.arg
 		self._LogBegin('SendModuleInfo({!r})'.format(modpath))
 		try:
 			modinfo = self._BuildModuleInfo(modpath)
-			self.Connection.SendCommand_OLD('modInfo', modinfo.ToJsonDict())
+			self.Connection.SendResponse(request.cmdid, modinfo.ToJsonDict())
 		finally:
 			self._LogEnd('SendModuleInfo()')
 

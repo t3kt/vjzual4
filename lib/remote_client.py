@@ -81,7 +81,9 @@ class RemoteClient(remote.RemoteBase):
 		try:
 			if not self.Connected:
 				return
-			self.Connection.SendCommand_OLD('queryApp')
+			self.Connection.SendRequest('queryApp').then(
+				success=self._OnReceiveAppInfo,
+				failure=self._OnQueryAppFailure)
 		finally:
 			self._LogEnd('QueryApp()')
 
@@ -103,6 +105,9 @@ class RemoteClient(remote.RemoteBase):
 			pass
 		finally:
 			self._LogEnd('_OnReceiveAppInfo()')
+
+	def _OnQueryAppFailure(self, cmdmesg: remote.CommandMessage):
+		self._LogEvent('_OnQueryAppFailure({})'.format(cmdmesg))
 
 	def _BuildAppInfoTable(self):
 		dat = self.ownerComp.op('set_app_info')
@@ -141,7 +146,9 @@ class RemoteClient(remote.RemoteBase):
 		try:
 			if not self.Connected:
 				return
-			self.Connection.SendCommand_OLD('queryMod', modpath)
+			self.Connection.SendRequest('queryMod', modpath).then(
+				success=self._OnReceiveModuleInfo,
+				failure=self._OnQueryModuleFailure)
 		finally:
 			self._LogEnd('QueryModule()')
 
@@ -166,14 +173,8 @@ class RemoteClient(remote.RemoteBase):
 		finally:
 			self._LogEnd('_OnReceiveModuleInfo()')
 
-	def TEST_query(self, x):
-		respfuture = self.Connection.SendCommand_OLD(
-			command='TESTQUERY',
-			arg=x,
-			expectresponse=True)
-		respfuture.then(
-			success=lambda resp: print('OMG GOT A RESPONSE!', resp),
-			failure=lambda resp: print('WTF GOT AN ERROR!', resp))
+	def _OnQueryModuleFailure(self, cmdmesg: remote.CommandMessage):
+		self._LogEvent('_OnQueryModuleFailure({})'.format(cmdmesg))
 
 def _AddRawInfoRow(dat, info: schema.BaseSchemaNode=None, attrs=None):
 	obj = info.ToJsonDict() if info else None
