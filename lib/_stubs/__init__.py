@@ -62,7 +62,7 @@ JustifyType.CENTERRIGHT, JustifyType.BOTTOMLEFT, JustifyType.BOTTOMCENTER, Justi
 ParMode = _Expando()
 ParMode.CONSTANT = ParMode.EXPRESSION = ParMode.EXPORT = 0
 
-del _Expando
+ExpandoStub = _Expando
 
 class Par:
 	pass
@@ -73,9 +73,11 @@ class OP:
 
 COMP = OP
 DAT = OP
+CHOP = OP
 
 baseCOMP = COMP
 parameterexecuteDAT = DAT
+parameterCHOP = nullCHOP = selectCHOP = CHOP
 
 class app:
 	name = ''

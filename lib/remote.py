@@ -80,6 +80,9 @@ class CommandMessage(namedtuple('CommandMessage', ['cmd', 'arg', 'cmdid', 'kind'
 	def ToJsonDict(self):
 		return self._asdict()
 
+	def ToBriefStr(self):
+		return '{}({!r})'.format(self.__class__.__name__, common.excludekeys(self.ToJsonDict(), ['arg']))
+
 class CommandHandler:
 	def __init__(self, handlers=None):
 		self.handlers = handlers or {}
@@ -217,14 +220,14 @@ class RemoteConnection(common.ExtensionBase):
 	def RouteCommandMessage(self, message, peer):
 		cmdmesg = self._ParseCommandMessage(message)
 		if not cmdmesg:
-			self._LogEvent('RouteCommandMessage(raw: {!r})'.format(message))
+			self._LogEvent('RouteCommandMessage(RAW: {!r})'.format(message))
 			return
-		self._LogBegin('RouteCommandMessage({!r})'.format(cmdmesg))
+		self._LogBegin('RouteCommandMessage({})'.format(cmdmesg.ToBriefStr()))
 		try:
 			self._LogCommand(cmdmesg)
 			if cmdmesg.isResponse:
 				if not cmdmesg.cmdid or cmdmesg.cmdid not in self._responsefutures:
-					self._LogEvent('RouteCommandMessage() - no response handler waiting for {}'.format(cmdmesg))
+					self._LogEvent('RouteCommandMessage() - no response handler waiting for {}'.format(cmdmesg.ToBriefStr()))
 					return
 				resp = self._responsefutures[cmdmesg.cmdid]
 				if cmdmesg.isError:

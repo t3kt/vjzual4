@@ -6,11 +6,11 @@ if False:
 
 try:
 	import common
-	from common import cleandict, mergedicts, UpdateComponent, CreateFromTemplate
+	from common import cleandict, mergedicts, UpdateOP, CreateFromTemplate
 except ImportError:
 	common = mod.common
 	cleandict, mergedicts = common.cleandict, common.mergedicts
-	UpdateComponent, CreateFromTemplate = common.UpdateComponent, common.CreateFromTemplate
+	UpdateOP, CreateFromTemplate = common.UpdateOP, common.CreateFromTemplate
 
 try:
 	import schema
@@ -118,7 +118,7 @@ class UiBuilder:
 			preview.par.display = False
 		else:
 			preview.par.display = True
-			UpdateComponent(
+			UpdateOP(
 				preview.op('set_color'),
 				parvals=mergedicts(
 					parinfo.style != 'RGBA' and {'alpha': 1},
@@ -139,7 +139,7 @@ class UiBuilder:
 				slider.destroy()
 				continue
 			part = parinfo.parts[i]
-			UpdateComponent(
+			UpdateOP(
 				slider,
 				parvals=mergedicts(
 					{
@@ -182,7 +182,7 @@ class UiBuilder:
 			preview.par.display = False
 		else:
 			preview.par.display = True
-			UpdateComponent(
+			UpdateOP(
 				preview.op('set_color'),
 				parvals=mergedicts(
 					parinfo.style != 'RGBA' and {'alpha': 1},
@@ -203,7 +203,7 @@ class UiBuilder:
 				slider.destroy()
 				continue
 			part = parinfo.parts[i]
-			UpdateComponent(
+			UpdateOP(
 				slider,
 				parvals=mergedicts(
 					{

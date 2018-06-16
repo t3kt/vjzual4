@@ -22,6 +22,11 @@ try:
 except ImportError:
 	schema = mod.schema
 
+try:
+	import module_proxy
+except ImportError:
+	module_proxy = mod.module_proxy
+
 class RemoteClient(remote.RemoteBase):
 	def __init__(self, ownerComp):
 		super().__init__(
@@ -51,6 +56,10 @@ class RemoteClient(remote.RemoteBase):
 	@property
 	def _ParamPartTable(self): return self.ownerComp.op('set_param_parts')
 
+	@property
+	def _ProxyManager(self) -> module_proxy.ModuleProxyManager:
+		return self.ownerComp.op('proxy')
+
 	def Detach(self):
 		self._LogBegin('Detach()')
 		try:
@@ -61,6 +70,8 @@ class RemoteClient(remote.RemoteBase):
 			self._BuildAppInfoTable()
 			self._ClearModuleTable()
 			self._ClearParamTables()
+			self._ProxyManager.par.Rootpath = ''
+			self._ProxyManager.ClearProxies()
 		finally:
 			self._LogEnd('Detach()')
 
@@ -108,10 +119,13 @@ class RemoteClient(remote.RemoteBase):
 			appinfo = schema.RawAppInfo.FromJsonDict(cmdmesg.arg)
 			self.AppInfo = appinfo
 			self._BuildAppInfoTable()
+			self._ProxyManager.par.Rootpath = appinfo.path
 
 			if appinfo.modpaths:
-				self.moduleQueryQueue += appinfo.modpaths
+				self.moduleQueryQueue += sorted(appinfo.modpaths)
 				self.QueryModule(self.moduleQueryQueue.pop(0))
+			else:
+				self._OnAllModulesReceived()
 		# TODO ....
 			pass
 		finally:
@@ -178,7 +192,8 @@ class RemoteClient(remote.RemoteBase):
 			self._LogEnd('QueryModule()')
 
 	def _OnReceiveModuleInfo(self, cmdmesg: remote.CommandMessage):
-		self._LogBegin('_OnReceiveModuleInfo({!r})'.format(cmdmesg))
+		arg = cmdmesg.arg
+		self._LogBegin('_OnReceiveModuleInfo({})'.format((arg.get('path') if arg else None) or ''))
 		try:
 			arg = cmdmesg.arg
 			if not arg:
@@ -187,14 +202,17 @@ class RemoteClient(remote.RemoteBase):
 			modpath = modinfo.path
 			modschema = schema.ModuleSchema.FromRawModuleInfo(modinfo)
 			self.ModuleSchemas[modpath] = modschema
-			self._LogEvent('module schema: {!r}'.format(modschema))
+			# self._LogEvent('module schema: {!r}'.format(modschema))
 			_AddRawInfoRow(self.ownerComp.op('set_modules'), info=modschema)
 			self._AddParamsToTable(modpath, modschema.params)
+			self._ProxyManager.AddProxy(modschema)
 
 			if self.moduleQueryQueue:
 				nextpath = self.moduleQueryQueue.pop(0)
 				self._LogEvent('continuing to next module: {}'.format(nextpath))
 				self.QueryModule(nextpath)
+			else:
+				self._OnAllModulesReceived()
 			# TODO: confirm
 			# TODO ....
 		finally:
@@ -202,6 +220,9 @@ class RemoteClient(remote.RemoteBase):
 
 	def _OnQueryModuleFailure(self, cmdmesg: remote.CommandMessage):
 		self._LogEvent('_OnQueryModuleFailure({})'.format(cmdmesg))
+
+	def _OnAllModulesReceived(self):
+		self._LogEvent('_OnAllModulesReceived()')
 
 def _AddRawInfoRow(dat, info: schema.BaseSchemaNode=None, attrs=None):
 	obj = info.ToJsonDict() if info else None

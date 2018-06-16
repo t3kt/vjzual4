@@ -62,7 +62,7 @@ class ExtensionBase:
 		if self.enablelogging:
 			_logger.LogBegin(self.ownerComp.path, self._GetLogId(), event)
 
-	def _LogEnd(self, event):
+	def _LogEnd(self, event=None):
 		if self.enablelogging:
 			_logger.LogEnd(self.ownerComp.path, self._GetLogId(), event)
 
@@ -119,7 +119,7 @@ def excludekeys(d, keys):
 		if key not in keys
 	}
 
-def UpdateComponent(
+def UpdateOP(
 		comp,
 		order=None,
 		nodepos=None,
@@ -158,12 +158,12 @@ def CreateFromTemplate(
 		parexprs=None):
 	dest = _ResolveDest(dest)
 	comp = dest.copy(template, name=name)
-	UpdateComponent(
+	UpdateOP(
 		comp=comp, order=order, nodepos=nodepos,
 		tags=tags, parvals=parvals, parexprs=parexprs)
 	return comp
 
-def CreateComponent(
+def CreateOP(
 		optype,
 		dest,
 		name,
@@ -174,7 +174,7 @@ def CreateComponent(
 		parexprs=None):
 	dest = _ResolveDest(dest)
 	comp = dest.create(optype, name)
-	UpdateComponent(
+	UpdateOP(
 		comp=comp, order=order, nodepos=nodepos,
 		tags=tags, parvals=parvals, parexprs=parexprs)
 	return comp
