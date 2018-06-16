@@ -229,6 +229,19 @@ class ParamPartSchema(BaseSchemaNode):
 			'menulabels': self.menulabels,
 		}))
 
+	@classmethod
+	def FromRawParamInfo(cls, part: RawParamInfo):
+		return cls(
+			name=part.name,
+			default=part.default,
+			minnorm=part.minnorm,
+			maxnorm=part.maxnorm,
+			minlimit=part.minlimit,
+			maxlimit=part.maxlimit,
+			menunames=part.menunames,
+			menulabels=part.menulabels,
+		)
+
 class ParamSchema(BaseSchemaNode):
 	def __init__(
 			self,
@@ -272,6 +285,93 @@ class ParamSchema(BaseSchemaNode):
 			'isnode': self.isnode,
 			'mappable': self.mappable,
 		}))
+
+	@staticmethod
+	def ParseParamLabel(label):
+		attrs = {
+			'hidden': label.startswith('.'),
+			'advanced': label.startswith('+'),
+			'isnode': label.endswith('~'),
+		}
+		if label.startswith('.') or label.startswith('+'):
+			label = label[1:]
+		if label.endswith('~'):
+			label = label[:-1]
+		return label, attrs
+
+	@staticmethod
+	def DetermineSpecialType(name, style, attrs, labelattrs):
+		specialtype = attrs.get('specialtype')
+		if not specialtype:
+			if labelattrs.get('isnode'):
+				specialtype = 'node'
+			elif style == 'TOP':
+				specialtype = 'node.v'
+			elif style == 'CHOP':
+				specialtype = 'node.a'
+			elif style in ('COMP', 'PanelCOMP', 'OBJ'):
+				specialtype = 'node'
+			elif name == 'Bypass':
+				return 'switch.bypass'
+		return specialtype
+
+	@staticmethod
+	def DetermineMappable(style, attrs, advanced):
+		mappable = attrs.get('mappable')
+		if mappable not in (None, ''):
+			return mappable
+		return not advanced and style in (
+			'Float', 'Int',
+			'UV', 'UVW',
+			'XY', 'XYZ',
+			'RGB', 'RGBA',
+			'Toggle', 'Pulse')
+
+	@staticmethod
+	def IsVjzual3SpecialParam(name, page):
+		return page == 'Module' and name in (
+				'Modname', 'Uilabel', 'Collapsed', 'Solo',
+				'Uimode', 'Showadvanced', 'Showviewers', 'Resetstate')
+
+	@classmethod
+	def FromRawParamInfoTuplet(
+			cls,
+			partuplet: Tuple[RawParamInfo],
+			attrs: Dict[str, str] = None):
+		attrs = attrs or {}
+		parinfo = partuplet[0]
+		name = parinfo.tupletname
+		page = parinfo.pagename
+		label = parinfo.label
+		label, labelattrs = ParamSchema.ParseParamLabel(label)
+		hidden = attrs['hidden'] == '1' if (attrs.get('hidden') not in ('', None)) else labelattrs.get('hidden', False)
+		advanced = attrs['advanced'] == '1' if (attrs.get('advanced') not in ('', None)) else labelattrs.get('advanced', False)
+		specialtype = ParamSchema.DetermineSpecialType(name, parinfo.style, attrs, labelattrs)
+
+		label = attrs.get('label') or label
+
+		if page.startswith(':') or label.startswith(':'):
+			return None
+
+		mappable = ParamSchema.DetermineMappable(parinfo.style, attrs, advanced)
+
+		# backwards compatibility with vjzual3
+		if ParamSchema.IsVjzual3SpecialParam(name, page):
+			return None
+
+		return cls(
+			name=name,
+			label=label,
+			style=parinfo.style,
+			order=parinfo.order,
+			pagename=parinfo.pagename,
+			pageindex=parinfo.pageindex,
+			hidden=hidden,
+			advanced=advanced,
+			specialtype=specialtype,
+			mappable=mappable,
+			parts=[ParamPartSchema.FromRawParamInfo(part) for part in partuplet],
+		)
 
 class DataNodeInfo(BaseSchemaNode):
 	def __init__(
@@ -322,7 +422,7 @@ class ModuleSchema(BaseSchemaNode):
 		self.params = params or []
 		self.hasbypass = False
 		self.hasadvanced = False
-		for par in params:
+		for par in self.params:
 			if par.advanced:
 				self.hasadvanced = True
 			if par.specialtype == 'switch.bypass':
@@ -339,19 +439,25 @@ class ModuleSchema(BaseSchemaNode):
 			'params': [p.ToJsonDict() for p in self.params],
 		}))
 
+	@classmethod
+	def FromRawModuleInfo(cls, modinfo: RawModuleInfo):
+		# TODO: data nodes
+		parattrs = modinfo.parattrs or {}
+		params = []
+		if modinfo.partuplets:
+			for partuplet in modinfo.partuplets:
+				parschema = ParamSchema.FromRawParamInfoTuplet(partuplet, parattrs.get(partuplet[0].tupletname))
+				if parschema:
+					params.append(parschema)
+		return cls(
+			name=modinfo.name,
+			label=modinfo.label,
+			path=modinfo.path,
+			parentpath=modinfo.parentpath,
+			params=params,
+		)
+
 class SchemaProvider:
 	def GetModuleSchema(self, modpath) -> Optional[ModuleSchema]:
 		raise NotImplementedError()
 
-	@staticmethod
-	def _ParseParamLabel(label):
-		attrs = {
-			'hidden': label.startswith('.'),
-			'advanced': label.startswith('+'),
-			'isnode': label.endswith('~'),
-		}
-		if label.startswith('.') or label.startswith('+'):
-			label = label[1:]
-		if label.endswith('~'):
-			label = label[:-1]
-		return label, attrs

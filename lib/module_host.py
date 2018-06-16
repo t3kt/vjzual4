@@ -623,43 +623,27 @@ class _LocalSchemaProvider(schema.SchemaProvider):
 			parentpath=m.parent().path,
 			params=params)
 
-	def _GetParamSchema(self, partuplet, attrs=None) -> Optional[schema.ParamSchema]:
+	@staticmethod
+	def _GetParamSchema(partuplet, attrs=None) -> Optional[schema.ParamSchema]:
 		attrs = attrs or {}
 		par = partuplet[0]
 		page = par.pagename
 		label = par.label
-		label, labelattrs = self._ParseParamLabel(label)
+		label, labelattrs = schema.ParamSchema.ParseParamLabel(label)
 		hidden = attrs['hidden'] == '1' if (attrs.get('hidden') not in ('', None)) else labelattrs.get('hidden', False)
 		advanced = attrs['advanced'] == '1' if (attrs.get('advanced') not in ('', None)) else labelattrs.get('advanced', False)
-		mappable = attrs.get('mappable')
-		specialtype = attrs.get('specialtype')
-		if not specialtype:
-			if labelattrs.get('isnode'):
-				specialtype = 'node'
-			elif par.style == 'TOP':
-				specialtype = 'node.v'
-			elif par.style == 'CHOP':
-				specialtype = 'node.a'
-			elif par.style in ('COMP', 'PanelCOMP', 'OBJ'):
-				specialtype = 'node'
+		specialtype = schema.ParamSchema.DetermineSpecialType(par.name, par.style, attrs, labelattrs)
 
 		label = attrs.get('label') or label
 
 		if page.startswith(':') or label.startswith(':'):
 			return None
 
-		if mappable is None:
-			mappable = (not advanced) and par.style in (
-				'Float', 'Int', 'UV', 'UVW', 'XY', 'XYZ', 'RGB', 'RGBA', 'Toggle', 'Pulse')
+		mappable = schema.ParamSchema.DetermineMappable(par.style, attrs, advanced)
 
 		# backwards compatibility with vjzual3
-		if page == 'Module' and par.name in (
-				'Modname', 'Uilabel', 'Collapsed', 'Solo',
-				'Uimode', 'Showadvanced', 'Showviewers', 'Resetstate'):
+		if schema.ParamSchema.IsVjzual3SpecialParam(par.name, page):
 			return None
-
-		if not specialtype and par.name == 'Bypass':
-			specialtype = 'switch.bypass'
 
 		return schema.ParamSchema(
 			name=par.tupletName,
@@ -685,10 +669,6 @@ class _LocalSchemaProvider(schema.SchemaProvider):
 				)
 				for part in partuplet
 			])
-
-
-class ParameterBindingProvider:
-	pass
 
 
 # When the relevant metadata flag is empty/missing in the parameter table,

@@ -37,6 +37,7 @@ class RemoteClient(remote.RemoteBase):
 		self._AutoInitActionParams()
 		self.AppInfo = None  # type: schema.RawAppInfo
 		self.ModuleInfos = {}  # type: Dict[str, schema.RawModuleInfo]
+		self.ModuleSchemas = {}  # type: Dict[str, schema.ModuleSchema]
 		self.moduleQueryQueue = None
 
 	def Detach(self):
@@ -45,6 +46,7 @@ class RemoteClient(remote.RemoteBase):
 			self.Connected.val = False
 			self.AppInfo = None
 			self.ModuleInfos = {}
+			self.ModuleSchemas = {}
 			self.moduleQueryQueue = None
 			self._BuildAppInfoTable()
 			self._ClearModuleTable()
@@ -159,10 +161,13 @@ class RemoteClient(remote.RemoteBase):
 			if not arg:
 				raise Exception('No app info!')
 			modinfo = schema.RawModuleInfo.FromJsonDict(arg)
+			modpath = modinfo.path
 			self._LogEvent('module info: {!r}'.format(modinfo))
-			self.ModuleInfos[modinfo.path] = modinfo
+			self.ModuleInfos[modpath] = modinfo
+			modschema = schema.ModuleSchema.FromRawModuleInfo(modinfo)
+			self.ModuleSchemas[modpath] = modschema
 			_AddRawInfoRow(self.ownerComp.op('set_modules'), info=modinfo)
-			self._AddParamsToTable(modinfo.path, modinfo.partuplets)
+			self._AddParamsToTable(modpath, modinfo.partuplets)
 
 			if self.moduleQueryQueue:
 				nextpath = self.moduleQueryQueue.pop(0)
@@ -183,3 +188,19 @@ def _AddRawInfoRow(dat, info: schema.BaseSchemaNode=None, attrs=None):
 		attrs.get(col.val, '')
 		for col in dat.row(0)
 	])
+
+def _CreateModuleSchemaFromRawInfo(modinfo: schema.RawModuleInfo):
+	pass
+
+def _CreateParamSchemaFromRawInfo(partuplet: Tuple[schema.RawParamInfo]):
+	parinfo = partuplet[0]
+	raise NotImplementedError()
+	return schema.ParamSchema(
+		name=parinfo.name,
+		label=parinfo.label,
+		style=parinfo.style,
+		order=parinfo.order,
+		pagename=parinfo.pagename,
+		pageindex=parinfo.pageindex,
+	)
+	pass
