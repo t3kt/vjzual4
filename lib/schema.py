@@ -217,6 +217,17 @@ class ParamPartSchema(BaseSchemaNode):
 		self.menunames = menunames
 		self.menulabels = menulabels
 
+	tablekeys = [
+		'name',
+		'minlimit',
+		'maxlimit',
+		'minnorm',
+		'maxnorm',
+		'default',
+		'menunames',
+		'menulabels',
+	]
+
 	def ToJsonDict(self):
 		return cleandict(mergedicts(self.otherattrs, {
 			'name': self.name,
@@ -231,6 +242,7 @@ class ParamPartSchema(BaseSchemaNode):
 
 	@classmethod
 	def FromRawParamInfo(cls, part: RawParamInfo):
+		ismenu = part.style in ('Menu', 'StrMenu')
 		return cls(
 			name=part.name,
 			default=part.default,
@@ -238,8 +250,8 @@ class ParamPartSchema(BaseSchemaNode):
 			maxnorm=part.maxnorm,
 			minlimit=part.minlimit,
 			maxlimit=part.maxlimit,
-			menunames=part.menunames,
-			menulabels=part.menulabels,
+			menunames=part.menunames if ismenu else None,
+			menulabels=part.menulabels if ismenu else None,
 		)
 
 class ParamSchema(BaseSchemaNode):
@@ -270,6 +282,20 @@ class ParamSchema(BaseSchemaNode):
 		self.specialtype = specialtype or ''
 		self.isnode = specialtype and specialtype.startswith('node')
 		self.mappable = mappable and not self.isnode
+
+	tablekeys = [
+		'name',
+		'label',
+		'style',
+		'order',
+		'pagename',
+		'pageindex',
+		'hidden',
+		'advanced',
+		'specialtype',
+		'isnode',
+		'mappable',
+	]
 
 	def ToJsonDict(self):
 		return cleandict(mergedicts(self.otherattrs, {
@@ -427,6 +453,15 @@ class ModuleSchema(BaseSchemaNode):
 				self.hasadvanced = True
 			if par.specialtype == 'switch.bypass':
 				self.hasbypass = True
+
+	tablekeys = [
+		'path',
+		'name',
+		'label',
+		'parentpath',
+		'hasbypass',
+		'hasadvanced',
+	]
 
 	def ToJsonDict(self):
 		return cleandict(mergedicts(self.otherattrs, {
