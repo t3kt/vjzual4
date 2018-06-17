@@ -604,6 +604,16 @@ class ModuleChainHost(ModuleHostBase):
 			self.BuildControls(controls)
 
 
+class ModuleHostConnector:
+	def __init__(
+			self,
+			modschema: schema.ModuleSchema):
+		self.modschema = modschema
+		self.modpath = modschema.path
+
+	def GetPar(self, name):
+		raise NotImplementedError()
+
 class _LocalSchemaProvider(schema.SchemaProvider):
 	def GetModuleSchema(self, modpath) -> Optional[schema.ModuleSchema]:
 		m = op(modpath)
