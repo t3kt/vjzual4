@@ -85,26 +85,26 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 			for modpath in self._AllModulePaths:
 				dat.appendRow([modpath])
 
-	def _OnConnect(self, cmdmesg: remote.CommandMessage):
-		self._LogBegin('Connect({!r})'.format(cmdmesg.arg))
+	def _OnConnect(self, request: remote.CommandMessage):
+		self._LogBegin('Connect({!r})'.format(request.arg))
 		try:
 			self.Detach()
-			remoteinfo = cmdmesg.arg
+			remoteinfo = request.arg
 			if not remoteinfo:
 				raise Exception('No remote info!')
 			# TODO: check version
 			self.Attach()
 			_ApplyParValue(self.ownerComp.par.Address, remoteinfo.get('clientAddress'))
 			_ApplyParValue(self.ownerComp.par.Commandsendport, remoteinfo.get('commandResponsePort'))
-			# connpar = self.Connection.par
-			# _ApplyParValue(connpar.Oscsendport, remoteinfo.get('oscClientReceivePort'))
-			# _ApplyParValue(connpar.Oscreceiveport, remoteinfo.get('oscClientSendPort'))
-			# _ApplyParValue(connpar.Osceventsendport, remoteinfo.get('oscClientEventSendPort'))
-			# _ApplyParValue(connpar.Osceventreceiveport, remoteinfo.get('oscClientEventReceivePort'))
+			connpar = self.Connection.par
+			_ApplyParValue(connpar.Oscsendport, remoteinfo.get('oscClientReceivePort'))
+			_ApplyParValue(connpar.Oscreceiveport, remoteinfo.get('oscClientSendPort'))
+			_ApplyParValue(connpar.Osceventsendport, remoteinfo.get('oscClientEventReceivePort'))
+			_ApplyParValue(connpar.Osceventreceiveport, remoteinfo.get('oscClientEventSendPort'))
 
 			# TODO: apply connection settings (OSC)
 			self.Connected.val = True
-			self.Connection.SendResponse(cmdmesg.cmdid)
+			self.Connection.SendResponse(request.cmd, request.cmdid)
 		finally:
 			self._LogEnd()
 
@@ -142,7 +142,7 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 		try:
 			appinfo = self._BuildAppInfo()
 			if request:
-				self.Connection.SendResponse(request.cmdid, appinfo.ToJsonDict())
+				self.Connection.SendResponse(request.cmd, request.cmdid, appinfo.ToJsonDict())
 			else:
 				self.Connection.SendCommand('appInfo', appinfo.ToJsonDict())
 		finally:
@@ -176,7 +176,7 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 		self._LogBegin('SendModuleInfo({!r})'.format(modpath))
 		try:
 			modinfo = self._BuildModuleInfo(modpath)
-			self.Connection.SendResponse(request.cmdid, modinfo.ToJsonDict())
+			self.Connection.SendResponse(request.cmd, request.cmdid, modinfo.ToJsonDict())
 		finally:
 			self._LogEnd()
 
@@ -201,8 +201,8 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 			startsection=par.startSection,
 		)
 
-	def HandleOscEvent(self, dat, rowindex, message, messagebytes, timestamp, address, args, peer):
-		self._LogEvent('HandleOscEvent(address: {!r}, message: {!r}, args: {!r})'.format(address, message, args))
+	def HandleOscEvent(self, address, args):
+		self._LogEvent('HandleOscEvent({!r}, {!r})'.format(address, args))
 
 
 def _ApplyParValue(par, override):

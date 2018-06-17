@@ -227,8 +227,13 @@ class RemoteClient(remote.RemoteBase):
 	def _OnAllModulesReceived(self):
 		self._LogEvent('_OnAllModulesReceived()')
 
-	def HandleOscEvent(self, dat, rowindex, message, messagebytes, timestamp, address, args, peer):
-		self._LogEvent('HandleOscEvent(address: {!r}, message: {!r}, args: {!r})'.format(address, message, args))
+	def HandleOscEvent(self, address, args):
+		if not self.Connected or ':' not in address or not args:
+			return
+		self._LogEvent('HandleOscEvent({!r}, {!r})'.format(address, args))
+		modpath, name = address.split(':', maxsplit=1)
+		self._ProxyManager.SetParamValue(modpath, name, args[0])
+
 
 def _AddRawInfoRow(dat, info: schema.BaseSchemaNode=None, attrs=None):
 	obj = info.ToJsonDict() if info else None

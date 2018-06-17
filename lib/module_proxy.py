@@ -174,3 +174,9 @@ class ModuleProxyManager(common.ExtensionBase, common.ActionsExt):
 			partuplet[0].default = param.parts[0].default
 			partuplet[0].menuNames = param.parts[0].menunames
 			partuplet[0].menuLabels = param.parts[0].menulabels
+
+	def SetParamValue(self, modpath, name, value):
+		proxy = self.GetProxy(modpath)
+		if not proxy or not hasattr(proxy.par, name):
+			return
+		setattr(proxy.par, name, value)

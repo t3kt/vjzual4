@@ -19,8 +19,8 @@ class CommandMessage(namedtuple('CommandMessage', ['cmd', 'arg', 'cmdid', 'kind'
 	ERROR = 'err'
 
 	@classmethod
-	def forResponse(cls, cmdid, arg=None):
-		return cls(':', arg, cmdid, kind=CommandMessage.RESPONSE)
+	def forResponse(cls, cmd, cmdid, arg=None):
+		return cls(':' + cmd, arg, cmdid, kind=CommandMessage.RESPONSE)
 
 	@classmethod
 	def forError(cls, cmdid, arg=None):
@@ -51,7 +51,7 @@ class CommandMessage(namedtuple('CommandMessage', ['cmd', 'arg', 'cmdid', 'kind'
 		if kind == CommandMessage.RESPONSE:
 			if not cmdid:
 				return None
-			return cls.forResponse(cmdid=cmdid, arg=arg)
+			return cls.forResponse(cmd=cmd, cmdid=cmdid, arg=arg)
 		# if kind == CommandMessage.COMMAND:
 		if not cmd:
 			return None
@@ -99,7 +99,7 @@ class CommandHandler:
 		print('Unsupported command: ', cmdmesg, peer)
 
 class OscEventHandler:
-	def HandleOscEvent(self, dat, rowindex, message, messagebytes, timestamp, address, args, peer):
+	def HandleOscEvent(self, address, args):
 		raise NotImplementedError()
 
 class ResponseFuture:
@@ -160,6 +160,7 @@ class RemoteConnection(common.ExtensionBase):
 		super().__init__(ownerComp)
 		self._sendport = ownerComp.op('send_command_tcpip')
 		self._recvport = ownerComp.op('receive_command_tcpip')
+		self._osceventsend = ownerComp.op('osc_event_send')
 		self._commandlog = ownerComp.op('command_log')
 		self._commandhandler = commandhandler  # type: CommandHandler
 		self._nextcmdid = 1
@@ -168,17 +169,9 @@ class RemoteConnection(common.ExtensionBase):
 		if False:
 			self.par = ExpandoStub()
 
-	def HandleOscEvent(self, dat, rowindex, message, messagebytes, timestamp, address, args, peer):
+	def HandleOscEvent(self, address, args):
 		if self._osceventhandler:
-			self._osceventhandler.HandleOscEvent(
-				dat,
-				rowindex,
-				message,
-				messagebytes,
-				timestamp,
-				address,
-				args,
-				peer)
+			self._osceventhandler.HandleOscEvent(address, args)
 
 	def SendRawCommandMessages(
 			self,
@@ -191,26 +184,6 @@ class RemoteConnection(common.ExtensionBase):
 	def _RemoveResponseFuture(self, cmdid):
 		if cmdid in self._responsefutures:
 			del self._responsefutures[cmdid]
-
-	def SendCommand_OLD(self, command, arg=None, expectresponse=False, kind=None, responseto=None):
-		self._LogEvent('SendCommand({!r}, {!r})'.format(command, arg))
-		if responseto is not None:
-			cmdid = responseto
-			kind = kind or 'resp'
-		elif expectresponse:
-			cmdid = self._nextcmdid
-			self._nextcmdid += 1
-		else:
-			cmdid = None
-		message = CommandMessage(command, arg, cmdid, kind=kind or '')
-		if expectresponse:
-			responsefuture = ResponseFuture(
-				onlisten=lambda: self._AddResponseFuture(cmdid, responsefuture),
-				oninvoke=lambda: self._RemoveResponseFuture(cmdid))
-		else:
-			responsefuture = None
-		self.SendRawCommandMessages(json.dumps(message.ToJsonDict()))
-		return responsefuture
 
 	def _SendCommandMessage(self, cmdmesg: CommandMessage):
 		self._LogEvent('_SendCommandMessage({})'.format(cmdmesg))
@@ -230,8 +203,8 @@ class RemoteConnection(common.ExtensionBase):
 		return self._SendCommandMessage(
 			CommandMessage.forRequest(cmd=cmd, cmdid=cmdid, arg=arg))
 
-	def SendResponse(self, cmdid, arg=None):
-		self._SendCommandMessage(CommandMessage.forResponse(cmdid=cmdid, arg=arg))
+	def SendResponse(self, cmd, cmdid, arg=None):
+		self._SendCommandMessage(CommandMessage.forResponse(cmd=cmd, cmdid=cmdid, arg=arg))
 
 	def SendErrorResponse(self, cmdid, arg=None):
 		self._SendCommandMessage(CommandMessage.forError(cmdid=cmdid, arg=arg))
@@ -276,6 +249,9 @@ class RemoteConnection(common.ExtensionBase):
 			return None
 		return CommandMessage.fromJsonDict(obj)
 
+	def SendOsc(self, address, *values, asBundle=False):
+		self._osceventsend.sendOSC(address, *values, asBundle=asBundle)
+
 class RemoteBase(common.ExtensionBase, common.ActionsExt, CommandHandler):
 	def __init__(self, ownerComp, actions=None, handlers=None):
 		common.ExtensionBase.__init__(self, ownerComp)
@@ -283,4 +259,9 @@ class RemoteBase(common.ExtensionBase, common.ActionsExt, CommandHandler):
 		CommandHandler.__init__(self, handlers)
 		self.Connection = ownerComp.op('connection')  # type: RemoteConnection
 		self.Connected = tdu.Dependency(False)
+
+	def SendOsc(self, address, *values, asBundle=False):
+		if not self.Connected:
+			return
+		self.Connection.SendOsc(address, *values, asBundle=asBundle)
 
