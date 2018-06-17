@@ -98,6 +98,10 @@ class CommandHandler:
 	def UnsupportedCommand(cmdmesg: CommandMessage, peer):
 		print('Unsupported command: ', cmdmesg, peer)
 
+class OscEventHandler:
+	def HandleOscEvent(self, dat, rowindex, message, messagebytes, timestamp, address, args, peer):
+		raise NotImplementedError()
+
 class ResponseFuture:
 	def __init__(self, onlisten=None, oninvoke=None):
 		self._successcallback = None  # type: Callable
@@ -152,7 +156,7 @@ class ResponseFuture:
 			return '{}[success: {!r}]'.format(self.__class__.__name__, self._result)
 
 class RemoteConnection(common.ExtensionBase):
-	def __init__(self, ownerComp, commandhandler=None):
+	def __init__(self, ownerComp, commandhandler=None, osceventhandler=None):
 		super().__init__(ownerComp)
 		self._sendport = ownerComp.op('send_command_tcpip')
 		self._recvport = ownerComp.op('receive_command_tcpip')
@@ -160,6 +164,21 @@ class RemoteConnection(common.ExtensionBase):
 		self._commandhandler = commandhandler  # type: CommandHandler
 		self._nextcmdid = 1
 		self._responsefutures = {}  # type: Dict[int, ResponseFuture]
+		self._osceventhandler = osceventhandler  # type: OscEventHandler
+		if False:
+			self.par = ExpandoStub()
+
+	def HandleOscEvent(self, dat, rowindex, message, messagebytes, timestamp, address, args, peer):
+		if self._osceventhandler:
+			self._osceventhandler.HandleOscEvent(
+				dat,
+				rowindex,
+				message,
+				messagebytes,
+				timestamp,
+				address,
+				args,
+				peer)
 
 	def SendRawCommandMessages(
 			self,
@@ -240,7 +259,7 @@ class RemoteConnection(common.ExtensionBase):
 					return
 				self._commandhandler.HandleCommand(cmdmesg, peer)
 		finally:
-			self._LogEnd('RouteCommandMessage()')
+			self._LogEnd()
 
 	def _LogCommand(self, cmdmesg: CommandMessage):
 		if self.ownerComp.par.Logcommands:

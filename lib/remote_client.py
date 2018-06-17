@@ -73,24 +73,27 @@ class RemoteClient(remote.RemoteBase):
 			self._ProxyManager.par.Rootpath = ''
 			self._ProxyManager.ClearProxies()
 		finally:
-			self._LogEnd('Detach()')
+			self._LogEnd()
 
 	def Connect(self):
 		self._LogBegin('Connect()')
 		try:
 			self.Detach()
+			connpar = self.Connection.par
 			info = {
 				'version': 1,
 				'clientAddress': self.ownerComp.par.Localaddress.eval() or self.ownerComp.par.Localaddress.default,
 				'commandResponsePort': self.ownerComp.par.Commandreceiveport.eval(),
-				'oscClientSendPort': 8888,
-				'oscClientReceivePort': 7777,
+				'oscClientSendPort': connpar.Oscsendport.eval(),
+				'oscClientReceivePort': connpar.Oscreceiveport.eval(),
+				'oscClientEventSendPort': connpar.Osceventsendport.eval(),
+				'oscClientEventReceivePort': connpar.Osceventreceiveport.eval(),
 			}
 			self.Connection.SendRequest('connect', info).then(
 				success=self._OnConfirmConnect,
 				failure=self._OnConnectFailure)
 		finally:
-			self._LogEnd('Connect()')
+			self._LogEnd()
 
 	def _OnConfirmConnect(self, _):
 		self.Connected.val = True
@@ -108,7 +111,7 @@ class RemoteClient(remote.RemoteBase):
 				success=self._OnReceiveAppInfo,
 				failure=self._OnQueryAppFailure)
 		finally:
-			self._LogEnd('QueryApp()')
+			self._LogEnd()
 
 	def _OnReceiveAppInfo(self, cmdmesg: remote.CommandMessage):
 		self._LogBegin('_OnReceiveAppInfo({!r})'.format(cmdmesg.arg))
@@ -129,7 +132,7 @@ class RemoteClient(remote.RemoteBase):
 		# TODO ....
 			pass
 		finally:
-			self._LogEnd('_OnReceiveAppInfo()')
+			self._LogEnd()
 
 	def _OnQueryAppFailure(self, cmdmesg: remote.CommandMessage):
 		self._LogEvent('_OnQueryAppFailure({})'.format(cmdmesg))
@@ -189,7 +192,7 @@ class RemoteClient(remote.RemoteBase):
 				success=self._OnReceiveModuleInfo,
 				failure=self._OnQueryModuleFailure)
 		finally:
-			self._LogEnd('QueryModule()')
+			self._LogEnd()
 
 	def _OnReceiveModuleInfo(self, cmdmesg: remote.CommandMessage):
 		arg = cmdmesg.arg
@@ -216,13 +219,16 @@ class RemoteClient(remote.RemoteBase):
 			# TODO: confirm
 			# TODO ....
 		finally:
-			self._LogEnd('_OnReceiveModuleInfo()')
+			self._LogEnd()
 
 	def _OnQueryModuleFailure(self, cmdmesg: remote.CommandMessage):
 		self._LogEvent('_OnQueryModuleFailure({})'.format(cmdmesg))
 
 	def _OnAllModulesReceived(self):
 		self._LogEvent('_OnAllModulesReceived()')
+
+	def HandleOscEvent(self, dat, rowindex, message, messagebytes, timestamp, address, args, peer):
+		self._LogEvent('HandleOscEvent(address: {!r}, message: {!r}, args: {!r})'.format(address, message, args))
 
 def _AddRawInfoRow(dat, info: schema.BaseSchemaNode=None, attrs=None):
 	obj = info.ToJsonDict() if info else None

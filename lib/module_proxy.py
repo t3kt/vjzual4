@@ -141,6 +141,7 @@ class ModuleProxyManager(common.ExtensionBase, common.ActionsExt):
 			name='__par_vals',
 			nodepos=[-200, -50])
 		parvals.inputConnectors[0].connect(paraggregator)
+		proxycomp.componentCloneImmune = True
 		return proxycomp
 
 	def _AddParam(self, comp, param: schema.ParamSchema, modschema: schema.ModuleSchema):

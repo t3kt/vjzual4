@@ -9,6 +9,7 @@ try:
 	import common
 except ImportError:
 	common = mod.common
+CreateOP = common.CreateOP
 
 try:
 	import remote
@@ -20,7 +21,7 @@ try:
 except ImportError:
 	schema = mod.schema
 
-class RemoteServer(remote.RemoteBase):
+class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 	def __init__(self, ownerComp):
 		super().__init__(
 			ownerComp,
@@ -32,36 +33,92 @@ class RemoteServer(remote.RemoteBase):
 			})
 		self._AutoInitActionParams()
 		self.AppRoot = None
+		self._AllModulePaths = []
 
-	def _OnConnect(self, cmdmesg: remote.CommandMessage):
-		self._LogBegin('Connect({!r})'.format(cmdmesg.arg))
+	@property
+	def _ModuleTable(self): return self.ownerComp.op('set_modules')
+
+	@property
+	def _LocalParGetters(self): return self.ownerComp.op('local_par_val_getters')
+
+	def Detach(self):
+		self._LogBegin('Detach()')
 		try:
-			remoteinfo = cmdmesg.arg
-			if not remoteinfo:
-				raise Exception('No remote info!')
-			# TODO: check version
-			self.ownerComp.par.Address = remoteinfo.get('clientAddress') or self.ownerComp.par.Address.default
-			self.ownerComp.par.Commandsendport = remoteinfo.get('commandResponsePort') or self.ownerComp.par.Commandsendport.default
-			# TODO: apply connection settings (OSC)
-			self.Connected.val = True
-			self.Connection.SendResponse(cmdmesg.cmdid)
+			self._AllModulePaths = []
+			self._BuildModuleTable()
+			for o in self._LocalParGetters.children:
+				o.destroy()
 		finally:
-			self._LogEnd('Connect()')
+			self._LogEnd()
 
-	def _BuildAppInfo(self):
-		self._LogBegin('_BuildAppInfo()')
+	def Attach(self):
+		self._LogBegin('Attach()')
 		try:
 			self.AppRoot = self.ownerComp.par.Approot.eval()
 			if not self.AppRoot:
 				raise Exception('No app root specified')
+			self._AllModulePaths = [m.path for m in self._FindSubModules(self.AppRoot, recursive=True, sort=False)]
+			self._BuildModuleTable()
+			pargetters = self._LocalParGetters
+			for i, modpath in enumerate(self._AllModulePaths):
+				CreateOP(
+					parameterCHOP,
+					dest=pargetters,
+					name='__pars__' + tdu.legalName(modpath).replace('/', '__'),
+					nodepos=[
+						0,
+						(i * 150) - 500
+					],
+					parvals={
+						'ops': modpath,
+						'parameters': '*',
+						'renameto': modpath[1:] + ':*',
+					})
+		finally:
+			self._LogEnd()
+
+	def _BuildModuleTable(self):
+		dat = self._ModuleTable
+		dat.clear()
+		dat.appendRow(['path'])
+		if self._AllModulePaths:
+			for modpath in self._AllModulePaths:
+				dat.appendRow([modpath])
+
+	def _OnConnect(self, cmdmesg: remote.CommandMessage):
+		self._LogBegin('Connect({!r})'.format(cmdmesg.arg))
+		try:
+			self.Detach()
+			remoteinfo = cmdmesg.arg
+			if not remoteinfo:
+				raise Exception('No remote info!')
+			# TODO: check version
+			self.Attach()
+			_ApplyParValue(self.ownerComp.par.Address, remoteinfo.get('clientAddress'))
+			_ApplyParValue(self.ownerComp.par.Commandsendport, remoteinfo.get('commandResponsePort'))
+			# connpar = self.Connection.par
+			# _ApplyParValue(connpar.Oscsendport, remoteinfo.get('oscClientReceivePort'))
+			# _ApplyParValue(connpar.Oscreceiveport, remoteinfo.get('oscClientSendPort'))
+			# _ApplyParValue(connpar.Osceventsendport, remoteinfo.get('oscClientEventSendPort'))
+			# _ApplyParValue(connpar.Osceventreceiveport, remoteinfo.get('oscClientEventReceivePort'))
+
+			# TODO: apply connection settings (OSC)
+			self.Connected.val = True
+			self.Connection.SendResponse(cmdmesg.cmdid)
+		finally:
+			self._LogEnd()
+
+	def _BuildAppInfo(self):
+		self._LogBegin('_BuildAppInfo()')
+		try:
 			return schema.RawAppInfo(
 				name=str(getattr(self.AppRoot.par, 'Appname', None) or self.ownerComp.par.Appname or project.name),
 				label=str(getattr(self.AppRoot.par, 'Uilabel', None) or getattr(self.AppRoot.par, 'Label', None) or self.ownerComp.par.Applabel),
 				path=self.AppRoot.path,
-				modpaths=[m.path for m in self._FindSubModules(self.AppRoot, recursive=True, sort=False)],
+				modpaths=self._AllModulePaths,
 			)
 		finally:
-			self._LogEnd('_BuildAppInfo()')
+			self._LogEnd()
 
 	@staticmethod
 	def _FindSubModules(parentComp, recursive=False, sort=True):
@@ -89,7 +146,7 @@ class RemoteServer(remote.RemoteBase):
 			else:
 				self.Connection.SendCommand('appInfo', appinfo.ToJsonDict())
 		finally:
-			self._LogEnd('SendAppInfo')
+			self._LogEnd()
 
 	def _BuildModuleInfo(self, modpath) -> schema.RawModuleInfo:
 		self._LogBegin('_BuildModuleInfo({!r})'.format(modpath))
@@ -112,7 +169,7 @@ class RemoteServer(remote.RemoteBase):
 			)
 			return modinfo
 		finally:
-			self._LogEnd('_BuildModuleInfo()')
+			self._LogEnd()
 
 	def SendModuleInfo(self, request: remote.CommandMessage):
 		modpath = request.arg
@@ -121,7 +178,7 @@ class RemoteServer(remote.RemoteBase):
 			modinfo = self._BuildModuleInfo(modpath)
 			self.Connection.SendResponse(request.cmdid, modinfo.ToJsonDict())
 		finally:
-			self._LogEnd('SendModuleInfo()')
+			self._LogEnd()
 
 	@staticmethod
 	def _BuildParamInfo(par):
@@ -143,3 +200,10 @@ class RemoteServer(remote.RemoteBase):
 			menulabels=par.menuLabels,
 			startsection=par.startSection,
 		)
+
+	def HandleOscEvent(self, dat, rowindex, message, messagebytes, timestamp, address, args, peer):
+		self._LogEvent('HandleOscEvent(address: {!r}, message: {!r}, args: {!r})'.format(address, message, args))
+
+
+def _ApplyParValue(par, override):
+	par.val = override or par.default
