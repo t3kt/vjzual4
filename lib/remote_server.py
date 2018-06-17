@@ -202,7 +202,14 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 		)
 
 	def HandleOscEvent(self, address, args):
-		self._LogEvent('HandleOscEvent({!r}, {!r})'.format(address, args))
+		if not self.Connected or ':' not in address or not args:
+			return
+		# self._LogEvent('HandleOscEvent({!r}, {!r})'.format(address, args))
+		modpath, name = address.split(':', maxsplit=1)
+		m = self.ownerComp.op(modpath)
+		if not m or not hasattr(m.par, name):
+			return
+		setattr(m.par, name, args[0])
 
 
 def _ApplyParValue(par, override):

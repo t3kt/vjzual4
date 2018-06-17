@@ -230,7 +230,7 @@ class RemoteClient(remote.RemoteBase):
 	def HandleOscEvent(self, address, args):
 		if not self.Connected or ':' not in address or not args:
 			return
-		self._LogEvent('HandleOscEvent({!r}, {!r})'.format(address, args))
+		# self._LogEvent('HandleOscEvent({!r}, {!r})'.format(address, args))
 		modpath, name = address.split(':', maxsplit=1)
 		self._ProxyManager.SetParamValue(modpath, name, args[0])
 
