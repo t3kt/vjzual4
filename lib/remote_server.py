@@ -10,6 +10,7 @@ try:
 except ImportError:
 	common = mod.common
 CreateOP = common.CreateOP
+trygetpar = common.trygetpar
 
 try:
 	import remote
@@ -154,7 +155,11 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 			module = self.ownerComp.op(modpath)
 			if not module:
 				raise Exception('Module not found: {}'.format(modpath))
+			modulecore = module.op('core')
+			# TODO: support having the core specify the sub-modules
 			submods = self._FindSubModules(module)
+			nodeops = self._FindDataNodes(module, modulecore)
+			parattrs = common.parseattrtable(trygetpar(modulecore, 'Parameters'))
 			modinfo = schema.RawModuleInfo(
 				path=modpath,
 				parentpath=module.parent().path,
@@ -165,11 +170,45 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 					[self._BuildParamInfo(p) for p in t]
 					for t in module.customTuplets
 				],
-				parattrs=None,
+				nodes=[self._GetNodeInfo(n) for n in nodeops],
+				parattrs=parattrs,
 			)
 			return modinfo
 		finally:
 			self._LogEnd()
+
+	@staticmethod
+	def _FindDataNodes(module, modulecore):
+		nodespar = modulecore and getattr(modulecore.par, 'Nodes', None)
+		nodesval = nodespar.eval() if nodespar else None
+		if nodesval:
+			if isinstance(nodesval, (list, tuple)):
+				return module.ops(*nodesval)
+			else:
+				return module.ops(nodesval)
+		return module.findChildren(tags=['vjznode', 'tdatanode'])
+
+	def _GetNodeInfo(self, nodeop):
+		if nodeop.isTOP:
+			return schema.DataNodeInfo(
+				name=nodeop.name, path=nodeop.path,
+				video=nodeop.path if nodeop.depth == 0 else None,
+				texbuf=nodeop.path if nodeop.depth > 0 else None)
+		if nodeop.isCHOP:
+			return schema.DataNodeInfo(
+				name=nodeop.name, path=nodeop.path,
+				audio=nodeop.path)
+		if nodeop.isCOMP:
+			label = trygetpar(nodeop, 'Label')
+			if 'tdatanode' in nodeop.tags or 'vjznode' in nodeop.tags:
+				return schema.DataNodeInfo(
+					name=nodeop.name, label=label, path=nodeop.path,
+					video=trygetpar(nodeop, 'Video', parse=str) if trygetpar(nodeop, 'Hasvideo') in (None, True) else None,
+					audio=trygetpar(nodeop, 'Audio', parse=str) if trygetpar(nodeop, 'Hasaudio') in (None, True) else None,
+					texbuf=trygetpar(nodeop, 'Texbuf', parse=str) if trygetpar(nodeop, 'Hastexbuf') in (None, True) else None)
+			for outnode in nodeop.ops('out_node', 'out1', 'video_out'):
+				return self._GetNodeInfo(outnode)
+		self._LogEvent('_GetNodeInfo({}): unable to determine node info'.format(nodeop))
 
 	def SendModuleInfo(self, request: remote.CommandMessage):
 		modpath = request.arg

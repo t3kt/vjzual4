@@ -25,10 +25,9 @@ except ImportError:
 
 try:
 	import common
-	from common import cleandict, mergedicts
 except ImportError:
 	common = mod.common
-	cleandict, mergedicts = common.cleandict, common.mergedicts
+cleandict, mergedicts, trygetpar = common.cleandict, common.mergedicts, common.trygetpar
 
 try:
 	import control_mapping
@@ -251,7 +250,7 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 		self.HasAdvancedParams.val = False
 		if not self.Module:
 			return
-		pattrs = _parseAttributeTable(self.getCorePar('Parameters'))
+		pattrs = common.parseattrtable(self.getCorePar('Parameters'))
 		for partuplet in self.Module.customTuplets:
 			parinfo = ModuleParamInfo.FromParTuplet(partuplet, pattrs.get(partuplet[0].tupletName))
 			if parinfo:
@@ -439,25 +438,6 @@ def _editComp(comp):
 	if editor:
 		editor.owner = comp
 
-def _parseAttributeTable(dat):
-	dat = op(dat)
-	if not dat:
-		return {}
-	cols = [c.val for c in dat.row(0)]
-	return {
-		cells[0].val: {
-			cols[i]: cells[i].val
-			for i in range(1, dat.numCols)
-		}
-		for cells in dat.rows()[1:]
-	}
-
-def _tryGetAttr(o, *names, default=None):
-	if o:
-		for p in o.pars(*names):
-			return p.eval()
-	return default
-
 
 class ModuleHost(ModuleHostBase):
 	def __init__(self, ownerComp):
@@ -620,7 +600,7 @@ class _LocalSchemaProvider(schema.SchemaProvider):
 		if not m:
 			return None
 		modcore = m.op('core')
-		pattrs = _parseAttributeTable(_tryGetAttr(modcore, 'Parameters'))
+		pattrs = common.parseattrtable(trygetpar(modcore, 'Parameters'))
 		params = []
 		for partuplet in m.customTuplets:
 			parinfo = self._GetParamSchema(partuplet, pattrs.get(partuplet[0].tupletName))
@@ -628,7 +608,7 @@ class _LocalSchemaProvider(schema.SchemaProvider):
 				params.append(parinfo)
 		return schema.ModuleSchema(
 			name=m.name,
-			label=_tryGetAttr(m, 'Uilabel'),
+			label=trygetpar(m, 'Uilabel'),
 			path=m.path,
 			parentpath=m.parent().path,
 			params=params)

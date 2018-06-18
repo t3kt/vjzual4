@@ -119,6 +119,26 @@ def excludekeys(d, keys):
 		if key not in keys
 	}
 
+def trygetpar(o, *names, default=None, parse=None):
+	if o:
+		for p in o.pars(*names):
+			val = p.eval()
+			return parse(val) if parse else val
+	return default
+
+def parseattrtable(dat):
+	dat = op(dat)
+	if not dat:
+		return {}
+	cols = [c.val for c in dat.row(0)]
+	return {
+		cells[0].val: {
+			cols[i]: cells[i].val
+			for i in range(1, dat.numCols)
+		}
+		for cells in dat.rows()[1:]
+	}
+
 def UpdateOP(
 		comp,
 		order=None,

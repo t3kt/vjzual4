@@ -1,4 +1,4 @@
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Optional, Tuple
 
 print('vjz4/schema.py loading')
 
@@ -7,10 +7,9 @@ if False:
 
 try:
 	import common
-	from common import cleandict, excludekeys, mergedicts
 except ImportError:
 	common = mod.common
-	cleandict, excludekeys, mergedicts = common.cleandict, common.excludekeys, common.mergedicts
+cleandict, excludekeys, mergedicts = common.cleandict, common.excludekeys, common.mergedicts
 
 
 class BaseSchemaNode:
@@ -22,6 +21,17 @@ class BaseSchemaNode:
 
 	def __repr__(self):
 		return '{}({!r})'.format(self.__class__.__name__, self.ToJsonDict())
+
+	@classmethod
+	def FromJsonDict(cls, obj):
+		return cls(**obj)
+
+	@classmethod
+	def FromJsonDicts(cls, objs: List[Dict]):
+		return [cls.FromJsonDict(obj) for obj in objs] if objs else []
+
+def _ToJsonDicts(nodes: List[BaseSchemaNode]):
+	return [n.ToJsonDict() for n in nodes] if nodes else []
 
 class RawAppInfo(BaseSchemaNode):
 	def __init__(
@@ -188,11 +198,11 @@ class RawModuleInfo(BaseSchemaNode):
 			'parentpath': self.parentpath,
 			'childmodpaths': self.childmodpaths,
 			'partuplets': self.partuplets and [
-				[p.ToJsonDict() for p in t]
+				_ToJsonDicts(t)
 				for t in self.partuplets
 			],
 			'parattrs': self.parattrs,
-			'nodes': self.nodes and [n.ToJsonDict() for n in self.nodes],
+			'nodes': _ToJsonDicts(self.nodes),
 		}))
 
 class ParamPartSchema(BaseSchemaNode):
@@ -310,7 +320,14 @@ class ParamSchema(BaseSchemaNode):
 			'specialtype': self.specialtype,
 			'isnode': self.isnode,
 			'mappable': self.mappable,
+			'parts': _ToJsonDicts(self.parts),
 		}))
+
+	@classmethod
+	def FromJsonDict(cls, obj):
+		return cls(
+			parts=ParamPartSchema.FromJsonDicts(obj.get('parts')),
+			**excludekeys(obj, ['parts']))
 
 	@staticmethod
 	def ParseParamLabel(label):
@@ -417,10 +434,6 @@ class DataNodeInfo(BaseSchemaNode):
 		self.audio = audio
 		self.texbuf = texbuf
 
-	@classmethod
-	def FromJsonDict(cls, obj):
-		return cls(**obj)
-
 	def ToJsonDict(self):
 		return cleandict(mergedicts(self.otherattrs, {
 			'name': self.name,
@@ -439,6 +452,7 @@ class ModuleSchema(BaseSchemaNode):
 			path=None,
 			parentpath=None,
 			params=None,  # type: List[ParamSchema]
+			nodes=None,  # type: List[DataNodeInfo]
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.name = name
@@ -446,6 +460,7 @@ class ModuleSchema(BaseSchemaNode):
 		self.path = path
 		self.parentpath = parentpath
 		self.params = params or []
+		self.nodes = nodes or []
 		self.hasbypass = False
 		self.hasadvanced = False
 		for par in self.params:
@@ -453,6 +468,13 @@ class ModuleSchema(BaseSchemaNode):
 				self.hasadvanced = True
 			if par.specialtype == 'switch.bypass':
 				self.hasbypass = True
+
+	@classmethod
+	def FromJsonDict(cls, obj):
+		return cls(
+			params=ParamSchema.FromJsonDicts(obj.get('params')),
+			nodes=DataNodeInfo.FromJsonDicts(obj.get('nodes')),
+			**excludekeys(obj, ['params', 'nodes']))
 
 	tablekeys = [
 		'path',
@@ -471,7 +493,8 @@ class ModuleSchema(BaseSchemaNode):
 			'parentpath': self.parentpath,
 			'hasbypass': self.hasbypass,
 			'hasadvanced': self.hasadvanced,
-			'params': [p.ToJsonDict() for p in self.params],
+			'params': _ToJsonDicts(self.params),
+			'nodes': _ToJsonDicts(self.nodes),
 		}))
 
 	@classmethod
@@ -490,6 +513,7 @@ class ModuleSchema(BaseSchemaNode):
 			path=modinfo.path,
 			parentpath=modinfo.parentpath,
 			params=params,
+			nodes=list(modinfo.nodes) if modinfo.nodes else None,
 		)
 
 class SchemaProvider:
