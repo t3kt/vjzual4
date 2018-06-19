@@ -1,3 +1,4 @@
+from operator import attrgetter
 from typing import List, Dict, Optional, Tuple
 
 print('vjz4/schema.py loading')
@@ -451,6 +452,7 @@ class ModuleSchema(BaseSchemaNode):
 			label=None,
 			path=None,
 			parentpath=None,
+			childmodpaths=None,
 			params=None,  # type: List[ParamSchema]
 			nodes=None,  # type: List[DataNodeInfo]
 			**otherattrs):
@@ -459,6 +461,7 @@ class ModuleSchema(BaseSchemaNode):
 		self.label = label or name
 		self.path = path
 		self.parentpath = parentpath
+		self.childmodpaths = childmodpaths or []
 		self.params = params or []
 		self.nodes = nodes or []
 		self.hasbypass = False
@@ -491,6 +494,7 @@ class ModuleSchema(BaseSchemaNode):
 			'label': self.label,
 			'path': self.path,
 			'parentpath': self.parentpath,
+			'childmodpaths': self.childmodpaths,
 			'hasbypass': self.hasbypass,
 			'hasadvanced': self.hasadvanced,
 			'params': _ToJsonDicts(self.params),
@@ -499,7 +503,6 @@ class ModuleSchema(BaseSchemaNode):
 
 	@classmethod
 	def FromRawModuleInfo(cls, modinfo: RawModuleInfo):
-		# TODO: data nodes
 		parattrs = modinfo.parattrs or {}
 		params = []
 		if modinfo.partuplets:
@@ -507,11 +510,13 @@ class ModuleSchema(BaseSchemaNode):
 				parschema = ParamSchema.FromRawParamInfoTuplet(partuplet, parattrs.get(partuplet[0].tupletname))
 				if parschema:
 					params.append(parschema)
+			params.sort(key=attrgetter('pageindex', 'order'))
 		return cls(
 			name=modinfo.name,
 			label=modinfo.label,
 			path=modinfo.path,
 			parentpath=modinfo.parentpath,
+			childmodpaths=list(modinfo.childmodpaths) if modinfo.childmodpaths else None,
 			params=params,
 			nodes=list(modinfo.nodes) if modinfo.nodes else None,
 		)
