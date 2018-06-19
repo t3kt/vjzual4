@@ -396,14 +396,12 @@ class UiBuilder:
 			self,
 			dest,
 			name,
-			parinfo_raw,  # type: ModuleParamInfo
+			parinfo,  # type: schema.ParamSchema
 			order=None,
 			nodepos=None,
 			parvals=None,
 			parexprs=None,
 			addtocontrolmap=None):
-
-		parinfo = parinfo_raw.CONVERT_toSchema()
 
 		def _register(ctrlop):
 			if addtocontrolmap is not None:
