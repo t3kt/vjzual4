@@ -2,7 +2,7 @@ print('vjz4/ui_builder.py loading')
 
 if False:
 	from _stubs import *
-	from module_host import ModuleParamInfo
+	from module_host import ModuleHostConnector
 
 try:
 	import common
@@ -52,29 +52,6 @@ class UiBuilder:
 
 	def CreateParSlider(
 			self, dest, name,
-			parinfo,  # type: ModuleParamInfo
-			order=None, nodepos=None,
-			parvals=None,
-			parexprs=None):
-		return self.CreateSlider(
-			dest=dest, name=name, order=order, nodepos=nodepos,
-			label=parinfo.label,
-			isint=parinfo.style == 'Int',
-			valueexpr=parinfo.createParExpression(),
-			defval=parinfo.parts[0].default,
-			clamp=[
-				parinfo.parts[0].clampMin,
-				parinfo.parts[0].clampMax,
-			],
-			valrange=[
-				parinfo.parts[0].min if parinfo.parts[0].clampMin else parinfo.parts[0].normMin,
-				parinfo.parts[0].max if parinfo.parts[0].clampMax else parinfo.parts[0].normMax,
-			],
-			parvals=parvals,
-			parexprs=parexprs)
-
-	def CreateParSlider_SCHEMA(
-			self, dest, name,
 			parinfo,  # type: schema.ParamSchema
 			order=None, nodepos=None,
 			parvals=None,
@@ -96,7 +73,7 @@ class UiBuilder:
 			parvals=parvals,
 			parexprs=parexprs)
 
-	def CreateParMultiSlider_SCHEMA(
+	def CreateParMultiSlider(
 			self, dest, name,
 			parinfo,  # type: schema.ParamSchema
 			order=None, nodepos=None,
@@ -160,72 +137,6 @@ class UiBuilder:
 			sliders.append(slider)
 		return sliders
 
-	def CreateParMultiSlider(
-			self, dest, name,
-			parinfo,  # type: ModuleParamInfo
-			order=None, nodepos=None,
-			parvals=None,
-			parexprs=None):
-		n = len(parinfo.parts)
-		ctrl = CreateFromTemplate(
-			template=self.ownerComp.op('multi_slider'),
-			dest=dest, name=name, order=order, nodepos=nodepos,
-			parvals=parvals,
-			parexprs=parexprs)
-		isint = parinfo.style == 'Int'
-		if parinfo.style in ('Int', 'Float'):
-			suffixes = list(range(1, n + 1))
-		else:
-			suffixes = parinfo.style
-		preview = ctrl.op('preview')
-		if parinfo.style not in ('RGB', 'RGBA'):
-			preview.par.display = False
-		else:
-			preview.par.display = True
-			UpdateOP(
-				preview.op('set_color'),
-				parvals=mergedicts(
-					parinfo.style != 'RGBA' and {'alpha': 1},
-				),
-				parexprs=mergedicts(
-					{
-						'colorr': parinfo.createParExpression(index=0),
-						'colorg': parinfo.createParExpression(index=1),
-						'colorb': parinfo.createParExpression(index=2),
-					},
-					parinfo.style == 'RGBA' and {
-						'alpha': parinfo.createParExpression(index=3),
-					}))
-		sliders = []
-		for i in range(4):
-			slider = ctrl.op('slider{}'.format(i + 1))
-			if i >= n:
-				slider.destroy()
-				continue
-			part = parinfo.parts[i]
-			UpdateOP(
-				slider,
-				parvals=mergedicts(
-					{
-						'Label': '{} {}'.format(parinfo.label, suffixes[i]),
-						'Default1': part.default,
-						'Clamplow1': part.clampMin,
-						'Clamphigh1': part.clampMax,
-						'Rangelow1': part.min if part.clampMin else part.normMin,
-						'Rangehigh1': part.max if part.clampMax else part.normMax,
-						'Push1': True,
-						'Integer': isint,
-					}
-				),
-				parexprs=mergedicts(
-					{
-						'Value1': parinfo.createParExpression(index=i),
-					}
-				)
-			)
-			sliders.append(slider)
-		return sliders
-
 	def CreateButton(
 			self, dest, name,
 			label=None,
@@ -261,21 +172,6 @@ class UiBuilder:
 
 	def CreateParToggle(
 			self, dest, name,
-			parinfo,  # type: ModuleParamInfo
-			order=None, nodepos=None,
-			parvals=None,
-			parexprs=None):
-		return self.CreateButton(
-			dest=dest, name=name, order=order, nodepos=nodepos,
-			label=parinfo.label,
-			behavior='toggledown',
-			valueexpr=parinfo.createParExpression(),
-			defval=parinfo.parts[0].default,
-			parvals=parvals,
-			parexprs=parexprs)
-
-	def CreateParToggle_SCHEMA(
-			self, dest, name,
 			parinfo,  # type: schema.ParamSchema
 			order=None, nodepos=None,
 			parvals=None,
@@ -290,20 +186,6 @@ class UiBuilder:
 			parexprs=parexprs)
 
 	def CreateParTrigger(
-			self, dest, name,
-			parinfo,  # type: ModuleParamInfo
-			order=None, nodepos=None,
-			parvals=None,
-			parexprs=None):
-		return self.CreateButton(
-			dest=dest, name=name, order=order, nodepos=nodepos,
-			label=parinfo.label,
-			behavior='pulse',
-			runofftoon='op({!r}).par.{}.pulse()'.format(parinfo.modpath, parinfo.parts[0].name),
-			parvals=parvals,
-			parexprs=parexprs)
-
-	def CreateParTrigger_SCHEMA(
 			self, dest, name,
 			parinfo,  # type: schema.ParamSchema
 			order=None, nodepos=None,
@@ -343,31 +225,6 @@ class UiBuilder:
 				parexprs))
 
 	def CreateParTextField(
-			self,
-			dest,
-			name,
-			parinfo,  # type: ModuleParamInfo
-			order=None,
-			nodepos=None,
-			parvals=None,
-			parexprs=None):
-		ctrl = self.CreateTextField(
-			dest=dest,
-			name=name,
-			label=parinfo.label,
-			fieldtype='string',
-			valueexpr=parinfo.createParExpression(),
-			defval=parinfo.parts[0].default,
-			order=order,
-			nodepos=nodepos,
-			parvals=parvals,
-			parexprs=parexprs)
-		# workaround for bug with initial value not being loaded
-		celldat = ctrl.par.Celldat.eval()
-		celldat[0, 0] = parinfo.parts[0].eval()
-		return ctrl
-
-	def CreateParTextField_SCHEMA(
 			self,
 			dest,
 			name,
@@ -421,7 +278,7 @@ class UiBuilder:
 
 		if parinfo.style in ('Float', 'Int') and len(parinfo.parts) == 1:
 			# print('creating slider control for {}'.format(parinfo))
-			ctrl = self.CreateParSlider_SCHEMA(
+			ctrl = self.CreateParSlider(
 				dest=dest,
 				name=name,
 				parinfo=parinfo,
@@ -435,7 +292,7 @@ class UiBuilder:
 			'UV', 'UVW', 'WH', 'XY', 'XYZ',
 		]:
 			# print('creating multi slider control for {}'.format(parinfo))
-			sliders = self.CreateParMultiSlider_SCHEMA(
+			sliders = self.CreateParMultiSlider(
 				dest=dest,
 				name=name,
 				parinfo=parinfo,
@@ -447,7 +304,7 @@ class UiBuilder:
 			ctrl = sliders[0].parent()
 		elif parinfo.style == 'Toggle':
 			# print('creating toggle control for {}'.format(parinfo))
-			ctrl = self.CreateParToggle_SCHEMA(
+			ctrl = self.CreateParToggle(
 				dest=dest,
 				name=name,
 				parinfo=parinfo,
@@ -457,7 +314,7 @@ class UiBuilder:
 				parexprs=parexprs)
 		elif parinfo.style == 'Pulse':
 			# print('creating trigger control for {}'.format(parinfo))
-			ctrl = self.CreateParTrigger_SCHEMA(
+			ctrl = self.CreateParTrigger(
 				dest=dest,
 				name=name,
 				parinfo=parinfo,
@@ -467,7 +324,7 @@ class UiBuilder:
 				parexprs=parexprs)
 		elif parinfo.style == 'Str' and not parinfo.isnode:
 			# print('creating text field control for plain string {}'.format(parinfo))
-			ctrl = self.CreateParTextField_SCHEMA(
+			ctrl = self.CreateParTextField(
 				dest=dest,
 				name=name,
 				parinfo=parinfo,

@@ -265,6 +265,17 @@ class ParamPartSchema(BaseSchemaNode):
 			menulabels=part.menulabels if ismenu else None,
 		)
 
+# When the relevant metadata flag is empty/missing in the parameter table,
+# the following shortcuts can be used to specify it in the parameter label:
+#  ":Some Param" - special parameter (not included in param list)
+#  ".Some Param" - parameter is hidden
+#  "+Some Param" - parameter is advanced
+#  "Some Param~" - parameter is a node reference
+#
+# Parameters in pages with names beginning with ':' are considered special
+# and are not included in the param list, as are parameters with labels starting
+# with ':'.
+
 class ParamSchema(BaseSchemaNode):
 	def __init__(
 			self,
