@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import List
 
 print('vjz4/remote_client.py loading')
 
@@ -27,7 +27,7 @@ try:
 except ImportError:
 	module_proxy = mod.module_proxy
 
-class RemoteClient(remote.RemoteBase):
+class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
 	def __init__(self, ownerComp):
 		super().__init__(
 			ownerComp,
@@ -44,6 +44,12 @@ class RemoteClient(remote.RemoteBase):
 		self.rawModuleInfos = []  # type: List[schema.RawModuleInfo]
 		self.AppSchema = None  # type: schema.AppSchema
 		self.moduleQueryQueue = None
+
+	def GetAppSchema(self):
+		return self.AppSchema
+
+	def GetModuleSchema(self, modpath):
+		return self.AppSchema and self.AppSchema.modulesbypath.get(modpath)
 
 	@property
 	def _AppInfoTable(self): return self.ownerComp.op('set_app_info')

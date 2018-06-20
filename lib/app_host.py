@@ -1,6 +1,6 @@
-print('vjz4/app_host.py loading')
-
 from typing import List
+
+print('vjz4/app_host.py loading')
 
 if False:
 	from _stubs import *
@@ -16,7 +16,12 @@ try:
 except ImportError:
 	module_host = mod.module_host
 
-class AppHost(common.ExtensionBase, common.ActionsExt):
+try:
+	import schema
+except ImportError:
+	schema = mod.schema
+
+class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider):
 	def __init__(self, ownerComp):
 		common.ExtensionBase.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions={
@@ -26,6 +31,13 @@ class AppHost(common.ExtensionBase, common.ActionsExt):
 		self.AppRoot = None
 		self.SubModules = []
 		self.ownerComp.op('deferred_attach_app').run(delayFrames=1)
+		self.AppSchema = None  # type: schema.AppSchema
+
+	def GetAppSchema(self):
+		return self.AppSchema
+
+	def GetModuleSchema(self, modpath):
+		return self.AppSchema and self.AppSchema.modulesbypath.get(modpath)
 
 	def OnTDPreSave(self):
 		for o in self.ownerComp.ops('modules_panel/mod__*'):

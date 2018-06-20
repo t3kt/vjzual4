@@ -606,6 +606,9 @@ class _LocalModuleHostConnector(ModuleHostConnector):
 			_editComp(master)
 
 class _LocalSchemaProvider(schema.SchemaProvider):
+	def GetAppSchema(self):
+		raise NotImplementedError()
+
 	def GetModuleSchema(self, modpath) -> Optional[schema.ModuleSchema]:
 		m = op(modpath)
 		if not m:

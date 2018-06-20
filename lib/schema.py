@@ -576,6 +576,9 @@ class AppSchema(BaseSchemaNode):
 			] if modules else None)
 
 class SchemaProvider:
+	def GetAppSchema(self) -> AppSchema:
+		raise NotImplementedError()
+
 	def GetModuleSchema(self, modpath) -> Optional[ModuleSchema]:
 		raise NotImplementedError()
 
