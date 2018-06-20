@@ -119,6 +119,12 @@ def excludekeys(d, keys):
 		if key not in keys
 	}
 
+def parseint(text, default=None):
+	try:
+		return int(text)
+	except ValueError:
+		return default
+
 def trygetpar(o, *names, default=None, parse=None):
 	if o:
 		for p in o.pars(*names):

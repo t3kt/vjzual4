@@ -1,15 +1,17 @@
-from typing import List
+from typing import Callable, List, Tuple
 
 print('vjz4/app_host.py loading')
 
 if False:
 	from _stubs import *
 	from ui_builder import UiBuilder
+	from _stubs.PopDialogExt import PopDialogExt
 
 try:
 	import common
 except ImportError:
 	common = mod.common
+parseint = common.parseint
 
 try:
 	import module_host
@@ -26,17 +28,24 @@ try:
 except ImportError:
 	remote_client = mod.remote_client
 
+try:
+	import menu
+except ImportError:
+	menu = mod.menu
+
 class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider):
 	def __init__(self, ownerComp):
 		common.ExtensionBase.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions={
 			'Attachapp': self.AttachToApp,
+			'Showconnect': self.ShowConnectDialog,
 		})
 		self._AutoInitActionParams()
 		self.SubModules = []
 		self.AppSchema = None  # type: schema.AppSchema
 
-	def RemoteClient(self) -> remote_client.RemoteClient:
+	@property
+	def _RemoteClient(self) -> remote_client.RemoteClient:
 		return self.ownerComp.par.Remoteclient.eval()
 
 	def GetAppSchema(self):
@@ -85,3 +94,97 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider):
 		# 	hosts.append(host)
 		# 	host.AttachToModule()
 
+	def _GetMenuItems(self, name):
+		if name == 'app_menu':
+			return [
+				menu.Item(
+					'Connect',
+					callback=lambda: self.ShowConnectDialog()),
+				menu.Item(
+					'Disconnect',
+					disabled=not self._RemoteClient.Connected,
+					callback=lambda: self._Disconnect())
+			]
+		elif name == 'window_menu':
+			return [
+				menu.Item(
+					'OMGWINDOW',
+					callback=lambda: print('omg window!')
+				)
+			]
+
+	def OnMenuClick(self, button):
+		menu.fromButton(button, h='Left', v='Bottom').Show(
+			items=self._GetMenuItems(button.name),
+			autoClose=True)
+
+	def _ConnectTo(self, host, port):
+		self._LogBegin('_ConnectTo({}, {})'.format(host, port))
+		try:
+			self._RemoteClient.par.Active = True
+			self._RemoteClient.Connect(host, port)
+		finally:
+			self._LogEnd()
+
+	def _Disconnect(self):
+		self._LogBegin('_Disconnect()')
+		try:
+			self._RemoteClient.Detach()
+			self._RemoteClient.par.Active = False
+		finally:
+			self._LogEnd()
+
+	def ShowConnectDialog(self):
+		def _ok(text):
+			host, port = _ParseAddress(text)
+			self._ConnectTo(host, port)
+		client = self._RemoteClient
+		_ShowPromptDialog(
+			title='Connect to app',
+			text='host:port',
+			oktext='Connect',
+			default='{}:{}'.format(client.par.Address.eval(), client.par.Commandsendport.eval()),
+			ok=_ok)
+
+def _ParseAddress(text: str, defaulthost='localhost', defaultport=9500) -> Tuple[str, int]:
+	text = text and text.strip()
+	if not text:
+		return defaulthost, defaultport
+	if ':' not in text:
+		port = parseint(text)
+		if port is not None:
+			return defaulthost, port
+		else:
+			return text, defaultport
+	host, porttext = text.rsplit(':', maxsplit=1)
+	port = parseint(porttext)
+	return (host or defaulthost), (port or defaultport)
+
+# TODO: move dialog stuff elsewhere
+
+def _getPopDialog():
+	dialog = op.TDResources.op('popDialog')  # type: PopDialogExt
+	return dialog
+
+def _ShowPromptDialog(
+		title=None,
+		text=None,
+		default='',
+		oktext='OK',
+		canceltext='Cancel',
+		ok: Callable=None,
+		cancel: Callable=None):
+	def _callback(info):
+		if info['buttonNum'] == 1:
+			if ok:
+				ok(info['enteredText'])
+		elif info['buttonNum'] == 2:
+			if cancel:
+				cancel()
+	_getPopDialog().Open(
+		title=title,
+		text=text,
+		textEntry=default,
+		buttons=[oktext, canceltext],
+		enterButton=1, escButton=2, escOnClickAway=True,
+		callback=_callback)

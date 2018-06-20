@@ -34,6 +34,8 @@ class op:
 	def openParameters(self):
 		pass
 
+	TDResources = _Expando()
+
 op.TDResources = _Expando()
 op.TDResources.op = op
 
@@ -97,6 +99,3 @@ parameterCHOP = nullCHOP = selectCHOP = CHOP
 
 class app:
 	name = ''
-
-class _PopMenuExt:
-	pass

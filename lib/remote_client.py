@@ -83,8 +83,16 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
 		finally:
 			self._LogEnd()
 
-	def Connect(self):
-		self._LogBegin('Connect()')
+	def Connect(self, host=None, port=None):
+		if host is None:
+			host = self.ownerComp.par.Address.eval()
+		else:
+			self.ownerComp.par.Address = host
+		if port is None:
+			port = self.ownerComp.par.Commandsendport.eval()
+		else:
+			self.ownerComp.par.Commandsendport = port
+		self._LogBegin('Connect({}, {})'.format(host, port))
 		try:
 			self.Detach()
 			connpar = self.Connection.par
