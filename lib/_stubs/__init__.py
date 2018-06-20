@@ -15,8 +15,24 @@ PaneType.NETWORKEDITOR = None
 class project:
 	name = ''
 
-def op(path):
-	return object()
+class _Parent:
+	def __call__(self, *args, **kwargs):
+		return op()
+
+	def __getattr__(self, item):
+		pass
+
+class op:
+	def __init__(self, arg=None):
+		self.path = ''
+		self.name = ''
+		self.par = _Expando()
+		self.customTuplets = []
+		self.parent = _Parent()
+		self.op = op
+
+	def openParameters(self):
+		pass
 
 op.TDResources = _Expando()
 op.TDResources.op = op

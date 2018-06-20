@@ -35,6 +35,11 @@ except ImportError:
 	control_mapping = mod.control_mapping
 
 try:
+	import menu
+except ImportError:
+	menu = mod.menu
+
+try:
 	from TDStoreTools import DependDict
 except ImportError:
 	from _stubs.TDStoreTools import DependDict
@@ -340,17 +345,17 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 		if not self.ModuleConnector:
 			return []
 		items = [
-			_MenuItem(
+			menu.Item(
 				'Parameters',
 				disabled=self.ModuleConnector.CanOpenParameters,
 				callback=lambda: self.ModuleConnector.OpenParameters()),
-			_MenuItem('Edit', callback=lambda: self.ModuleConnector.EditModule()),
-			_MenuItem(
+			menu.Item('Edit', callback=lambda: self.ModuleConnector.EditModule()),
+			menu.Item(
 				'Edit Master',
 				disabled=self.ModuleConnector.CanEditModuleMaster,
 				callback=lambda: self.ModuleConnector.EditModuleMaster(),
 				dividerafter=True),
-			_MenuItem(
+			menu.Item(
 				'Show Advanced',
 				disabled=self.ModuleConnector.modschema.hasadvanced,
 				checked=self.ownerComp.par.Showadvanced.eval(),
@@ -361,7 +366,7 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 		return items
 
 	def ShowContextMenu(self):
-		_showPopMenu(
+		menu.fromMouse().Show(
 			items=self._GetContextMenuItems(),
 			autoClose=True)
 
@@ -525,19 +530,19 @@ class ModuleChainHost(ModuleHostBase):
 			return lambda: self._SetSubModuleHostPars(name, val)
 
 		items = super()._GetContextMenuItems() + [
-			_MenuItem(
+			menu.Item(
 				'Collapse Sub Modules',
 				disabled=not self.SubModules,
 				callback=_subModuleHostParUpdater('Collapsed', True)),
-			_MenuItem(
+			menu.Item(
 				'Expand Sub Modules',
 				disabled=not self.SubModules,
 				callback=_subModuleHostParUpdater('Collapsed', False)),
-			_MenuItem(
+			menu.Item(
 				'Sub Module Controls',
 				disabled=not self.SubModules,
 				callback=_subModuleHostParUpdater('Uimode', 'ctrl')),
-			_MenuItem(
+			menu.Item(
 				'Sub Module Nodes',
 				disabled=not self.SubModules,
 				callback=_subModuleHostParUpdater('Uimode', 'nodes')),
@@ -673,76 +678,3 @@ class _LocalSchemaProvider(schema.SchemaProvider):
 				)
 				for part in partuplet
 			])
-
-
-# TODO: move this menu stuff elsewhere
-
-class _MenuItem:
-	def __init__(
-			self,
-			text,
-			disabled=False,
-			dividerafter=False,
-			highlighted=False,
-			checked=None,
-			hassubmenu=False,
-			callback=None):
-		self.text = text
-		self.disabled = disabled
-		self.dividerafter = dividerafter
-		self.highlighted = highlighted
-		self.checked = checked
-		self.hassubmenu = hassubmenu
-		self.callback = callback
-
-def _getPopMenu():
-	if False:
-		import _stubs.PopMenuExt as _PopMenuExt
-		return _PopMenuExt.PopMenuExt(None)
-	return op.TDResources.op('popMenu')
-
-def _showPopMenu(
-		items: List[_MenuItem],
-		callback=None,
-		callbackDetails=None,
-		autoClose=None,
-		rolloverCallback=None,
-		allowStickySubMenus=None):
-	items = [item for item in items if item]
-	if not items:
-		return
-
-	popmenu = _getPopMenu()
-
-	if not callback:
-		def _callback(info):
-			i = info['index']
-			if i < 0 or i >= len(items):
-				return
-			item = items[i]
-			if not item or item.disabled or not item.callback:
-				return
-			item.callback()
-		callback = _callback
-
-	popmenu.Open(
-		items=[item.text for item in items],
-		highlightedItems=[
-			item.text for item in items if item.highlighted],
-		disabledItems=[
-			item.text for item in items if item.disabled],
-		dividersAfterItems=[
-			item.text for item in items if item.dividerafter],
-		checkedItems={
-			item.text: item.checked
-			for item in items
-			if item.checked is not None
-		},
-		subMenuItems=[
-			item.text for item in items if item.hassubmenu],
-		callback=callback,
-		callbackDetails=callbackDetails,
-		autoClose=autoClose,
-		rolloverCallback=rolloverCallback,
-		allowStickySubMenus=allowStickySubMenus)
-
