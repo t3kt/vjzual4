@@ -532,6 +532,49 @@ class ModuleSchema(BaseSchemaNode):
 			nodes=list(modinfo.nodes) if modinfo.nodes else None,
 		)
 
+class AppSchema(BaseSchemaNode):
+	def __init__(
+			self,
+			name=None,
+			label=None,
+			path=None,
+			modules=None,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.name = name
+		self.label = label or name or path
+		self.path = path
+		self.modules = modules or []  # type: List[ModuleSchema]
+		self.modulesbypath = {
+			modschema.path: modschema
+			for modschema in self.modules
+		}
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'name': self.name,
+			'label': self.label,
+			'path': self.path,
+			'modules': _ToJsonDicts(self.modules),
+		}))
+
+	@classmethod
+	def FromJsonDict(cls, obj):
+		return cls(
+			modules=ModuleSchema.FromJsonDicts(obj.get('modules')),
+			**excludekeys(obj, ['modules']))
+
+	@classmethod
+	def FromRawAppAndModuleInfo(cls, appinfo: RawAppInfo, modules: List[RawModuleInfo]):
+		return cls(
+			name=appinfo.name,
+			label=appinfo.label,
+			path=appinfo.path,
+			modules=[
+				ModuleSchema.FromRawModuleInfo(modinfo)
+				for modinfo in modules
+			] if modules else None)
+
 class SchemaProvider:
 	def GetModuleSchema(self, modpath) -> Optional[ModuleSchema]:
 		raise NotImplementedError()
