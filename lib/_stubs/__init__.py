@@ -15,8 +15,31 @@ PaneType.NETWORKEDITOR = None
 class project:
 	name = ''
 
-def op(path):
-	return object()
+class _Parent:
+	def __call__(self, *args, **kwargs):
+		return op()
+
+	def __getattr__(self, item):
+		pass
+
+class op:
+	def __init__(self, arg=None):
+		self.path = ''
+		self.name = ''
+		self.par = _Expando()
+		self.customTuplets = []
+		self.parent = _Parent()
+		self.op = op
+
+	def ops(self, *args): return [op()]
+
+	def openParameters(self): pass
+
+	def openViewer(self, unique=False, borders=True): pass
+
+	def closeViewer(self): pass
+
+	TDResources = _Expando()
 
 op.TDResources = _Expando()
 op.TDResources.op = op
@@ -81,6 +104,3 @@ parameterCHOP = nullCHOP = selectCHOP = CHOP
 
 class app:
 	name = ''
-
-class _PopMenuExt:
-	pass

@@ -48,7 +48,7 @@ _logger = IndentedLogger()
 
 class ExtensionBase:
 	def __init__(self, ownerComp):
-		self.ownerComp = ownerComp
+		self.ownerComp = ownerComp  # type: op
 		self.enablelogging = True
 
 	def _GetLogId(self):
@@ -76,6 +76,8 @@ class ActionsExt:
 			parexec.python = True
 			parexec.par.op.expr = 'parent()'
 			parexec.par.pars = '*'
+			parexec.par.builtin = False
+			parexec.par.custom = True
 			parexec.par.valuechange = False
 			parexec.par.onpulse = True
 			parexec.text = 'def onPulse(par): par.owner.PerformAction(par.name)'
@@ -118,6 +120,12 @@ def excludekeys(d, keys):
 		for key, val in d.items()
 		if key not in keys
 	}
+
+def parseint(text, default=None):
+	try:
+		return int(text)
+	except ValueError:
+		return default
 
 def trygetpar(o, *names, default=None, parse=None):
 	if o:

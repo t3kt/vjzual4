@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import List
 
 print('vjz4/remote_client.py loading')
 
@@ -27,7 +27,7 @@ try:
 except ImportError:
 	module_proxy = mod.module_proxy
 
-class RemoteClient(remote.RemoteBase):
+class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
 	def __init__(self, ownerComp):
 		super().__init__(
 			ownerComp,
@@ -40,9 +40,21 @@ class RemoteClient(remote.RemoteBase):
 				'modInfo': self._OnReceiveModuleInfo,
 			})
 		self._AutoInitActionParams()
-		self.AppInfo = None  # type: schema.RawAppInfo
-		self.ModuleSchemas = {}  # type: Dict[str, schema.ModuleSchema]
+		self.rawAppInfo = None  # type: schema.RawAppInfo
+		self.rawModuleInfos = []  # type: List[schema.RawModuleInfo]
+		self.AppSchema = None  # type: schema.AppSchema
 		self.moduleQueryQueue = None
+
+	@property
+	def _Callbacks(self):
+		dat = self.ownerComp.par.Callbacks.eval()
+		return dat.module if dat else None
+
+	def GetAppSchema(self):
+		return self.AppSchema
+
+	def GetModuleSchema(self, modpath):
+		return self.AppSchema and self.AppSchema.modulesbypath.get(modpath)
 
 	@property
 	def _AppInfoTable(self): return self.ownerComp.op('set_app_info')
@@ -57,6 +69,9 @@ class RemoteClient(remote.RemoteBase):
 	def _ParamPartTable(self): return self.ownerComp.op('set_param_parts')
 
 	@property
+	def _DataNodesTable(self): return self.ownerComp.op('set_data_nodes')
+
+	@property
 	def _ProxyManager(self) -> module_proxy.ModuleProxyManager:
 		return self.ownerComp.op('proxy')
 
@@ -64,19 +79,32 @@ class RemoteClient(remote.RemoteBase):
 		self._LogBegin('Detach()')
 		try:
 			self.Connected.val = False
-			self.AppInfo = None
-			self.ModuleSchemas = {}
+			self.rawAppInfo = None
+			self.rawModuleInfos = []
+			self.AppSchema = None
 			self.moduleQueryQueue = None
 			self._BuildAppInfoTable()
 			self._ClearModuleTable()
 			self._ClearParamTables()
+			self._ClearDataNodesTable()
 			self._ProxyManager.par.Rootpath = ''
 			self._ProxyManager.ClearProxies()
+			callbacks = self._Callbacks
+			if callbacks and hasattr(callbacks, 'OnDetach'):
+				callbacks.OnDetach()
 		finally:
 			self._LogEnd()
 
-	def Connect(self):
-		self._LogBegin('Connect()')
+	def Connect(self, host=None, port=None):
+		if host is None:
+			host = self.ownerComp.par.Address.eval()
+		else:
+			self.ownerComp.par.Address = host
+		if port is None:
+			port = self.ownerComp.par.Commandsendport.eval()
+		else:
+			self.ownerComp.par.Commandsendport = port
+		self._LogBegin('Connect({}, {})'.format(host, port))
 		try:
 			self.Detach()
 			connpar = self.Connection.par
@@ -97,6 +125,9 @@ class RemoteClient(remote.RemoteBase):
 
 	def _OnConfirmConnect(self, _):
 		self.Connected.val = True
+		callbacks = self._Callbacks
+		if callbacks and hasattr(callbacks, 'OnConnected'):
+			callbacks.OnConnected()
 		self.QueryApp()
 
 	def _OnConnectFailure(self, cmdmesg: remote.CommandMessage):
@@ -120,7 +151,7 @@ class RemoteClient(remote.RemoteBase):
 			if not cmdmesg.arg:
 				raise Exception('No app info!')
 			appinfo = schema.RawAppInfo.FromJsonDict(cmdmesg.arg)
-			self.AppInfo = appinfo
+			self.rawAppInfo = appinfo
 			self._BuildAppInfoTable()
 			self._ProxyManager.par.Rootpath = appinfo.path
 
@@ -129,8 +160,6 @@ class RemoteClient(remote.RemoteBase):
 				self.QueryModule(self.moduleQueryQueue.pop(0))
 			else:
 				self._OnAllModulesReceived()
-		# TODO ....
-			pass
 		finally:
 			self._LogEnd()
 
@@ -140,8 +169,8 @@ class RemoteClient(remote.RemoteBase):
 	def _BuildAppInfoTable(self):
 		dat = self._AppInfoTable
 		dat.clear()
-		if self.AppInfo:
-			for key, val in self.AppInfo.ToJsonDict().items():
+		if self.rawAppInfo:
+			for key, val in self.rawAppInfo.ToJsonDict().items():
 				if not isinstance(val, (list, tuple, dict)):
 					dat.appendRow([key, val])
 
@@ -183,6 +212,21 @@ class RemoteClient(remote.RemoteBase):
 						'vecindex': i,
 					})
 
+	def _ClearDataNodesTable(self):
+		dat = self._DataNodesTable
+		dat.clear()
+		dat.appendRow(schema.DataNodeInfo.tablekeys + ['modpath'])
+
+	def _AddToDataNodesTable(self, modpath, nodes: List[schema.DataNodeInfo]):
+		if not nodes:
+			return
+		dat = self._DataNodesTable
+		for node in nodes:
+			_AddRawInfoRow(
+				dat,
+				info=node,
+				attrs={'modpath': modpath})
+
 	def QueryModule(self, modpath):
 		self._LogBegin('QueryModule({})'.format(modpath))
 		try:
@@ -202,13 +246,7 @@ class RemoteClient(remote.RemoteBase):
 			if not arg:
 				raise Exception('No app info!')
 			modinfo = schema.RawModuleInfo.FromJsonDict(arg)
-			modpath = modinfo.path
-			modschema = schema.ModuleSchema.FromRawModuleInfo(modinfo)
-			self.ModuleSchemas[modpath] = modschema
-			# self._LogEvent('module schema: {!r}'.format(modschema))
-			_AddRawInfoRow(self.ownerComp.op('set_modules'), info=modschema)
-			self._AddParamsToTable(modpath, modschema.params)
-			self._ProxyManager.AddProxy(modschema)
+			self.rawModuleInfos.append(modinfo)
 
 			if self.moduleQueryQueue:
 				nextpath = self.moduleQueryQueue.pop(0)
@@ -216,8 +254,6 @@ class RemoteClient(remote.RemoteBase):
 				self.QueryModule(nextpath)
 			else:
 				self._OnAllModulesReceived()
-			# TODO: confirm
-			# TODO ....
 		finally:
 			self._LogEnd()
 
@@ -225,7 +261,23 @@ class RemoteClient(remote.RemoteBase):
 		self._LogEvent('_OnQueryModuleFailure({})'.format(cmdmesg))
 
 	def _OnAllModulesReceived(self):
-		self._LogEvent('_OnAllModulesReceived()')
+		self._LogBegin('_OnAllModulesReceived()')
+		try:
+			self.AppSchema = schema.AppSchema.FromRawAppAndModuleInfo(
+				appinfo=self.rawAppInfo,
+				modules=self.rawModuleInfos)
+			moduletable = self._ModuleTable
+			for modschema in self.AppSchema.modules:
+				_AddRawInfoRow(moduletable, info=modschema)
+				self._AddParamsToTable(modschema.path, modschema.params)
+				self._AddToDataNodesTable(modschema.path, modschema.nodes)
+			for modschema in self.AppSchema.modules:
+				self._ProxyManager.AddProxy(modschema)
+			callbacks = self._Callbacks
+			if callbacks and hasattr(callbacks, 'OnAppSchemaLoaded'):
+				callbacks.OnAppSchemaLoaded(self.AppSchema)
+		finally:
+			self._LogEnd()
 
 	def HandleOscEvent(self, address, args):
 		if not self.Connected or ':' not in address or not args:

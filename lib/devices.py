@@ -78,7 +78,7 @@ class BcrAutoMapper(ModuleAutoMapper):
 			modhost: module_host.ModuleHostBase,
 			mappings: control_mapping.ModuleControlMap):
 		mappings.ClearMappings()
-		if not modhost.Module:
+		if not modhost.ModuleConnector:
 			return False
 		slidernames = [
 			self.controls[i, 'fullname'].val

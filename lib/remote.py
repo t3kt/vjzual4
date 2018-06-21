@@ -257,8 +257,11 @@ class RemoteBase(common.ExtensionBase, common.ActionsExt, CommandHandler):
 		common.ExtensionBase.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions)
 		CommandHandler.__init__(self, handlers)
-		self.Connection = ownerComp.op('connection')  # type: RemoteConnection
 		self.Connected = tdu.Dependency(False)
+
+	@property
+	def Connection(self) -> RemoteConnection:
+		return self.ownerComp.op('connection')
 
 	def SendOsc(self, address, *values, asBundle=False):
 		if not self.Connected:

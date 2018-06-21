@@ -1,3 +1,4 @@
+from operator import attrgetter
 from typing import List, Dict, Optional, Tuple
 
 print('vjz4/schema.py loading')
@@ -264,6 +265,17 @@ class ParamPartSchema(BaseSchemaNode):
 			menulabels=part.menulabels if ismenu else None,
 		)
 
+# When the relevant metadata flag is empty/missing in the parameter table,
+# the following shortcuts can be used to specify it in the parameter label:
+#  ":Some Param" - special parameter (not included in param list)
+#  ".Some Param" - parameter is hidden
+#  "+Some Param" - parameter is advanced
+#  "Some Param~" - parameter is a node reference
+#
+# Parameters in pages with names beginning with ':' are considered special
+# and are not included in the param list, as are parameters with labels starting
+# with ':'.
+
 class ParamSchema(BaseSchemaNode):
 	def __init__(
 			self,
@@ -434,6 +446,15 @@ class DataNodeInfo(BaseSchemaNode):
 		self.audio = audio
 		self.texbuf = texbuf
 
+	tablekeys = [
+		'path',
+		'name',
+		'label',
+		'video',
+		'audio',
+		'texbuf',
+	]
+
 	def ToJsonDict(self):
 		return cleandict(mergedicts(self.otherattrs, {
 			'name': self.name,
@@ -451,6 +472,7 @@ class ModuleSchema(BaseSchemaNode):
 			label=None,
 			path=None,
 			parentpath=None,
+			childmodpaths=None,
 			params=None,  # type: List[ParamSchema]
 			nodes=None,  # type: List[DataNodeInfo]
 			**otherattrs):
@@ -459,6 +481,7 @@ class ModuleSchema(BaseSchemaNode):
 		self.label = label or name
 		self.path = path
 		self.parentpath = parentpath
+		self.childmodpaths = childmodpaths or []
 		self.params = params or []
 		self.nodes = nodes or []
 		self.hasbypass = False
@@ -491,6 +514,7 @@ class ModuleSchema(BaseSchemaNode):
 			'label': self.label,
 			'path': self.path,
 			'parentpath': self.parentpath,
+			'childmodpaths': self.childmodpaths,
 			'hasbypass': self.hasbypass,
 			'hasadvanced': self.hasadvanced,
 			'params': _ToJsonDicts(self.params),
@@ -499,7 +523,6 @@ class ModuleSchema(BaseSchemaNode):
 
 	@classmethod
 	def FromRawModuleInfo(cls, modinfo: RawModuleInfo):
-		# TODO: data nodes
 		parattrs = modinfo.parattrs or {}
 		params = []
 		if modinfo.partuplets:
@@ -507,16 +530,79 @@ class ModuleSchema(BaseSchemaNode):
 				parschema = ParamSchema.FromRawParamInfoTuplet(partuplet, parattrs.get(partuplet[0].tupletname))
 				if parschema:
 					params.append(parschema)
+			params.sort(key=attrgetter('pageindex', 'order'))
 		return cls(
 			name=modinfo.name,
 			label=modinfo.label,
 			path=modinfo.path,
 			parentpath=modinfo.parentpath,
+			childmodpaths=list(modinfo.childmodpaths) if modinfo.childmodpaths else None,
 			params=params,
 			nodes=list(modinfo.nodes) if modinfo.nodes else None,
 		)
 
+class AppSchema(BaseSchemaNode):
+	def __init__(
+			self,
+			name=None,
+			label=None,
+			path=None,
+			modules=None,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.name = name
+		self.label = label or name or path
+		self.path = path
+		self.modules = modules or []  # type: List[ModuleSchema]
+		self.modulesbypath = {
+			modschema.path: modschema
+			for modschema in self.modules
+		}
+		self.nodes = []  # type: List[DataNodeInfo]
+		for modschema in self.modules:
+			if modschema.nodes:
+				self.nodes += modschema.nodes
+		self.nodesbypath = {
+			nodeinfo.path: nodeinfo
+			for nodeinfo in self.nodes
+		}
+
+	tablekeys = [
+		'name',
+		'label',
+		'path',
+	]
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'name': self.name,
+			'label': self.label,
+			'path': self.path,
+			'modules': _ToJsonDicts(self.modules),
+			'nodes': _ToJsonDicts(self.nodes),
+		}))
+
+	@classmethod
+	def FromJsonDict(cls, obj):
+		return cls(
+			modules=ModuleSchema.FromJsonDicts(obj.get('modules')),
+			**excludekeys(obj, ['modules']))
+
+	@classmethod
+	def FromRawAppAndModuleInfo(cls, appinfo: RawAppInfo, modules: List[RawModuleInfo]):
+		return cls(
+			name=appinfo.name,
+			label=appinfo.label,
+			path=appinfo.path,
+			modules=[
+				ModuleSchema.FromRawModuleInfo(modinfo)
+				for modinfo in modules
+			] if modules else None)
+
 class SchemaProvider:
+	def GetAppSchema(self) -> AppSchema:
+		raise NotImplementedError()
+
 	def GetModuleSchema(self, modpath) -> Optional[ModuleSchema]:
 		raise NotImplementedError()
 
