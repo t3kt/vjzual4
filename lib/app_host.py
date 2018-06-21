@@ -1,3 +1,4 @@
+import json
 from typing import Callable, List, Tuple
 
 print('vjz4/app_host.py loading')
@@ -39,10 +40,12 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider):
 		common.ActionsExt.__init__(self, ownerComp, actions={
 			'Attachapp': self.AttachToApp,
 			'Showconnect': self.ShowConnectDialog,
+			'Showappschema': self.ShowAppSchema,
 		})
 		self._AutoInitActionParams()
 		self.SubModules = []
 		self.AppSchema = None  # type: schema.AppSchema
+		self.ownerComp.op('schema_json').clear()
 
 	@property
 	def _RemoteClient(self) -> remote_client.RemoteClient:
@@ -53,6 +56,11 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider):
 
 	def GetModuleSchema(self, modpath):
 		return self.AppSchema and self.AppSchema.modulesbypath.get(modpath)
+
+	def Client_OnAppSchemaLoaded(self, appschema: schema.AppSchema):
+		self._LogEvent('Client_OnAppSchemaLoaded()')
+		self.AppSchema = appschema
+		self.ownerComp.op('schema_json').clear()
 
 	def OnTDPreSave(self):
 		for o in self.ownerComp.ops('modules_panel/mod__*'):
@@ -105,18 +113,28 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider):
 					disabled=not self._RemoteClient.Connected,
 					callback=lambda: self._Disconnect())
 			]
-		elif name == 'window_menu':
+		elif name == 'view_menu':
 			return [
 				menu.Item(
-					'OMGWINDOW',
-					callback=lambda: print('omg window!')
-				)
+					'App Schema',
+					disabled=not self.AppSchema,
+					callback=lambda: self.ShowAppSchema())
 			]
 
 	def OnMenuClick(self, button):
 		menu.fromButton(button, h='Left', v='Bottom').Show(
 			items=self._GetMenuItems(button.name),
 			autoClose=True)
+
+	def ShowAppSchema(self):
+		dat = self.ownerComp.op('schema_json')
+		if not self.AppSchema:
+			dat.text = ''
+		else:
+			dat.text = json.dumps(
+				self.AppSchema.ToJsonDict(),
+				indent='  ')
+			dat.openViewer(unique=True)
 
 	def _ConnectTo(self, host, port):
 		self._LogBegin('_ConnectTo({}, {})'.format(host, port))
@@ -131,6 +149,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider):
 		try:
 			self._RemoteClient.Detach()
 			self._RemoteClient.par.Active = False
+			self.ownerComp.op('schema_json').clear()
 		finally:
 			self._LogEnd()
 

@@ -45,6 +45,11 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
 		self.AppSchema = None  # type: schema.AppSchema
 		self.moduleQueryQueue = None
 
+	@property
+	def _Callbacks(self):
+		dat = self.ownerComp.par.Callbacks.eval()
+		return dat.module if dat else None
+
 	def GetAppSchema(self):
 		return self.AppSchema
 
@@ -80,6 +85,9 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
 			self._ClearParamTables()
 			self._ProxyManager.par.Rootpath = ''
 			self._ProxyManager.ClearProxies()
+			callbacks = self._Callbacks
+			if callbacks and hasattr(callbacks, 'OnDetach'):
+				callbacks.OnDetach()
 		finally:
 			self._LogEnd()
 
@@ -113,6 +121,9 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
 
 	def _OnConfirmConnect(self, _):
 		self.Connected.val = True
+		callbacks = self._Callbacks
+		if callbacks and hasattr(callbacks, 'OnConnected'):
+			callbacks.OnConnected()
 		self.QueryApp()
 
 	def _OnConnectFailure(self, cmdmesg: remote.CommandMessage):
@@ -242,6 +253,9 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
 				self._AddParamsToTable(modschema.path, modschema.params)
 			for modschema in self.AppSchema.modules:
 				self._ProxyManager.AddProxy(modschema)
+			callbacks = self._Callbacks
+			if callbacks and hasattr(callbacks, 'OnAppSchemaLoaded'):
+				callbacks.OnAppSchemaLoaded(self.AppSchema)
 		finally:
 			self._LogEnd()
 

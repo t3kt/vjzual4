@@ -48,7 +48,7 @@ _logger = IndentedLogger()
 
 class ExtensionBase:
 	def __init__(self, ownerComp):
-		self.ownerComp = ownerComp
+		self.ownerComp = ownerComp  # type: op
 		self.enablelogging = True
 
 	def _GetLogId(self):
