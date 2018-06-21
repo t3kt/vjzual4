@@ -186,7 +186,7 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 				return module.ops(*nodesval)
 			else:
 				return module.ops(nodesval)
-		return module.findChildren(tags=['vjznode', 'tdatanode'])
+		return module.findChildren(tags=['vjznode', 'tdatanode'], maxDepth=1)
 
 	def _GetNodeInfo(self, nodeop):
 		if nodeop.isTOP:

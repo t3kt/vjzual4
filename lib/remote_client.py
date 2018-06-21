@@ -69,6 +69,9 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
 	def _ParamPartTable(self): return self.ownerComp.op('set_param_parts')
 
 	@property
+	def _DataNodesTable(self): return self.ownerComp.op('set_data_nodes')
+
+	@property
 	def _ProxyManager(self) -> module_proxy.ModuleProxyManager:
 		return self.ownerComp.op('proxy')
 
@@ -83,6 +86,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
 			self._BuildAppInfoTable()
 			self._ClearModuleTable()
 			self._ClearParamTables()
+			self._ClearDataNodesTable()
 			self._ProxyManager.par.Rootpath = ''
 			self._ProxyManager.ClearProxies()
 			callbacks = self._Callbacks
@@ -208,6 +212,21 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
 						'vecindex': i,
 					})
 
+	def _ClearDataNodesTable(self):
+		dat = self._DataNodesTable
+		dat.clear()
+		dat.appendRow(schema.DataNodeInfo.tablekeys + ['modpath'])
+
+	def _AddToDataNodesTable(self, modpath, nodes: List[schema.DataNodeInfo]):
+		if not nodes:
+			return
+		dat = self._DataNodesTable
+		for node in nodes:
+			_AddRawInfoRow(
+				dat,
+				info=node,
+				attrs={'modpath': modpath})
+
 	def QueryModule(self, modpath):
 		self._LogBegin('QueryModule({})'.format(modpath))
 		try:
@@ -251,6 +270,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
 			for modschema in self.AppSchema.modules:
 				_AddRawInfoRow(moduletable, info=modschema)
 				self._AddParamsToTable(modschema.path, modschema.params)
+				self._AddToDataNodesTable(modschema.path, modschema.nodes)
 			for modschema in self.AppSchema.modules:
 				self._ProxyManager.AddProxy(modschema)
 			callbacks = self._Callbacks

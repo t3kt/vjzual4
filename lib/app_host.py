@@ -57,10 +57,16 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider):
 	def GetModuleSchema(self, modpath):
 		return self.AppSchema and self.AppSchema.modulesbypath.get(modpath)
 
-	def Client_OnAppSchemaLoaded(self, appschema: schema.AppSchema):
-		self._LogEvent('Client_OnAppSchemaLoaded()')
+	def OnAppSchemaLoaded(self, appschema: schema.AppSchema):
+		self._LogEvent('OnAppSchemaLoaded()')
 		self.AppSchema = appschema
 		self.ownerComp.op('schema_json').clear()
+
+	def OnDetach(self):
+		self._LogEvent('OnDetach()')
+		for o in self.ownerComp.ops('schema_json', 'app_info', 'modules', 'params', 'param_parts', 'data_nodes'):
+			o.closeViewer()
+		self.AppSchema = None
 
 	def OnTDPreSave(self):
 		for o in self.ownerComp.ops('modules_panel/mod__*'):
@@ -114,11 +120,21 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider):
 					callback=lambda: self._Disconnect())
 			]
 		elif name == 'view_menu':
+			def _viewItem(text, oppath):
+				return menu.Item(
+					text,
+					disabled=not self.AppSchema,
+					callback=lambda: self.ownerComp.op(oppath).openViewer(unique=True))
 			return [
 				menu.Item(
 					'App Schema',
 					disabled=not self.AppSchema,
-					callback=lambda: self.ShowAppSchema())
+					callback=lambda: self.ShowAppSchema()),
+				_viewItem('App Info', 'app_info'),
+				_viewItem('Modules', 'modules'),
+				_viewItem('Params', 'params'),
+				_viewItem('Param Parts', 'param_parts'),
+				_viewItem('Data Nodes', 'data_nodes'),
 			]
 
 	def OnMenuClick(self, button):

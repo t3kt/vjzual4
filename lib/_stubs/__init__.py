@@ -31,9 +31,13 @@ class op:
 		self.parent = _Parent()
 		self.op = op
 
+	def ops(self, *args): return [op()]
+
 	def openParameters(self): pass
 
 	def openViewer(self, unique=False, borders=True): pass
+
+	def closeViewer(self): pass
 
 	TDResources = _Expando()
 

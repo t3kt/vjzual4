@@ -446,6 +446,15 @@ class DataNodeInfo(BaseSchemaNode):
 		self.audio = audio
 		self.texbuf = texbuf
 
+	tablekeys = [
+		'path',
+		'name',
+		'label',
+		'video',
+		'audio',
+		'texbuf',
+	]
+
 	def ToJsonDict(self):
 		return cleandict(mergedicts(self.otherattrs, {
 			'name': self.name,
@@ -549,6 +558,14 @@ class AppSchema(BaseSchemaNode):
 			modschema.path: modschema
 			for modschema in self.modules
 		}
+		self.nodes = []  # type: List[DataNodeInfo]
+		for modschema in self.modules:
+			if modschema.nodes:
+				self.nodes += modschema.nodes
+		self.nodesbypath = {
+			nodeinfo.path: nodeinfo
+			for nodeinfo in self.nodes
+		}
 
 	tablekeys = [
 		'name',
@@ -562,6 +579,7 @@ class AppSchema(BaseSchemaNode):
 			'label': self.label,
 			'path': self.path,
 			'modules': _ToJsonDicts(self.modules),
+			'nodes': _ToJsonDicts(self.nodes),
 		}))
 
 	@classmethod

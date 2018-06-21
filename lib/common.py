@@ -76,6 +76,8 @@ class ActionsExt:
 			parexec.python = True
 			parexec.par.op.expr = 'parent()'
 			parexec.par.pars = '*'
+			parexec.par.builtin = False
+			parexec.par.custom = True
 			parexec.par.valuechange = False
 			parexec.par.onpulse = True
 			parexec.text = 'def onPulse(par): par.owner.PerformAction(par.name)'
