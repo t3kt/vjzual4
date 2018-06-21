@@ -550,6 +550,12 @@ class AppSchema(BaseSchemaNode):
 			for modschema in self.modules
 		}
 
+	tablekeys = [
+		'name',
+		'label',
+		'path',
+	]
+
 	def ToJsonDict(self):
 		return cleandict(mergedicts(self.otherattrs, {
 			'name': self.name,
