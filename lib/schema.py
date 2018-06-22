@@ -492,6 +492,12 @@ class ModuleSchema(BaseSchemaNode):
 			if par.specialtype == 'switch.bypass':
 				self.hasbypass = True
 
+	@property
+	def parampartnames(self):
+		for param in self.params:
+			for part in param.parts:
+				yield part.name
+
 	@classmethod
 	def FromJsonDict(cls, obj):
 		return cls(

@@ -53,7 +53,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
 	def GetAppSchema(self):
 		return self.AppSchema
 
-	def GetModuleSchema(self, modpath):
+	def GetModuleSchema(self, modpath) -> schema.ModuleSchema:
 		return self.AppSchema and self.AppSchema.modulesbypath.get(modpath)
 
 	@property
@@ -276,6 +276,57 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
 			callbacks = self._Callbacks
 			if callbacks and hasattr(callbacks, 'OnAppSchemaLoaded'):
 				callbacks.OnAppSchemaLoaded(self.AppSchema)
+		finally:
+			self._LogEnd()
+
+	def QueryModuleState(self, modpath, params=None):
+		# params == None means all
+		if params is not None and not params:
+			# handle the case of passing in [] or ''
+			return
+		self._LogBegin('QueryModuleState({}, {})'.format(modpath, params or '*'))
+		try:
+			if params is None:
+				modschema = self.GetModuleSchema(modpath)
+				params = list(modschema.parampartnames) if modschema else None
+			if not params:
+				return
+			self.Connection.SendRequest('queryModState', {'path': modpath, 'params': params}).then(
+				success=self._OnReceiveModuleState,
+				failure=self._OnQueryModuleStateFailure)
+		finally:
+			self._LogEnd()
+
+	def _OnQueryModuleStateFailure(self, cmdmesg: remote.CommandMessage):
+		self._LogEvent('_OnQueryModuleStateFailure({})'.format(cmdmesg))
+
+	def _OnReceiveModuleState(self, cmdmesg: remote.CommandMessage):
+		arg = cmdmesg.arg
+		self._LogBegin('_OnReceiveModuleState({})'.format((arg.get('path') if arg else None) or ''))
+		try:
+			if not arg:
+				self._LogEvent('arg is {!r}'.format(arg))
+				return
+			modpath, vals = arg.get('path'), arg.get('vals')
+			if not vals:
+				self._LogEvent('arg has no vals: {!r}'.format(arg))
+				return
+			if not modpath:
+				self._LogEvent('arg has no module path: {!r}'.format(arg))
+				return
+			proxy = self._ProxyManager.GetProxy(modpath)
+			if not proxy:
+				self._LogEvent('proxy not found for path: {!r}'.format(modpath))
+				return
+			for name, val in vals.items():
+				par = getattr(proxy.par, name, None)
+				if par is None:
+					self._LogEvent('parameter not found: {!r}'.format(name))
+					continue
+				if par.isOP:
+					par.val = op(val) or ''
+				else:
+					par.val = val
 		finally:
 			self._LogEnd()
 

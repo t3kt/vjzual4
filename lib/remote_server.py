@@ -31,6 +31,7 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 				'connect': self._OnConnect,
 				'queryApp': self.SendAppInfo,
 				'queryMod': self.SendModuleInfo,
+				'queryModState': self.SendModuleState,
 			})
 		self._AutoInitActionParams()
 		self.AppRoot = None
@@ -240,6 +241,35 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 			startsection=par.startSection,
 		)
 
+	def SendModuleState(self, request: remote.CommandMessage):
+		arg = request.arg
+		self._LogBegin('SendModuleState({!r})'.format(arg))
+		try:
+			modpath, paramnames = arg.get('path'), arg.get('params')
+			state = self._GetModuleState(modpath, paramnames)
+			self.Connection.SendResponse(
+				request.cmd,
+				request.cmdid,
+				{'path': modpath, 'vals': state})
+		finally:
+			self._LogEnd()
+
+	def _GetModuleState(self, modpath, paramnames):
+		self._LogBegin('GetModuleState({!r}, {!r})'.format(modpath, paramnames))
+		try:
+			if not modpath or not paramnames:
+				return None
+			module = self.ownerComp.op(modpath)
+			if not module:
+				return None
+			return {
+				p.name: _GetParJsonValue(p)
+				for p in module.pars(*paramnames)
+				if not p.isPulse and not p.isMomentary
+			}
+		finally:
+			self._LogEnd()
+
 	def HandleOscEvent(self, address, args):
 		if not self.Connected or ':' not in address or not args:
 			return
@@ -253,3 +283,9 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 
 def _ApplyParValue(par, override):
 	par.val = override or par.default
+
+def _GetParJsonValue(par):
+	if par.isOP:
+		val = par.eval()
+		return val.path if val else None
+	return par.eval()
