@@ -108,16 +108,18 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
 		try:
 			self.Detach()
 			connpar = self.Connection.par
-			info = {
-				'version': 1,
-				'clientAddress': self.ownerComp.par.Localaddress.eval() or self.ownerComp.par.Localaddress.default,
-				'commandResponsePort': self.ownerComp.par.Commandreceiveport.eval(),
-				'oscClientSendPort': connpar.Oscsendport.eval(),
-				'oscClientReceivePort': connpar.Oscreceiveport.eval(),
-				'oscClientEventSendPort': connpar.Osceventsendport.eval(),
-				'oscClientEventReceivePort': connpar.Osceventreceiveport.eval(),
-			}
-			self.Connection.SendRequest('connect', info).then(
+			info = schema.ClientInfo(
+				version=1,
+				address=self.ownerComp.par.Localaddress.eval() or self.ownerComp.par.Localaddress.default,
+				cmdrecv=self.ownerComp.par.Commandreceiveport.eval(),
+				oscsend=connpar.Oscsendport.eval(),
+				oscrecv=connpar.Oscreceiveport.eval(),
+				osceventsend=connpar.Osceventsendport.eval(),
+				osceventrecv=connpar.Osceventreceiveport.eval(),
+				primaryvidrecv=self.ownerComp.par.Primaryvideoreceivename.eval() or None,
+				secondaryvidrecv=self.ownerComp.par.Secondaryvideoreceivename.eval() or None
+			)
+			self.Connection.SendRequest('connect', info.ToJsonDict()).then(
 				success=self._OnConfirmConnect,
 				failure=self._OnConnectFailure)
 		finally:

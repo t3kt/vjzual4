@@ -32,6 +32,8 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 				'queryApp': self.SendAppInfo,
 				'queryMod': self.SendModuleInfo,
 				'queryModState': self.SendModuleState,
+				'setPrimaryVideoSrc': lambda cmd: self.SetPrimaryVideoSource(cmd.arg),
+				'setSecondaryVideoSrc': lambda cmd: self.SetSecondaryVideoSource(cmd.arg),
 			})
 		self._AutoInitActionParams()
 		self.AppRoot = None
@@ -50,6 +52,11 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 			self._BuildModuleTable()
 			for o in self._LocalParGetters.children:
 				o.destroy()
+			self.ownerComp.op('sel_primary_video_source').par.top = ''
+			self.ownerComp.op('sel_secondary_video_source').par.top = ''
+			for send in self.ownerComp.ops('primary_syphonspout_out', 'secondary_syphonspout_out'):
+				send.par.active = False
+				send.par.sendername = ''
 		finally:
 			self._LogEnd()
 
@@ -91,22 +98,42 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 		self._LogBegin('Connect({!r})'.format(request.arg))
 		try:
 			self.Detach()
-			remoteinfo = request.arg
-			if not remoteinfo:
+			if not request.arg:
 				raise Exception('No remote info!')
+			clientinfo = schema.ClientInfo.FromJsonDict(request.arg)
 			# TODO: check version
 			self.Attach()
-			_ApplyParValue(self.ownerComp.par.Address, remoteinfo.get('clientAddress'))
-			_ApplyParValue(self.ownerComp.par.Commandsendport, remoteinfo.get('commandResponsePort'))
+			_ApplyParValue(self.ownerComp.par.Address, clientinfo.address)
+			_ApplyParValue(self.ownerComp.par.Commandsendport, clientinfo.cmdrecv)
 			connpar = self.Connection.par
-			_ApplyParValue(connpar.Oscsendport, remoteinfo.get('oscClientReceivePort'))
-			_ApplyParValue(connpar.Oscreceiveport, remoteinfo.get('oscClientSendPort'))
-			_ApplyParValue(connpar.Osceventsendport, remoteinfo.get('oscClientEventReceivePort'))
-			_ApplyParValue(connpar.Osceventreceiveport, remoteinfo.get('oscClientEventSendPort'))
+			_ApplyParValue(connpar.Oscsendport, clientinfo.oscrecv)
+			_ApplyParValue(connpar.Oscreceiveport, clientinfo.oscsend)
+			_ApplyParValue(connpar.Osceventsendport, clientinfo.osceventrecv)
+			_ApplyParValue(connpar.Osceventreceiveport, clientinfo.osceventsend)
+			self.ownerComp.op('primary_syphonspout_out').par.sendername = clientinfo.primaryvidrecv or ''
+			self.ownerComp.op('secondary_syphonspout_out').par.sendername = clientinfo.secondaryvidrecv or ''
 
 			# TODO: apply connection settings (OSC)
 			self.Connected.val = True
 			self.Connection.SendResponse(request.cmd, request.cmdid)
+		finally:
+			self._LogEnd()
+
+	def SetPrimaryVideoSource(self, path):
+		self._LogBegin('SetPrimaryVideoSource({})'.format(path))
+		try:
+			src = self.ownerComp.op(path)
+			self.ownerComp.op('sel_primary_video_source').par.top = src.path if src else ''
+			self.ownerComp.op('primary_syphonspout_out').par.active = src is not None
+		finally:
+			self._LogEnd()
+
+	def SetSecondaryVideoSource(self, path):
+		self._LogBegin('SetSecondaryVideoSource({})'.format(path))
+		try:
+			src = self.ownerComp.op(path)
+			self.ownerComp.op('sel_secondary_video_source').par.top = src.path if src else ''
+			self.ownerComp.op('secondary_syphonspout_out').par.active = src is not None
 		finally:
 			self._LogEnd()
 

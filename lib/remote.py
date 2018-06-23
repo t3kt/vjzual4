@@ -11,6 +11,7 @@ try:
 	import common
 except ImportError:
 	common = mod.common
+cleandict, mergedicts = common.cleandict, common.mergedicts
 
 class CommandMessage(namedtuple('CommandMessage', ['cmd', 'arg', 'cmdid', 'kind'])):
 	COMMAND = 'cmd'

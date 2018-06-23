@@ -612,3 +612,44 @@ class SchemaProvider:
 	def GetModuleSchema(self, modpath) -> Optional[ModuleSchema]:
 		raise NotImplementedError()
 
+class ClientInfo(BaseSchemaNode):
+	def __init__(
+			self,
+			version=None,
+			address=None,
+			cmdrecv=None,
+			oscsend=None,
+			oscrecv=None,
+			osceventsend=None,
+			osceventrecv=None,
+			primaryvidrecv=None,
+			secondaryvidrecv=None,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.version = version
+		self.address = address
+		self.cmdrecv = cmdrecv
+		self.oscsend = oscsend
+		self.oscrecv = oscrecv
+		self.osceventsend = osceventsend
+		self.osceventrecv = osceventrecv
+		self.primaryvidrecv = primaryvidrecv
+		self.secondaryvidrecv = secondaryvidrecv
+
+	@classmethod
+	def FromJsonDict(cls, obj):
+		return cls(**obj)
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'version': self.version,
+			'address': self.address,
+			'cmdrecv': self.cmdrecv,
+			'oscsend': self.oscsend,
+			'oscrecv': self.oscrecv,
+			'osceventsend': self.osceventsend,
+			'osceventrecv': self.osceventrecv,
+			'primaryvidrecv': self.primaryvidrecv,
+			'secondaryvidrecv': self.secondaryvidrecv,
+		}))
+
