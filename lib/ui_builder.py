@@ -55,12 +55,13 @@ class UiBuilder:
 			parinfo,  # type: schema.ParamSchema
 			order=None, nodepos=None,
 			parvals=None,
-			parexprs=None):
-		# TODO: value expr
+			parexprs=None,
+			modhostconnector=None):
 		return self.CreateSlider(
 			dest=dest, name=name, order=order, nodepos=nodepos,
 			label=parinfo.label,
 			isint=parinfo.style == 'Int',
+			valueexpr=modhostconnector.GetParExpr(parinfo.parts[0].name) if modhostconnector else None,
 			defval=parinfo.parts[0].default,
 			clamp=[
 				parinfo.parts[0].minlimit is not None,
@@ -78,7 +79,8 @@ class UiBuilder:
 			parinfo,  # type: schema.ParamSchema
 			order=None, nodepos=None,
 			parvals=None,
-			parexprs=None):
+			parexprs=None,
+			modhostconnector=None):
 		n = len(parinfo.parts)
 		ctrl = CreateFromTemplate(
 			template=self.ownerComp.op('multi_slider'),
@@ -116,6 +118,7 @@ class UiBuilder:
 				slider.destroy()
 				continue
 			part = parinfo.parts[i]
+			valexpr = modhostconnector.GetParExpr(part.name) if modhostconnector else None
 			UpdateOP(
 				slider,
 				parvals=mergedicts(
@@ -131,7 +134,7 @@ class UiBuilder:
 					}
 				),
 				parexprs=mergedicts(
-					# TODO: value expr
+					valexpr and {'Value1': valexpr}
 				)
 			)
 			sliders.append(slider)
@@ -175,12 +178,13 @@ class UiBuilder:
 			parinfo,  # type: schema.ParamSchema
 			order=None, nodepos=None,
 			parvals=None,
-			parexprs=None):
+			parexprs=None,
+			modhostconnector=None):
 		return self.CreateButton(
 			dest=dest, name=name, order=order, nodepos=nodepos,
 			label=parinfo.label,
 			behavior='toggledown',
-			# TODO: value expr
+			valueexpr=modhostconnector.GetParExpr(name) if modhostconnector else None,
 			defval=parinfo.parts[0].default,
 			parvals=parvals,
 			parexprs=parexprs)
@@ -232,13 +236,14 @@ class UiBuilder:
 			order=None,
 			nodepos=None,
 			parvals=None,
-			parexprs=None):
+			parexprs=None,
+			modhostconnector=None):
 		ctrl = self.CreateTextField(
 			dest=dest,
 			name=name,
 			label=parinfo.label,
 			fieldtype='string',
-			# TODO: value expr
+			valueexpr=modhostconnector.GetParExpr(name) if modhostconnector else None,
 			defval=parinfo.parts[0].default,
 			order=order,
 			nodepos=nodepos,
@@ -246,7 +251,9 @@ class UiBuilder:
 			parexprs=parexprs)
 		celldat = ctrl.par.Celldat.eval()
 		# TODO: workaround for bug with initial value not being loaded
-		# celldat[0, 0] = parinfo.parts[0].eval()
+		par = modhostconnector.GetPar(name) if modhostconnector else None
+		if par is not None:
+			celldat[0, 0] = par.eval()
 		return ctrl
 
 	def CreateParControl(
@@ -258,7 +265,8 @@ class UiBuilder:
 			nodepos=None,
 			parvals=None,
 			parexprs=None,
-			addtocontrolmap=None):
+			addtocontrolmap=None,
+			modhostconnector=None):
 
 		def _register(ctrlop):
 			if addtocontrolmap is not None:
@@ -285,7 +293,8 @@ class UiBuilder:
 				order=order,
 				nodepos=nodepos,
 				parvals=parvals,
-				parexprs=parexprs)
+				parexprs=parexprs,
+				modhostconnector=modhostconnector)
 		elif parinfo.style in [
 			'Float', 'Int',
 			'RGB', 'RGBA',
@@ -299,7 +308,8 @@ class UiBuilder:
 				order=order,
 				nodepos=nodepos,
 				parvals=parvals,
-				parexprs=parexprs)
+				parexprs=parexprs,
+				modhostconnector=modhostconnector)
 			_registerparts(sliders)
 			ctrl = sliders[0].parent()
 		elif parinfo.style == 'Toggle':
@@ -311,7 +321,8 @@ class UiBuilder:
 				order=order,
 				nodepos=nodepos,
 				parvals=parvals,
-				parexprs=parexprs)
+				parexprs=parexprs,
+				modhostconnector=modhostconnector)
 		elif parinfo.style == 'Pulse':
 			# print('creating trigger control for {}'.format(parinfo))
 			ctrl = self.CreateParTrigger(
@@ -331,7 +342,8 @@ class UiBuilder:
 				order=order,
 				nodepos=nodepos,
 				parvals=parvals,
-				parexprs=parexprs)
+				parexprs=parexprs,
+				modhostconnector=modhostconnector)
 		else:
 			print('Unsupported par style: {!r})'.format(parinfo))
 			return None

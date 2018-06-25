@@ -295,7 +295,8 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 					parexprs=mergedicts(
 						parinfo.advanced and {'display': 'parent.ModuleHost.par.Showadvanced'}
 					),
-					addtocontrolmap=self.controlsByParam)
+					addtocontrolmap=self.controlsByParam,
+					modhostconnector=self.ModuleConnector)
 			self.paramsByControl = {
 				name: ctrl
 				for name, ctrl in self.controlsByParam.items()
@@ -590,7 +591,13 @@ class ModuleHostConnector:
 		self.modpath = modschema.path
 
 	def GetPar(self, name):
-		raise NotImplementedError()
+		return None
+
+	def GetParExpr(self, name):
+		par = self.GetPar(name)
+		if par is None:
+			return None
+		return 'op({!r}).par.{}'.format(par.owner.path, par.name)
 
 	@property
 	def CanEditModule(self): return False
