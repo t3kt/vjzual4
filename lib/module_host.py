@@ -361,17 +361,20 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 		items = [
 			menu.Item(
 				'Parameters',
-				disabled=self.ModuleConnector.CanOpenParameters,
+				disabled=not self.ModuleConnector.CanOpenParameters,
 				callback=lambda: self.ModuleConnector.OpenParameters()),
-			menu.Item('Edit', callback=lambda: self.ModuleConnector.EditModule()),
+			menu.Item(
+				'Edit',
+				disabled=not self.ModuleConnector.CanEditModule,
+				callback=lambda: self.ModuleConnector.EditModule()),
 			menu.Item(
 				'Edit Master',
-				disabled=self.ModuleConnector.CanEditModuleMaster,
+				disabled=not self.ModuleConnector.CanEditModuleMaster,
 				callback=lambda: self.ModuleConnector.EditModuleMaster(),
 				dividerafter=True),
 			menu.Item(
 				'Show Advanced',
-				disabled=self.ModuleConnector.modschema.hasadvanced,
+				disabled=not self.ModuleConnector.modschema.hasadvanced,
 				checked=self.ownerComp.par.Showadvanced.eval(),
 				callback=lambda: setattr(self.ownerComp.par, 'Showadvanced', not self.ownerComp.par.Showadvanced),
 				dividerafter=True),

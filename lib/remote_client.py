@@ -273,11 +273,28 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
 				_AddRawInfoRow(moduletable, info=modschema)
 				self._AddParamsToTable(modschema.path, modschema.params)
 				self._AddToDataNodesTable(modschema.path, modschema.nodes)
+			self.ownerComp.op('deferred_build_proxies').run(delayFrames=1)
+		finally:
+			self._LogEnd()
+
+	def BuildModuleProxies(self):
+		self._LogBegin('BuildModuleProxies()')
+		try:
 			for modschema in self.AppSchema.modules:
 				self.ProxyManager.AddProxy(modschema)
+			self.ownerComp.op('deferred_notify_app_schema_loaded').run(delayFrames=1)
+		finally:
+			self._LogEnd()
+
+	def NotifyAppSchemaLoaded(self):
+		self._LogBegin('NotifyAppSchemaLoaded()')
+		try:
 			callbacks = self._Callbacks
 			if callbacks and hasattr(callbacks, 'OnAppSchemaLoaded'):
+				self._LogEvent('Calling OnAppSchemaLoaded callback')
 				callbacks.OnAppSchemaLoaded(self.AppSchema)
+			else:
+				self._LogEvent('No OnAppSchemaLoaded callback')
 		finally:
 			self._LogEnd()
 

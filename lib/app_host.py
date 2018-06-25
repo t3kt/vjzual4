@@ -5,7 +5,6 @@ print('vjz4/app_host.py loading')
 
 if False:
 	from _stubs import *
-	from ui_builder import UiBuilder
 	from _stubs.PopDialogExt import PopDialogExt
 
 try:
@@ -43,7 +42,6 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider):
 			'Showappschema': self.ShowAppSchema,
 		})
 		self._AutoInitActionParams()
-		self.SubModules = []
 		self.AppSchema = None  # type: schema.AppSchema
 		self.ownerComp.op('schema_json').clear()
 
