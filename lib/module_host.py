@@ -58,7 +58,6 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 	def __init__(self, ownerComp):
 		common.ExtensionBase.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions={
-			'Reattachmodule': self.AttachToModule,
 			'Clearuistate': self.ClearUIState,
 			'Loaduistate': self.LoadUIState,
 			'Saveuistate': self.SaveUIState,
@@ -274,33 +273,37 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 				return parinfo
 
 	def BuildControls(self, dest):
-		uibuilder = self.UiBuilder
-		for ctrl in dest.ops('par__*'):
-			ctrl.destroy()
-		self.controlsByParam = {}
-		self.paramsByControl = {}
-		if not self.ModuleConnector or not uibuilder:
+		self._LogBegin('BuildControls()')
+		try:
+			uibuilder = self.UiBuilder
+			for ctrl in dest.ops('par__*'):
+				ctrl.destroy()
+			self.controlsByParam = {}
+			self.paramsByControl = {}
+			if not self.ModuleConnector or not uibuilder:
+				self._RebuildParamControlTable()
+				return
+			for i, parinfo in enumerate(self.Params):
+				if parinfo.hidden or parinfo.specialtype.startswith('switch.'):
+					continue
+				uibuilder.CreateParControl(
+					dest=dest,
+					name='par__' + parinfo.name,
+					parinfo=parinfo,
+					order=i,
+					nodepos=[100, -200 * i],
+					parexprs=mergedicts(
+						parinfo.advanced and {'display': 'parent.ModuleHost.par.Showadvanced'}
+					),
+					addtocontrolmap=self.controlsByParam)
+			self.paramsByControl = {
+				name: ctrl
+				for name, ctrl in self.controlsByParam.items()
+			}
 			self._RebuildParamControlTable()
-			return
-		for i, parinfo in enumerate(self.Params):
-			if parinfo.hidden or parinfo.specialtype.startswith('switch.'):
-				continue
-			uibuilder.CreateParControl(
-				dest=dest,
-				name='par__' + parinfo.name,
-				parinfo=parinfo,
-				order=i,
-				nodepos=[100, -100 * i],
-				parexprs=mergedicts(
-					parinfo.advanced and {'display': 'parent.ModuleHost.par.Showadvanced'}
-				),
-				addtocontrolmap=self.controlsByParam)
-		self.paramsByControl = {
-			name: ctrl
-			for name, ctrl in self.controlsByParam.items()
-		}
-		self._RebuildParamControlTable()
-		dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
+			dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
+		finally:
+			self._LogEnd()
 
 	def BuildMappingEditors(self, dest):
 		uibuilder = self.UiBuilder
@@ -398,6 +401,21 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 	def BuildMappingTable(self, dat):
 		self.Mappings.BuildMappingTable(dat)
 
+	def _ClearControls(self):
+		for o in self.ownerComp.ops('controls_panel/par__*'):
+			o.destroy()
+
+	def BuildControlsIfNeeded(self):
+		self._LogEvent('BuildControlsIfNeeded()')
+		try:
+			if self.ownerComp.par.Uimode == 'ctrl' and not self.ownerComp.par.Collapsed and not self._ControlsBuilt:
+				controls = self.ownerComp.op('controls_panel')
+				self.BuildControls(controls)
+			else:
+				self._LogEvent('not building controls')
+		finally:
+			self._LogEnd()
+
 def FindSubModules(parentComp):
 	if not parentComp:
 		return []
@@ -431,31 +449,16 @@ class ModuleHost(ModuleHostBase):
 	def __init__(self, ownerComp):
 		super().__init__(ownerComp)
 		self._AutoInitActionParams()
-		# modules hosted inside other modules are asynchronously initialized by the
-		# parent so they don't need to auto initialize on construction
-		# if not self.ParentHost:
-		# 	self.ownerComp.op('deferred_attach_module').run(delayFrames=1)
-
-	def AttachToModule(self):
-		super().AttachToModule()
-		self._ClearControls()
-		self.BuildControlsIfNeeded()
-		self.UpdateModuleHeight()
 
 	def AttachToModuleConnector(self, connector: 'ModuleHostConnector'):
-		super().AttachToModuleConnector(connector)
-		self._ClearControls()
-		self.BuildControlsIfNeeded()
-		self.UpdateModuleHeight()
-
-	def _ClearControls(self):
-		for o in self.ownerComp.ops('controls_panel/par__*'):
-			o.destroy()
-
-	def BuildControlsIfNeeded(self):
-		if self.ownerComp.par.Uimode == 'ctrl' and not self.ownerComp.par.Collapsed and not self._ControlsBuilt:
-			controls = self.ownerComp.op('controls_panel')
-			self.BuildControls(controls)
+		self._LogBegin('AttachToModuleConnector()')
+		try:
+			super().AttachToModuleConnector(connector)
+			self._ClearControls()
+			self.BuildControlsIfNeeded()
+			self.UpdateModuleHeight()
+		finally:
+			self._LogEnd()
 
 	def BuildMappingEditorsIfNeeded(self):
 		if self.ownerComp.par.Uimode == 'map' and not self.ownerComp.par.Collapsed and not self._MappingEditorsBuilt:
@@ -479,13 +482,15 @@ class ModuleChainHost(ModuleHostBase):
 		for o in self.ownerComp.ops('controls_panel/par__*', 'sub_modules_panel/mod__*'):
 			o.destroy()
 
-	def AttachToModule(self):
-		super().AttachToModule()
-		self._BuildSubModuleHosts()
-
 	def AttachToModuleConnector(self, connector: 'ModuleHostConnector'):
-		super().AttachToModuleConnector(connector)
-		self._BuildSubModuleHosts()
+		self._LogBegin('AttachToModuleConnector()')
+		try:
+			super().AttachToModuleConnector(connector)
+			self._ClearControls()
+			self.BuildControlsIfNeeded()
+			self._BuildSubModuleHosts()
+		finally:
+			self._LogEnd()
 
 	def ClearUIState(self):
 		for m in self._SubModuleHosts:
@@ -575,11 +580,6 @@ class ModuleChainHost(ModuleHostBase):
 				callback=_subModuleHostParUpdater('Uimode', 'nodes')),
 		]
 		return items
-
-	def BuildControlsIfNeeded(self):
-		if self.ownerComp.par.Uimode == 'ctrl' and not self.ownerComp.par.Collapsed and not self._ControlsBuilt:
-			controls = self.ownerComp.op('controls_panel')
-			self.BuildControls(controls)
 
 
 class ModuleHostConnector:
