@@ -72,7 +72,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
 	def _DataNodesTable(self): return self.ownerComp.op('set_data_nodes')
 
 	@property
-	def _ProxyManager(self) -> module_proxy.ModuleProxyManager:
+	def ProxyManager(self) -> module_proxy.ModuleProxyManager:
 		return self.ownerComp.op('proxy')
 
 	def Detach(self):
@@ -87,8 +87,8 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
 			self._ClearModuleTable()
 			self._ClearParamTables()
 			self._ClearDataNodesTable()
-			self._ProxyManager.par.Rootpath = ''
-			self._ProxyManager.ClearProxies()
+			self.ProxyManager.par.Rootpath = ''
+			self.ProxyManager.ClearProxies()
 			callbacks = self._Callbacks
 			if callbacks and hasattr(callbacks, 'OnDetach'):
 				callbacks.OnDetach()
@@ -155,7 +155,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
 			appinfo = schema.RawAppInfo.FromJsonDict(cmdmesg.arg)
 			self.rawAppInfo = appinfo
 			self._BuildAppInfoTable()
-			self._ProxyManager.par.Rootpath = appinfo.path
+			self.ProxyManager.par.Rootpath = appinfo.path
 
 			if appinfo.modpaths:
 				self.moduleQueryQueue += sorted(appinfo.modpaths)
@@ -274,7 +274,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
 				self._AddParamsToTable(modschema.path, modschema.params)
 				self._AddToDataNodesTable(modschema.path, modschema.nodes)
 			for modschema in self.AppSchema.modules:
-				self._ProxyManager.AddProxy(modschema)
+				self.ProxyManager.AddProxy(modschema)
 			callbacks = self._Callbacks
 			if callbacks and hasattr(callbacks, 'OnAppSchemaLoaded'):
 				callbacks.OnAppSchemaLoaded(self.AppSchema)
@@ -316,7 +316,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
 			if not modpath:
 				self._LogEvent('arg has no module path: {!r}'.format(arg))
 				return
-			proxy = self._ProxyManager.GetProxy(modpath)
+			proxy = self.ProxyManager.GetProxy(modpath)
 			if not proxy:
 				self._LogEvent('proxy not found for path: {!r}'.format(modpath))
 				return
@@ -337,7 +337,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
 			return
 		# self._LogEvent('HandleOscEvent({!r}, {!r})'.format(address, args))
 		modpath, name = address.split(':', maxsplit=1)
-		self._ProxyManager.SetParamValue(modpath, name, args[0])
+		self.ProxyManager.SetParamValue(modpath, name, args[0])
 
 
 def _AddRawInfoRow(dat, info: schema.BaseSchemaNode=None, attrs=None):

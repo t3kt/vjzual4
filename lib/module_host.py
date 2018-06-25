@@ -188,6 +188,20 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 		bar.par.display = ratio is not None
 		bar.par.Ratio = ratio or 0
 
+	def AttachToModuleConnector(self, connector: 'ModuleHostConnector'):
+		self.DataNodes = []
+		self.Params = []
+		self.SubModules = []  # TODO: sub-modules!
+		self.ModuleConnector = connector
+		if connector:
+			self.DataNodes = connector.modschema.nodes
+			self.Params = connector.modschema.params
+		hostcore = self.ownerComp.op('host_core')
+		self._BuildParamTable(hostcore.op('set_param_table'))
+		self._BuildDataNodeTable(hostcore.op('set_data_nodes'))
+		self._BuildSubModuleTable(hostcore.op('set_sub_module_table'))
+		self._RebuildParamControlTable()
+
 	def AttachToModule(self):
 		self.DataNodes = []
 		self.Params = []
@@ -416,11 +430,17 @@ class ModuleHost(ModuleHostBase):
 		self._AutoInitActionParams()
 		# modules hosted inside other modules are asynchronously initialized by the
 		# parent so they don't need to auto initialize on construction
-		if not self.ParentHost:
-			self.ownerComp.op('deferred_attach_module').run(delayFrames=1)
+		# if not self.ParentHost:
+		# 	self.ownerComp.op('deferred_attach_module').run(delayFrames=1)
 
 	def AttachToModule(self):
 		super().AttachToModule()
+		self._ClearControls()
+		self.BuildControlsIfNeeded()
+		self.UpdateModuleHeight()
+
+	def AttachToModuleConnector(self, connector: 'ModuleHostConnector'):
+		super().AttachToModuleConnector(connector)
 		self._ClearControls()
 		self.BuildControlsIfNeeded()
 		self.UpdateModuleHeight()
@@ -449,8 +469,8 @@ class ModuleChainHost(ModuleHostBase):
 		self._AutoInitActionParams()
 		# modules hosted inside other modules are asynchronously initialized by the
 		# parent so they don't need to auto initialize on construction
-		if not self.ParentHost:
-			self.ownerComp.op('deferred_attach_module').run(delayFrames=1)
+		# if not self.ParentHost:
+		# 	self.ownerComp.op('deferred_attach_module').run(delayFrames=1)
 
 	def OnTDPreSave(self):
 		for o in self.ownerComp.ops('controls_panel/par__*', 'sub_modules_panel/mod__*'):
@@ -458,6 +478,10 @@ class ModuleChainHost(ModuleHostBase):
 
 	def AttachToModule(self):
 		super().AttachToModule()
+		self._BuildSubModuleHosts()
+
+	def AttachToModuleConnector(self, connector: 'ModuleHostConnector'):
+		super().AttachToModuleConnector(connector)
 		self._BuildSubModuleHosts()
 
 	def ClearUIState(self):

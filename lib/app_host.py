@@ -58,9 +58,13 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider):
 		return self.AppSchema and self.AppSchema.modulesbypath.get(modpath)
 
 	def OnAppSchemaLoaded(self, appschema: schema.AppSchema):
-		self._LogEvent('OnAppSchemaLoaded()')
-		self.AppSchema = appschema
-		self.ownerComp.op('schema_json').clear()
+		self._LogBegin('OnAppSchemaLoaded()')
+		try:
+			self.AppSchema = appschema
+			self.ownerComp.op('schema_json').clear()
+			self._BuildSubModuleHosts()
+		finally:
+			self._LogEnd()
 
 	def OnDetach(self):
 		self._LogEvent('OnDetach()')
@@ -87,26 +91,32 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider):
 		return template
 
 	def _BuildSubModuleHosts(self):
-		dest = self.ownerComp.op('modules_panel')
-		for m in dest.ops('mod__*'):
-			m.destroy()
-		# if not self.AppRoot:
-		# 	return
-		# template = self._ModuleHostTemplate
-		# if not template:
-		# 	return
-		# hosts = []
-		# for i, submod in enumerate(self.SubModules):
-		# 	host = dest.copy(template, name='mod__' + submod.name)
-		# 	host.par.Uibuilder.expr = 'parent.AppHost.par.Uibuilder or ""'
-		# 	host.par.Module = submod.path
-		# 	host.par.hmode = 'fixed'
-		# 	host.par.vmode = 'fill'
-		# 	host.par.alignorder = i
-		# 	host.nodeX = 100
-		# 	host.nodeY = -100 * i
-		# 	hosts.append(host)
-		# 	host.AttachToModule()
+		self._LogBegin('_BuildSubModuleHosts()')
+		try:
+			dest = self.ownerComp.op('modules_panel')
+			for m in dest.ops('mod__*'):
+				m.destroy()
+			if not self.AppSchema:
+				return
+			template = self._ModuleHostTemplate
+			if not template:
+				return
+			hosts = []
+			for i, modschema in enumerate(self.AppSchema.childmodules):
+				self._LogEvent('creating host for sub module {}'.format(modschema.path))
+				host = dest.copy(template, name='mod__' + modschema.name)  # type: module_host.ModuleChainHost
+				host.par.Uibuilder.expr = 'parent.AppHost.par.Uibuilder or ""'
+				host.par.hmode = 'fixed'
+				host.par.vmode = 'fill'
+				host.par.w = 250
+				host.par.alignorder = i
+				host.nodeX = 100
+				host.nodeY = -100 * i
+				hosts.append(host)
+				connector = self._RemoteClient.ProxyManager.GetModuleProxyHost(modschema)
+				host.AttachToModuleConnector(connector)
+		finally:
+			self._LogEnd()
 
 	def _GetMenuItems(self, name):
 		if name == 'app_menu':

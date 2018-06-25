@@ -554,6 +554,7 @@ class AppSchema(BaseSchemaNode):
 			label=None,
 			path=None,
 			modules=None,
+			childmodpaths=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.name = name
@@ -572,6 +573,11 @@ class AppSchema(BaseSchemaNode):
 			nodeinfo.path: nodeinfo
 			for nodeinfo in self.nodes
 		}
+		self.childmodpaths = childmodpaths or []
+		self.childmodules = [
+			self.modulesbypath[modpath]
+			for modpath in self.childmodpaths
+		]
 
 	tablekeys = [
 		'name',
@@ -586,6 +592,7 @@ class AppSchema(BaseSchemaNode):
 			'path': self.path,
 			'modules': _ToJsonDicts(self.modules),
 			'nodes': _ToJsonDicts(self.nodes),
+			'childmodpaths': self.childmodpaths,
 		}))
 
 	@classmethod
@@ -603,6 +610,11 @@ class AppSchema(BaseSchemaNode):
 			modules=[
 				ModuleSchema.FromRawModuleInfo(modinfo)
 				for modinfo in modules
+			] if modules else None,
+			childmodpaths=[
+				modinfo.path
+				for modinfo in modules
+				if modinfo.parentpath == appinfo.path
 			] if modules else None)
 
 class SchemaProvider:

@@ -15,6 +15,11 @@ try:
 except ImportError:
 	schema = mod.schema
 
+try:
+	import module_host
+except ImportError:
+	module_host = mod.module_host
+
 
 class ModuleProxyManager(common.ExtensionBase, common.ActionsExt):
 	def __init__(self, ownerComp):
@@ -180,3 +185,24 @@ class ModuleProxyManager(common.ExtensionBase, common.ActionsExt):
 		if not proxy or not hasattr(proxy.par, name):
 			return
 		setattr(proxy.par, name, value)
+
+	def GetModuleProxyHost(self, modschema: schema.ModuleSchema):
+		proxy = self.GetProxy(modschema.path)
+		return _ProxyModuleHostConnector(modschema, proxy)
+
+class _ProxyModuleHostConnector(module_host.ModuleHostConnector):
+	def __init__(
+			self,
+			modschema: schema.ModuleSchema,
+			proxy):
+		super().__init__(modschema)
+		self.proxy = proxy
+
+	def GetPar(self, name):
+		return getattr(self.proxy.par, name, None)
+
+	@property
+	def CanOpenParameters(self): return True
+
+	def OpenParameters(self):
+		self.proxy.openParameters()
