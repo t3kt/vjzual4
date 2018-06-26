@@ -186,16 +186,20 @@ class ModuleProxyManager(common.ExtensionBase, common.ActionsExt):
 			return
 		setattr(proxy.par, name, value)
 
-	def GetModuleProxyHost(self, modschema: schema.ModuleSchema):
+	def GetModuleProxyHost(self, modschema: schema.ModuleSchema, appschema: schema.AppSchema):
 		proxy = self.GetProxy(modschema.path)
-		return _ProxyModuleHostConnector(modschema, proxy)
+		return _ProxyModuleHostConnector(modschema, appschema, self, proxy)
 
 class _ProxyModuleHostConnector(module_host.ModuleHostConnector):
 	def __init__(
 			self,
 			modschema: schema.ModuleSchema,
+			appschema: schema.AppSchema,
+			proxymanager: ModuleProxyManager,
 			proxy):
 		super().__init__(modschema)
+		self.appschema = appschema
+		self.proxymanager = proxymanager
 		self.proxy = proxy
 
 	def GetPar(self, name):
@@ -206,3 +210,17 @@ class _ProxyModuleHostConnector(module_host.ModuleHostConnector):
 
 	def OpenParameters(self):
 		self.proxy.openParameters()
+
+	def CreateHostConnector(self, modpath):
+		modschema = self.appschema.modulesbypath.get(modpath)
+		if not modschema:
+			return None
+		return self.proxymanager.GetModuleProxyHost(modschema, self.appschema)
+
+	def CreateChildModuleConnectors(self):
+		connectors = []
+		for childpath in self.modschema.childmodpaths:
+			connector = self.CreateHostConnector(childpath)
+			if connector:
+				connectors.append(connector)
+		return connectors

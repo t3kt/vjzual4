@@ -99,7 +99,7 @@ DAT = OP
 CHOP = OP
 
 baseCOMP = COMP
-parameterexecuteDAT = DAT
+parameterexecuteDAT = textDAT = DAT
 parameterCHOP = nullCHOP = selectCHOP = CHOP
 
 class app:

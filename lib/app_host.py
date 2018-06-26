@@ -33,9 +33,10 @@ try:
 except ImportError:
 	menu = mod.menu
 
-class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider):
+class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, common.TaskQueueExt):
 	def __init__(self, ownerComp):
 		common.ExtensionBase.__init__(self, ownerComp)
+		common.TaskQueueExt.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions={
 			'Attachapp': self.AttachToApp,
 			'Showconnect': self.ShowConnectDialog,
@@ -99,20 +100,46 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider):
 			template = self._ModuleHostTemplate
 			if not template:
 				return
-			hosts = []
+			hostconnectorpairs = []
 			for i, modschema in enumerate(self.AppSchema.childmodules):
 				self._LogEvent('creating host for sub module {}'.format(modschema.path))
 				host = dest.copy(template, name='mod__' + modschema.name)  # type: module_host.ModuleChainHost
 				host.par.Uibuilder.expr = 'parent.AppHost.par.Uibuilder or ""'
+				host.par.Modulehosttemplate.expr = 'op.Vjz4.op("module_host")'
 				host.par.hmode = 'fixed'
 				host.par.vmode = 'fill'
 				host.par.w = 250
 				host.par.alignorder = i
 				host.nodeX = 100
 				host.nodeY = -100 * i
-				hosts.append(host)
-				connector = self._RemoteClient.ProxyManager.GetModuleProxyHost(modschema)
-				host.AttachToModuleConnector(connector)
+				connector = self._RemoteClient.ProxyManager.GetModuleProxyHost(modschema, self.AppSchema)
+				hostconnectorpairs.append([host, connector])
+
+			def _makeInitTask(h, c):
+				return lambda: self._InitSubModuleHost(h, c)
+
+			self.AddTaskBatch(
+				[
+					_makeInitTask(host, connector)
+					for host, connector in hostconnectorpairs
+				] + [
+					lambda: self._OnSubModuleHostsConnected()
+				],
+				autostart=True)
+		finally:
+			self._LogEnd()
+
+	def _InitSubModuleHost(self, host, connector):
+		self._LogBegin('_InitSubModuleHost({}, {})'.format(host, connector.modschema.path))
+		try:
+			host.AttachToModuleConnector(connector)
+		finally:
+			self._LogEnd()
+
+	def _OnSubModuleHostsConnected(self):
+		self._LogBegin('_OnSubModuleHostsConnected()')
+		try:
+			pass
 		finally:
 			self._LogEnd()
 

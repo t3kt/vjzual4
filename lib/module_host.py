@@ -53,10 +53,11 @@ def _GetOrAdd(d, key, default):
 		d[key] = val = default
 	return val
 
-class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
+class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 	"""Base class for components that host modules, such as ModuleHost or ModuleEditor."""
 	def __init__(self, ownerComp):
 		common.ExtensionBase.__init__(self, ownerComp)
+		common.TaskQueueExt.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions={
 			'Clearuistate': self.ClearUIState,
 			'Loaduistate': self.LoadUIState,
@@ -69,7 +70,7 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 		self.controlsByParam = {}
 		self.paramsByControl = {}
 		self.Mappings = control_mapping.ModuleControlMap()
-		self.SetProgressBar(None)
+		self.SetProgressBar_DEPRECATED(None)
 
 		# trick pycharm
 		if False:
@@ -180,12 +181,16 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 	def getModulePar(self, name):
 		return self.ModuleConnector and self.ModuleConnector.GetPar(name)
 
-	def SetProgressBar(self, ratio):
-		bar = self.ownerComp.op('module_header/progress_bar')
+	def SetProgressBar_DEPRECATED(self, ratio):
+		bar = self.ProgressBar
 		if not bar:
 			return
 		bar.par.display = ratio is not None
 		bar.par.Ratio = ratio or 0
+
+	@property
+	def ProgressBar(self):
+		return self.ownerComp.op('module_header/progress_bar')
 
 	def AttachToModuleConnector(self, connector: 'ModuleHostConnector'):
 		self.DataNodes = []
@@ -407,15 +412,9 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt):
 			o.destroy()
 
 	def BuildControlsIfNeeded(self):
-		self._LogEvent('BuildControlsIfNeeded()')
-		try:
-			if self.ownerComp.par.Uimode == 'ctrl' and not self.ownerComp.par.Collapsed and not self._ControlsBuilt:
-				controls = self.ownerComp.op('controls_panel')
-				self.BuildControls(controls)
-			else:
-				self._LogEvent('not building controls')
-		finally:
-			self._LogEnd()
+		if self.ownerComp.par.Uimode == 'ctrl' and not self.ownerComp.par.Collapsed and not self._ControlsBuilt:
+			controls = self.ownerComp.op('controls_panel')
+			self.BuildControls(controls)
 
 def FindSubModules(parentComp):
 	if not parentComp:
@@ -520,36 +519,55 @@ class ModuleChainHost(ModuleHostBase):
 		return template
 
 	def _BuildSubModuleHosts(self):
-		self.SetProgressBar(None)
-		dest = self.ownerComp.op('./sub_modules_panel')
-		for m in dest.ops('mod__*'):
-			m.destroy()
-		if not self.ModuleConnector:
-			return
-		template = self._ModuleHostTemplate
-		if not template:
-			return
-		hosts = []
-		for i, submod in enumerate(self.SubModules):
-			host = dest.copy(template, name='mod__' + submod.name)
-			host.par.Collapsed = True
-			host.par.Uibuilder.expr = 'parent.ModuleHost.par.Uibuilder or ""'
-			host.par.Module = submod.path
-			host.par.hmode = 'fill'
-			host.par.alignorder = i
-			host.nodeX = 100
-			host.nodeY = -100 * i
-			hosts.append(host)
-		self.UpdateModuleHeight()
-		if not hosts:
-			self.AfterSubModulesAttached()
-		else:
-			self.SetProgressBar(0)
-			self.ownerComp.op('deferred_attach_next_child_module').run(hosts, delayFrames=1)
+		self._LogBegin('_BuildSubModuleHosts()')
+		try:
+			dest = self.ownerComp.op('./sub_modules_panel')
+			for m in dest.ops('mod__*'):
+				m.destroy()
+			if not self.ModuleConnector:
+				return
+			template = self._ModuleHostTemplate
+			if not template:
+				return
+			hostconnectorpairs = []
+			for i, connector in enumerate(self.ModuleConnector.CreateChildModuleConnectors()):
+				host = dest.copy(template, name='mod__' + connector.modschema.name)
+				host.par.Collapsed = True
+				host.par.Uibuilder.expr = 'parent.ModuleHost.par.Uibuilder or ""'
+				host.par.hmode = 'fill'
+				host.par.alignorder = i
+				host.nodeX = 100
+				host.nodeY = -100 * i
+				hostconnectorpairs.append([host, connector])
 
-	def AfterSubModulesAttached(self):
-		# TODO: load ui state etc
-		self.SetProgressBar(None)
+			def _makeInitTask(h, c):
+				return lambda: self._InitSubModuleHost(h, c)
+
+			self.AddTaskBatch(
+				[
+					_makeInitTask(host, connector)
+					for host, connector in hostconnectorpairs
+				] + [
+					lambda: self._OnSubModuleHostsConnected()
+				],
+				autostart=True)
+		finally:
+			self._LogEnd()
+
+	def _InitSubModuleHost(self, host, connector):
+		self._LogBegin('_InitSubModuleHost({}, {})'.format(host, connector.modschema.path))
+		try:
+			host.AttachToModuleConnector(connector)
+		finally:
+			self._LogEnd()
+
+	def _OnSubModuleHostsConnected(self):
+		self._LogBegin('_OnSubModuleHostsConnected()')
+		try:
+			# TODO: load ui state etc
+			self.UpdateModuleHeight()
+		finally:
+			self._LogEnd()
 
 	def _SetSubModuleHostPars(self, name, val):
 		for m in self._SubModuleHosts:
@@ -613,6 +631,12 @@ class ModuleHostConnector:
 	def EditModuleMaster(self): pass
 
 	def OpenParameters(self): pass
+
+	def CreateHostConnector(self, modpath) -> 'Optional[ModuleHostConnector]':
+		return None
+
+	def CreateChildModuleConnectors(self) -> 'List[ModuleHostConnector]':
+		return []
 
 class _LocalModuleHostConnector(ModuleHostConnector):
 	def __init__(self, modschema: schema.ModuleSchema):

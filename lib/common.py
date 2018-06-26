@@ -1,9 +1,14 @@
-print('vjz4/common.py loading')
+from typing import Callable, List
 
-import datetime
+print('vjz4/common.py loading')
 
 if False:
 	from _stubs import *
+
+try:
+	import td
+except ImportError:
+	pass
 
 def Log(msg, file=None):
 	print(
@@ -95,6 +100,79 @@ class ActionsExt:
 				if not page:
 					page = self.ownerComp.appendCustomPage('Actions')
 				page.appendPulse(name)
+
+class TaskQueueExt:
+	def __init__(self, ownerComp):
+		self.ownerComp = ownerComp
+		self._TaskBatches = []  # type: List[_TaskBatch]
+		self._UpdateProgress()
+
+	@property
+	def ProgressBar(self):
+		return None
+
+	def _UpdateProgress(self):
+		bar = self.ProgressBar
+		if bar is None:
+			return
+		ratio = self._ProgressRatio
+		bar.par.display = ratio < 1
+		bar.par.Ratio = ratio
+
+	@property
+	def _ProgressRatio(self):
+		if not self._TaskBatches:
+			return 1
+		total = 0
+		remaining = 0
+		for batch in self._TaskBatches:
+			total += batch.total
+			remaining += len(batch.tasks)
+		if not total or not remaining:
+			return 1
+		return 1 - (remaining / total)
+
+	def _QueueRunNextTask(self):
+		if not self._TaskBatches:
+			return
+		td.run('op({!r}).RunNextTask()'.format(self.ownerComp.path), delayFrames=1)
+
+	def RunNextTask(self):
+		task = self._PopNextTask()
+		self._UpdateProgress()
+		if task is None:
+			return
+		task()
+		self._QueueRunNextTask()
+
+	def _PopNextTask(self):
+		if not self._TaskBatches:
+			return None
+		while self._TaskBatches:
+			batch = self._TaskBatches[0]
+			task = None
+			if batch.tasks:
+				task = batch.tasks.pop(0)
+			if not batch.tasks:
+				self._TaskBatches.pop(0)
+			if task is not None:
+				return task
+
+	def AddTaskBatch(self, tasks: List[Callable], autostart=True):
+		batch = _TaskBatch(tasks)
+		self._TaskBatches.append(batch)
+		self._UpdateProgress()
+		if autostart:
+			self._QueueRunNextTask()
+
+	def ClearTasks(self):
+		self._TaskBatches.clear()
+		self._UpdateProgress()
+
+class _TaskBatch:
+	def __init__(self, tasks: List[Callable]):
+		self.total = len(tasks)
+		self.tasks = tasks
 
 def cleandict(d):
 	if not d:
