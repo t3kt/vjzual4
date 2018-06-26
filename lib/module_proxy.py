@@ -202,25 +202,21 @@ class _ProxyModuleHostConnector(module_host.ModuleHostConnector):
 		self.proxymanager = proxymanager
 		self.proxy = proxy
 
-	def GetPar(self, name):
-		return getattr(self.proxy.par, name, None)
+	def GetPar(self, name): return getattr(self.proxy.par, name, None)
 
 	@property
 	def CanOpenParameters(self): return True
 
-	def OpenParameters(self):
-		self.proxy.openParameters()
+	def OpenParameters(self): self.proxy.openParameters()
 
-	def CreateHostConnector(self, modpath):
+	def _CreateHostConnector(self, modpath):
 		modschema = self.appschema.modulesbypath.get(modpath)
-		if not modschema:
-			return None
-		return self.proxymanager.GetModuleProxyHost(modschema, self.appschema)
+		return modschema and self.proxymanager.GetModuleProxyHost(modschema, self.appschema)
 
 	def CreateChildModuleConnectors(self):
 		connectors = []
 		for childpath in self.modschema.childmodpaths:
-			connector = self.CreateHostConnector(childpath)
+			connector = self._CreateHostConnector(childpath)
 			if connector:
 				connectors.append(connector)
 		return connectors

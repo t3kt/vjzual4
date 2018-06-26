@@ -43,6 +43,8 @@ class op:
 
 	def unstore(self, name): pass
 
+	def findChildren(self, maxDepth=1, tags=None): return []
+
 	TDResources = _Expando()
 
 op.TDResources = _Expando()

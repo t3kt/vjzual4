@@ -572,8 +572,7 @@ class ModuleHostConnector:
 		self.modschema = modschema
 		self.modpath = modschema.path
 
-	def GetPar(self, name):
-		return None
+	def GetPar(self, name): return None
 
 	def GetParExpr(self, name):
 		par = self.GetPar(name)
@@ -596,38 +595,5 @@ class ModuleHostConnector:
 
 	def OpenParameters(self): pass
 
-	def CreateHostConnector(self, modpath) -> 'Optional[ModuleHostConnector]':
-		return None
-
 	def CreateChildModuleConnectors(self) -> 'List[ModuleHostConnector]':
 		return []
-
-class _LocalModuleHostConnector(ModuleHostConnector):
-	def __init__(self, modschema: schema.ModuleSchema):
-		super().__init__(modschema)
-		self.module = op(modschema.path)
-
-	def GetPar(self, name):
-		return getattr(self.module.par, name, None) if self.module else None
-
-	@property
-	def CanOpenParameters(self): return True
-
-	def OpenParameters(self):
-		self.module.openParameters()
-
-	@property
-	def CanEditModule(self): return True
-
-	@property
-	def CanEditModuleMaster(self):
-		master = self.module.par.clone.eval()
-		return master is not None and master is not self.module
-
-	def EditModule(self):
-		_editComp(self.module)
-
-	def EditModuleMaster(self):
-		master = self.module.par.clone.eval()
-		if master:
-			_editComp(master)

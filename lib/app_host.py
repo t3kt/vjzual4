@@ -38,7 +38,6 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		common.ExtensionBase.__init__(self, ownerComp)
 		common.TaskQueueExt.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions={
-			'Attachapp': self.AttachToApp,
 			'Showconnect': self.ShowConnectDialog,
 			'Showappschema': self.ShowAppSchema,
 		})
@@ -74,9 +73,6 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def OnTDPreSave(self):
 		for o in self.ownerComp.ops('modules_panel/mod__*'):
 			o.destroy()
-
-	def AttachToApp(self):
-		pass
 
 	@property
 	def _SubModuleHosts(self) -> List[module_host.ModuleHostBase]:
