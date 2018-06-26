@@ -8,7 +8,7 @@ if False:
 try:
 	import td
 except ImportError:
-	pass
+	from _stubs import td
 
 def Log(msg, file=None):
 	print(
@@ -213,7 +213,7 @@ def trygetpar(o, *names, default=None, parse=None):
 	return default
 
 def parseattrtable(dat):
-	dat = op(dat)
+	dat = op(dat)  # type: DAT
 	if not dat:
 		return {}
 	cols = [c.val for c in dat.row(0)]

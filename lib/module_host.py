@@ -1,7 +1,7 @@
-print('vjz4/module_host.py loading')
-
 from typing import List, Optional
 from operator import attrgetter
+
+print('vjz4/module_host.py loading')
 
 if False:
 	from _stubs import *
@@ -70,7 +70,6 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 		self.controlsByParam = {}
 		self.paramsByControl = {}
 		self.Mappings = control_mapping.ModuleControlMap()
-		self.SetProgressBar_DEPRECATED(None)
 
 		# trick pycharm
 		if False:
@@ -171,22 +170,12 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 
 	@property
 	def ModuleBypass(self):
-		par = self.getModulePar('Bypass')
+		par = self.ModuleConnector and self.ModuleConnector.GetPar('Bypass')
 		return False if par is None else par
 
 	@property
 	def HasBypass(self):
-		return self.getModulePar('Bypass') is not None
-
-	def getModulePar(self, name):
-		return self.ModuleConnector and self.ModuleConnector.GetPar(name)
-
-	def SetProgressBar_DEPRECATED(self, ratio):
-		bar = self.ProgressBar
-		if not bar:
-			return
-		bar.par.display = ratio is not None
-		bar.par.Ratio = ratio or 0
+		return self.ModuleConnector and self.ModuleConnector.modschema.hasbypass
 
 	@property
 	def ProgressBar(self):
@@ -196,27 +185,6 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 		self.DataNodes = []
 		self.Params = []
 		self.SubModules = []  # TODO: sub-modules!
-		self.ModuleConnector = connector
-		if connector:
-			self.DataNodes = connector.modschema.nodes
-			self.Params = connector.modschema.params
-		hostcore = self.ownerComp.op('host_core')
-		self._BuildParamTable(hostcore.op('set_param_table'))
-		self._BuildDataNodeTable(hostcore.op('set_data_nodes'))
-		self._BuildSubModuleTable(hostcore.op('set_sub_module_table'))
-		self._RebuildParamControlTable()
-
-	def AttachToModule(self):
-		self.DataNodes = []
-		self.Params = []
-		self.SubModules = []  # TODO: sub-modules!
-		connector = self.ownerComp.par.Moduleconnector.eval()
-		if not connector:
-			module = self.ownerComp.par.Module.eval()
-			if module:
-				modschema = _LocalSchemaProvider().GetModuleSchema(module.path)
-				if modschema:
-					connector = _LocalModuleHostConnector(modschema)
 		self.ModuleConnector = connector
 		if connector:
 			self.DataNodes = connector.modschema.nodes
@@ -473,10 +441,6 @@ class ModuleChainHost(ModuleHostBase):
 	def __init__(self, ownerComp):
 		super().__init__(ownerComp)
 		self._AutoInitActionParams()
-		# modules hosted inside other modules are asynchronously initialized by the
-		# parent so they don't need to auto initialize on construction
-		# if not self.ParentHost:
-		# 	self.ownerComp.op('deferred_attach_module').run(delayFrames=1)
 
 	def OnTDPreSave(self):
 		for o in self.ownerComp.ops('controls_panel/par__*', 'sub_modules_panel/mod__*'):
@@ -667,72 +631,3 @@ class _LocalModuleHostConnector(ModuleHostConnector):
 		master = self.module.par.clone.eval()
 		if master:
 			_editComp(master)
-
-class _LocalSchemaProvider(schema.SchemaProvider):
-	def GetAppSchema(self):
-		raise NotImplementedError()
-
-	def GetModuleSchema(self, modpath) -> Optional[schema.ModuleSchema]:
-		m = op(modpath)
-		if not m:
-			return None
-		modcore = m.op('core')
-		pattrs = common.parseattrtable(trygetpar(modcore, 'Parameters'))
-		params = []
-		for partuplet in m.customTuplets:
-			parinfo = self._GetParamSchema(partuplet, pattrs.get(partuplet[0].tupletName))
-			if parinfo:
-				params.append(parinfo)
-		return schema.ModuleSchema(
-			name=m.name,
-			label=trygetpar(m, 'Uilabel'),
-			path=m.path,
-			parentpath=m.parent().path,
-			params=params)
-
-	@staticmethod
-	def _GetParamSchema(partuplet, attrs=None) -> Optional[schema.ParamSchema]:
-		attrs = attrs or {}
-		par = partuplet[0]
-		page = par.page.name
-		label = par.label
-		label, labelattrs = schema.ParamSchema.ParseParamLabel(label)
-		hidden = attrs['hidden'] == '1' if (attrs.get('hidden') not in ('', None)) else labelattrs.get('hidden', False)
-		advanced = attrs['advanced'] == '1' if (attrs.get('advanced') not in ('', None)) else labelattrs.get('advanced', False)
-		specialtype = schema.ParamSchema.DetermineSpecialType(par.name, par.style, attrs, labelattrs)
-
-		label = attrs.get('label') or label
-
-		if page.startswith(':') or label.startswith(':'):
-			return None
-
-		mappable = schema.ParamSchema.DetermineMappable(par.style, attrs, advanced)
-
-		# backwards compatibility with vjzual3
-		if schema.ParamSchema.IsVjzual3SpecialParam(par.name, page):
-			return None
-
-		return schema.ParamSchema(
-			name=par.tupletName,
-			label=label,
-			style=par.style,
-			order=par.order,
-			pagename=par.page.name,
-			pageindex=par.page.index,
-			hidden=hidden,
-			advanced=advanced,
-			specialtype=specialtype,
-			mappable=mappable,
-			parts=[
-				schema.ParamPartSchema(
-					name=part.name,
-					default=part.default,
-					minnorm=part.normMin,
-					maxnorm=part.normMax,
-					minlimit=part.min if part.clampMin else None,
-					maxlimit=part.max if part.clampMax else None,
-					menunames=part.menuNames,
-					menulabels=part.menuLabels,
-				)
-				for part in partuplet
-			])

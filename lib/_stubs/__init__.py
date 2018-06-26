@@ -30,6 +30,8 @@ class op:
 		self.customTuplets = []
 		self.parent = _Parent()
 		self.op = op
+		self.storage = {}
+		self.isCOMP = False
 
 	def ops(self, *args): return [op()]
 
@@ -38,6 +40,8 @@ class op:
 	def openViewer(self, unique=False, borders=True): pass
 
 	def closeViewer(self): pass
+
+	def unstore(self, name): pass
 
 	TDResources = _Expando()
 
@@ -55,6 +59,9 @@ class _TD_ERROR(Exception):
 
 class td:
 	error = _TD_ERROR
+
+	@staticmethod
+	def run(codeorwhatever, delayFrames=0): pass
 
 del _TD_ERROR
 
@@ -90,12 +97,12 @@ ExpandoStub = _Expando
 class Par:
 	pass
 
-class OP:
-	def __init__(self):
-		self.par = Par()
+OP = op
+
+class DAT(OP):
+	def row(self, nameorindex): return []
 
 COMP = OP
-DAT = OP
 CHOP = OP
 
 baseCOMP = COMP
