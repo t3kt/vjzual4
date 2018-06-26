@@ -15,8 +15,37 @@ PaneType.NETWORKEDITOR = None
 class project:
 	name = ''
 
-def op(path):
-	return object()
+class _Parent:
+	def __call__(self, *args, **kwargs):
+		return op()
+
+	def __getattr__(self, item):
+		pass
+
+class op:
+	def __init__(self, arg=None):
+		self.path = ''
+		self.name = ''
+		self.par = _Expando()
+		self.customTuplets = []
+		self.parent = _Parent()
+		self.op = op
+		self.storage = {}
+		self.isCOMP = False
+
+	def ops(self, *args): return [op()]
+
+	def openParameters(self): pass
+
+	def openViewer(self, unique=False, borders=True): pass
+
+	def closeViewer(self): pass
+
+	def unstore(self, name): pass
+
+	def findChildren(self, maxDepth=1, tags=None): return []
+
+	TDResources = _Expando()
 
 op.TDResources = _Expando()
 op.TDResources.op = op
@@ -32,6 +61,9 @@ class _TD_ERROR(Exception):
 
 class td:
 	error = _TD_ERROR
+
+	@staticmethod
+	def run(codeorwhatever, delayFrames=0): pass
 
 del _TD_ERROR
 
@@ -62,16 +94,22 @@ JustifyType.CENTERRIGHT, JustifyType.BOTTOMLEFT, JustifyType.BOTTOMCENTER, Justi
 ParMode = _Expando()
 ParMode.CONSTANT = ParMode.EXPRESSION = ParMode.EXPORT = 0
 
-del _Expando
+ExpandoStub = _Expando
 
 class Par:
 	pass
 
-class COMP:
-	pass
+OP = op
+
+class DAT(OP):
+	def row(self, nameorindex): return []
+
+COMP = OP
+CHOP = OP
+
+baseCOMP = COMP
+parameterexecuteDAT = textDAT = DAT
+parameterCHOP = nullCHOP = selectCHOP = CHOP
 
 class app:
 	name = ''
-
-class _PopMenuExt:
-	pass

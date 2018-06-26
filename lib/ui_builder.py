@@ -2,14 +2,20 @@ print('vjz4/ui_builder.py loading')
 
 if False:
 	from _stubs import *
-	from module_host import ModuleParamInfo
+	from module_host import ModuleHostConnector
 
 try:
 	import common
-	from common import cleandict, mergedicts
+	from common import cleandict, mergedicts, UpdateOP, CreateFromTemplate
 except ImportError:
 	common = mod.common
 	cleandict, mergedicts = common.cleandict, common.mergedicts
+	UpdateOP, CreateFromTemplate = common.UpdateOP, common.CreateFromTemplate
+
+try:
+	import schema
+except ImportError:
+	schema = mod.schema
 
 
 class UiBuilder:
@@ -17,27 +23,19 @@ class UiBuilder:
 		self.ownerComp = ownerComp
 
 	def CreateSlider(
-			self,
-			dest,
-			name,
+			self, dest, name,
 			label=None,
 			helptext=None,
 			isint=False,
-			value=None,
-			valueexpr=None,
+			value=None, valueexpr=None,
 			defval=None,
-			valrange=None,
-			clamp=None,
-			order=None,
-			nodepos=None,
+			valrange=None, clamp=None,
+			order=None, nodepos=None,
 			parvals=None,
 			parexprs=None):
-		return _CreateFromTemplate(
+		return CreateFromTemplate(
 			template=self.ownerComp.op('sliderL'),
-			name=name,
-			dest=dest,
-			order=order,
-			nodepos=nodepos,
+			dest=dest, name=name, order=order, nodepos=nodepos,
 			parvals=mergedicts(
 				label and {'Label': label},
 				helptext and {'Help': helptext},
@@ -53,50 +51,40 @@ class UiBuilder:
 				parexprs))
 
 	def CreateParSlider(
-			self,
-			dest,
-			name,
-			parinfo,  # type: ModuleParamInfo
-			order=None,
-			nodepos=None,
+			self, dest, name,
+			parinfo,  # type: schema.ParamSchema
+			order=None, nodepos=None,
 			parvals=None,
-			parexprs=None):
+			parexprs=None,
+			modhostconnector=None):
 		return self.CreateSlider(
-			dest=dest,
-			name=name,
+			dest=dest, name=name, order=order, nodepos=nodepos,
 			label=parinfo.label,
 			isint=parinfo.style == 'Int',
-			valueexpr=parinfo.createParExpression(),
+			valueexpr=modhostconnector.GetParExpr(parinfo.parts[0].name) if modhostconnector else None,
 			defval=parinfo.parts[0].default,
 			clamp=[
-				parinfo.parts[0].clampMin,
-				parinfo.parts[0].clampMax,
+				parinfo.parts[0].minlimit is not None,
+				parinfo.parts[0].maxlimit is not None,
 			],
 			valrange=[
-				parinfo.parts[0].min if parinfo.parts[0].clampMin else parinfo.parts[0].normMin,
-				parinfo.parts[0].max if parinfo.parts[0].clampMax else parinfo.parts[0].normMax,
+				parinfo.parts[0].minnorm if parinfo.parts[0].minlimit is None else parinfo.parts[0].minlimit,
+				parinfo.parts[0].maxnorm if parinfo.parts[0].maxlimit is None else parinfo.parts[0].maxlimit,
 			],
-			order=order,
 			parvals=parvals,
-			parexprs=parexprs,
-			nodepos=nodepos)
+			parexprs=parexprs)
 
 	def CreateParMultiSlider(
-			self,
-			dest,
-			name,
-			parinfo,  # type: ModuleParamInfo
-			order=None,
-			nodepos=None,
+			self, dest, name,
+			parinfo,  # type: schema.ParamSchema
+			order=None, nodepos=None,
 			parvals=None,
-			parexprs=None):
+			parexprs=None,
+			modhostconnector=None):
 		n = len(parinfo.parts)
-		ctrl = _CreateFromTemplate(
+		ctrl = CreateFromTemplate(
 			template=self.ownerComp.op('multi_slider'),
-			dest=dest,
-			name=name,
-			order=order,
-			nodepos=nodepos,
+			dest=dest, name=name, order=order, nodepos=nodepos,
 			parvals=parvals,
 			parexprs=parexprs)
 		isint = parinfo.style == 'Int'
@@ -109,19 +97,19 @@ class UiBuilder:
 			preview.par.display = False
 		else:
 			preview.par.display = True
-			_UpdateComponent(
+			UpdateOP(
 				preview.op('set_color'),
 				parvals=mergedicts(
 					parinfo.style != 'RGBA' and {'alpha': 1},
 				),
 				parexprs=mergedicts(
 					{
-						'colorr': parinfo.createParExpression(index=0),
-						'colorg': parinfo.createParExpression(index=1),
-						'colorb': parinfo.createParExpression(index=2),
+						'colorr': 'op("../slider1").par.Value1',
+						'colorg': 'op("../slider2").par.Value1',
+						'colorb': 'op("../slider3").par.Value1',
 					},
 					parinfo.style == 'RGBA' and {
-						'alpha': parinfo.createParExpression(index=3),
+						'alpha': 'op("../slider4").par.Value1',
 					}))
 		sliders = []
 		for i in range(4):
@@ -130,50 +118,42 @@ class UiBuilder:
 				slider.destroy()
 				continue
 			part = parinfo.parts[i]
-			_UpdateComponent(
+			valexpr = modhostconnector.GetParExpr(part.name) if modhostconnector else None
+			UpdateOP(
 				slider,
 				parvals=mergedicts(
 					{
 						'Label': '{} {}'.format(parinfo.label, suffixes[i]),
 						'Default1': part.default,
-						'Clamplow1': part.clampMin,
-						'Clamphigh1': part.clampMax,
-						'Rangelow1': part.min if part.clampMin else part.normMin,
-						'Rangehigh1': part.max if part.clampMax else part.normMax,
+						'Clamplow1': part.minlimit is not None,
+						'Clamphigh1': part.maxlimit is not None,
+						'Rangelow1': part.minnorm if part.minlimit is None else part.minlimit,
+						'Rangehigh1': part.maxnorm if part.maxlimit is None else part.maxlimit,
 						'Push1': True,
 						'Integer': isint,
 					}
 				),
 				parexprs=mergedicts(
-					{
-						'Value1': parinfo.createParExpression(index=i),
-					}
+					valexpr and {'Value1': valexpr}
 				)
 			)
 			sliders.append(slider)
 		return sliders
 
 	def CreateButton(
-			self,
-			dest,
-			name,
+			self, dest, name,
 			label=None,
 			behavior=None,
 			helptext=None,
-			value=None,
-			valueexpr=None,
+			value=None, valueexpr=None,
 			runofftoon=None,
 			defval=None,
-			order=None,
-			nodepos=None,
+			order=None, nodepos=None,
 			parvals=None,
 			parexprs=None):
-		return _CreateFromTemplate(
+		return CreateFromTemplate(
 			template=self.ownerComp.op('binaryC'),
-			dest=dest,
-			name=name,
-			order=order,
-			nodepos=nodepos,
+			dest=dest, name=name, order=order, nodepos=nodepos,
 			parvals=mergedicts(
 				label and {
 					'Texton': label,
@@ -194,66 +174,48 @@ class UiBuilder:
 				parexprs))
 
 	def CreateParToggle(
-			self,
-			dest,
-			name,
-			parinfo,  # type: ModuleParamInfo
-			order=None,
-			nodepos=None,
+			self, dest, name,
+			parinfo,  # type: schema.ParamSchema
+			order=None, nodepos=None,
 			parvals=None,
-			parexprs=None):
+			parexprs=None,
+			modhostconnector=None):
 		return self.CreateButton(
-			dest=dest,
-			name=name,
+			dest=dest, name=name, order=order, nodepos=nodepos,
 			label=parinfo.label,
 			behavior='toggledown',
-			valueexpr=parinfo.createParExpression(),
+			valueexpr=modhostconnector.GetParExpr(name) if modhostconnector else None,
 			defval=parinfo.parts[0].default,
-			order=order,
-			nodepos=nodepos,
 			parvals=parvals,
 			parexprs=parexprs)
 
 	def CreateParTrigger(
-			self,
-			dest,
-			name,
-			parinfo,  # type: ModuleParamInfo
-			order=None,
-			nodepos=None,
+			self, dest, name,
+			parinfo,  # type: schema.ParamSchema
+			order=None, nodepos=None,
 			parvals=None,
 			parexprs=None):
 		return self.CreateButton(
-			dest=dest,
-			name=name,
+			dest=dest, name=name, order=order, nodepos=nodepos,
 			label=parinfo.label,
 			behavior='pulse',
-			runofftoon='op({!r}).par.{}.pulse()'.format(parinfo.modpath, parinfo.parts[0].name),
-			order=order,
-			nodepos=nodepos,
+			# TODO: off to on action
 			parvals=parvals,
 			parexprs=parexprs)
 
 	def CreateTextField(
-			self,
-			dest,
-			name,
+			self, dest, name,
 			label=None,
 			helptext=None,
 			fieldtype=None,
-			value=None,
-			valueexpr=None,
+			value=None, valueexpr=None,
 			defval=None,
-			order=None,
-			nodepos=None,
+			order=None, nodepos=None,
 			parvals=None,
 			parexprs=None):
-		return _CreateFromTemplate(
+		return CreateFromTemplate(
 			template=self.ownerComp.op('string'),
-			dest=dest,
-			name=name,
-			order=order,
-			nodepos=nodepos,
+			dest=dest, name=name, order=order, nodepos=nodepos,
 			parvals=mergedicts(
 				label and {'Label': label},
 				helptext and {'Help': helptext},
@@ -270,37 +232,41 @@ class UiBuilder:
 			self,
 			dest,
 			name,
-			parinfo,  # type: ModuleParamInfo
+			parinfo,  # type: schema.ParamSchema
 			order=None,
 			nodepos=None,
 			parvals=None,
-			parexprs=None):
+			parexprs=None,
+			modhostconnector=None):
 		ctrl = self.CreateTextField(
 			dest=dest,
 			name=name,
 			label=parinfo.label,
 			fieldtype='string',
-			valueexpr=parinfo.createParExpression(),
+			valueexpr=modhostconnector.GetParExpr(name) if modhostconnector else None,
 			defval=parinfo.parts[0].default,
 			order=order,
 			nodepos=nodepos,
 			parvals=parvals,
 			parexprs=parexprs)
-		# workaround for bug with initial value not being loaded
 		celldat = ctrl.par.Celldat.eval()
-		celldat[0, 0] = parinfo.parts[0].eval()
+		# TODO: workaround for bug with initial value not being loaded
+		par = modhostconnector.GetPar(name) if modhostconnector else None
+		if par is not None:
+			celldat[0, 0] = par.eval()
 		return ctrl
 
 	def CreateParControl(
 			self,
 			dest,
 			name,
-			parinfo,  # type: ModuleParamInfo
+			parinfo,  # type: schema.ParamSchema
 			order=None,
 			nodepos=None,
 			parvals=None,
 			parexprs=None,
-			addtocontrolmap=None):
+			addtocontrolmap=None,
+			modhostconnector=None):
 
 		def _register(ctrlop):
 			if addtocontrolmap is not None:
@@ -327,7 +293,8 @@ class UiBuilder:
 				order=order,
 				nodepos=nodepos,
 				parvals=parvals,
-				parexprs=parexprs)
+				parexprs=parexprs,
+				modhostconnector=modhostconnector)
 		elif parinfo.style in [
 			'Float', 'Int',
 			'RGB', 'RGBA',
@@ -341,7 +308,8 @@ class UiBuilder:
 				order=order,
 				nodepos=nodepos,
 				parvals=parvals,
-				parexprs=parexprs)
+				parexprs=parexprs,
+				modhostconnector=modhostconnector)
 			_registerparts(sliders)
 			ctrl = sliders[0].parent()
 		elif parinfo.style == 'Toggle':
@@ -353,7 +321,8 @@ class UiBuilder:
 				order=order,
 				nodepos=nodepos,
 				parvals=parvals,
-				parexprs=parexprs)
+				parexprs=parexprs,
+				modhostconnector=modhostconnector)
 		elif parinfo.style == 'Pulse':
 			# print('creating trigger control for {}'.format(parinfo))
 			ctrl = self.CreateParTrigger(
@@ -373,7 +342,8 @@ class UiBuilder:
 				order=order,
 				nodepos=nodepos,
 				parvals=parvals,
-				parexprs=parexprs)
+				parexprs=parexprs,
+				modhostconnector=modhostconnector)
 		else:
 			print('Unsupported par style: {!r})'.format(parinfo))
 			return None
@@ -389,7 +359,7 @@ class UiBuilder:
 			nodepos=None,
 			parvals=None,
 			parexprs=None):
-		return _CreateFromTemplate(
+		return CreateFromTemplate(
 			template=self.ownerComp.op('mapping_editor'),
 			dest=dest,
 			name=name,
@@ -402,44 +372,3 @@ class UiBuilder:
 				},
 				parvals),
 			parexprs=parexprs)
-
-
-def _UpdateComponent(
-		ctrl,
-		order=None,
-		nodepos=None,
-		parvals=None,
-		parexprs=None):
-	if parvals:
-		for key, val in parvals.items():
-			setattr(ctrl.par, key, val)
-	if parexprs:
-		for key, expr in parexprs.items():
-			getattr(ctrl.par, key).expr = expr
-	if order is not None:
-		ctrl.par.alignorder = order
-	if nodepos:
-		ctrl.nodeCenterX = nodepos[0]
-		ctrl.nodeCenterY = nodepos[1]
-
-
-def _CreateFromTemplate(
-		template,
-		dest,
-		name,
-		order=None,
-		nodepos=None,
-		parvals=None,
-		parexprs=None):
-	deststr = str(dest)
-	dest = op(dest)
-	if not dest or not dest.isPanel:
-		raise Exception('Invalid destination: {}'.format(deststr))
-	ctrl = dest.copy(template, name=name)
-	_UpdateComponent(
-		ctrl=ctrl,
-		order=order,
-		nodepos=nodepos,
-		parvals=parvals,
-		parexprs=parexprs)
-	return ctrl

@@ -1,9 +1,14 @@
-print('vjz4/common.py loading')
+from typing import Callable, List
 
-import datetime
+print('vjz4/common.py loading')
 
 if False:
 	from _stubs import *
+
+try:
+	import td
+except ImportError:
+	from _stubs import td
 
 def Log(msg, file=None):
 	print(
@@ -48,7 +53,7 @@ _logger = IndentedLogger()
 
 class ExtensionBase:
 	def __init__(self, ownerComp):
-		self.ownerComp = ownerComp
+		self.ownerComp = ownerComp  # type: op
 		self.enablelogging = True
 
 	def _GetLogId(self):
@@ -62,14 +67,25 @@ class ExtensionBase:
 		if self.enablelogging:
 			_logger.LogBegin(self.ownerComp.path, self._GetLogId(), event)
 
-	def _LogEnd(self, event):
+	def _LogEnd(self, event=None):
 		if self.enablelogging:
 			_logger.LogEnd(self.ownerComp.path, self._GetLogId(), event)
 
 class ActionsExt:
-	def __init__(self, ownerComp, actions=None):
+	def __init__(self, ownerComp, actions=None, autoinitparexec=True):
 		self.ownerComp = ownerComp
 		self.Actions = actions or {}
+		parexec = ownerComp.op('perform_action_on_pulse')
+		if autoinitparexec and not parexec:
+			parexec = ownerComp.create(parameterexecuteDAT, 'perform_action_on_pulse')
+			parexec.python = True
+			parexec.par.op.expr = 'parent()'
+			parexec.par.pars = '*'
+			parexec.par.builtin = False
+			parexec.par.custom = True
+			parexec.par.valuechange = False
+			parexec.par.onpulse = True
+			parexec.text = 'def onPulse(par): par.owner.PerformAction(par.name)'
 
 	def PerformAction(self, name):
 		if name not in self.Actions:
@@ -84,6 +100,79 @@ class ActionsExt:
 				if not page:
 					page = self.ownerComp.appendCustomPage('Actions')
 				page.appendPulse(name)
+
+class TaskQueueExt:
+	def __init__(self, ownerComp):
+		self.ownerComp = ownerComp
+		self._TaskBatches = []  # type: List[_TaskBatch]
+		self._UpdateProgress()
+
+	@property
+	def ProgressBar(self):
+		return None
+
+	def _UpdateProgress(self):
+		bar = self.ProgressBar
+		if bar is None:
+			return
+		ratio = self._ProgressRatio
+		bar.par.display = ratio < 1
+		bar.par.Ratio = ratio
+
+	@property
+	def _ProgressRatio(self):
+		if not self._TaskBatches:
+			return 1
+		total = 0
+		remaining = 0
+		for batch in self._TaskBatches:
+			total += batch.total
+			remaining += len(batch.tasks)
+		if not total or not remaining:
+			return 1
+		return 1 - (remaining / total)
+
+	def _QueueRunNextTask(self):
+		if not self._TaskBatches:
+			return
+		td.run('op({!r}).RunNextTask()'.format(self.ownerComp.path), delayFrames=1)
+
+	def RunNextTask(self):
+		task = self._PopNextTask()
+		self._UpdateProgress()
+		if task is None:
+			return
+		task()
+		self._QueueRunNextTask()
+
+	def _PopNextTask(self):
+		if not self._TaskBatches:
+			return None
+		while self._TaskBatches:
+			batch = self._TaskBatches[0]
+			task = None
+			if batch.tasks:
+				task = batch.tasks.pop(0)
+			if not batch.tasks:
+				self._TaskBatches.pop(0)
+			if task is not None:
+				return task
+
+	def AddTaskBatch(self, tasks: List[Callable], autostart=True):
+		batch = _TaskBatch(tasks)
+		self._TaskBatches.append(batch)
+		self._UpdateProgress()
+		if autostart:
+			self._QueueRunNextTask()
+
+	def ClearTasks(self):
+		self._TaskBatches.clear()
+		self._UpdateProgress()
+
+class _TaskBatch:
+	def __init__(self, tasks: List[Callable]):
+		self.total = len(tasks)
+		self.tasks = tasks
 
 def cleandict(d):
 	if not d:
@@ -109,3 +198,89 @@ def excludekeys(d, keys):
 		for key, val in d.items()
 		if key not in keys
 	}
+
+def parseint(text, default=None):
+	try:
+		return int(text)
+	except ValueError:
+		return default
+
+def trygetpar(o, *names, default=None, parse=None):
+	if o:
+		for p in o.pars(*names):
+			val = p.eval()
+			return parse(val) if parse else val
+	return default
+
+def parseattrtable(dat):
+	dat = op(dat)  # type: DAT
+	if not dat:
+		return {}
+	cols = [c.val for c in dat.row(0)]
+	return {
+		cells[0].val: {
+			cols[i]: cells[i].val
+			for i in range(1, dat.numCols)
+		}
+		for cells in dat.rows()[1:]
+	}
+
+def UpdateOP(
+		comp,
+		order=None,
+		nodepos=None,
+		tags=None,
+		parvals=None,
+		parexprs=None):
+	if parvals:
+		for key, val in parvals.items():
+			setattr(comp.par, key, val)
+	if parexprs:
+		for key, expr in parexprs.items():
+			getattr(comp.par, key).expr = expr
+	if order is not None:
+		comp.par.alignorder = order
+	if nodepos:
+		comp.nodeCenterX = nodepos[0]
+		comp.nodeCenterY = nodepos[1]
+	if tags:
+		comp.tags.update(tags)
+
+def _ResolveDest(dest):
+	deststr = str(dest)
+	dest = op(dest)
+	if not dest or not dest.isCOMP:
+		raise Exception('Invalid destination: {}'.format(deststr))
+	return dest
+
+def CreateFromTemplate(
+		template,
+		dest,
+		name,
+		order=None,
+		nodepos=None,
+		tags=None,
+		parvals=None,
+		parexprs=None):
+	dest = _ResolveDest(dest)
+	comp = dest.copy(template, name=name)
+	UpdateOP(
+		comp=comp, order=order, nodepos=nodepos,
+		tags=tags, parvals=parvals, parexprs=parexprs)
+	return comp
+
+def CreateOP(
+		optype,
+		dest,
+		name,
+		order=None,
+		nodepos=None,
+		tags=None,
+		parvals=None,
+		parexprs=None):
+	dest = _ResolveDest(dest)
+	comp = dest.create(optype, name)
+	UpdateOP(
+		comp=comp, order=order, nodepos=nodepos,
+		tags=tags, parvals=parvals, parexprs=parexprs)
+	return comp
