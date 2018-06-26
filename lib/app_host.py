@@ -197,6 +197,9 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			self._RemoteClient.Detach()
 			self._RemoteClient.par.Active = False
 			self.ownerComp.op('schema_json').clear()
+			dest = self.ownerComp.op('modules_panel')
+			for m in dest.ops('mod__*'):
+				m.destroy()
 		finally:
 			self._LogEnd()
 

@@ -40,9 +40,9 @@ except ImportError:
 	menu = mod.menu
 
 try:
-	from TDStoreTools import DependDict
+	from TDStoreTools import DependDict, DependList
 except ImportError:
-	from _stubs.TDStoreTools import DependDict
+	from _stubs.TDStoreTools import DependDict, DependList
 
 def _GetOrAdd(d, key, default):
 	if key in d:
@@ -70,6 +70,7 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 		self.controlsByParam = {}
 		self.paramsByControl = {}
 		self.Mappings = control_mapping.ModuleControlMap()
+		self.UiModeNames = DependList([])
 
 		# trick pycharm
 		if False:
@@ -186,9 +187,18 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 		self.Params = []
 		self.SubModules = []  # TODO: sub-modules!
 		self.ModuleConnector = connector
+		self.UiModeNames.clear()
 		if connector:
 			self.DataNodes = connector.modschema.nodes
 			self.Params = connector.modschema.params
+			if self.Params:
+				self.UiModeNames.append('ctrl')
+			if self.DataNodes:
+				self.UiModeNames.append('nodes')
+			self.UiModeNames.append('map')
+			if connector.modschema.childmodpaths:
+				self.UiModeNames.append('submods')
+
 		hostcore = self.ownerComp.op('host_core')
 		self._BuildParamTable(hostcore.op('set_param_table'))
 		self._BuildDataNodeTable(hostcore.op('set_data_nodes'))
