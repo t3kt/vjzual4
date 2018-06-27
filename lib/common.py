@@ -174,6 +174,59 @@ class _TaskBatch:
 		self.total = len(tasks)
 		self.tasks = tasks
 
+class Future:
+	def __init__(self, onlisten=None, oninvoke=None):
+		self._successcallback = None  # type: Callable
+		self._failurecallback = None  # type: Callable
+		self._resolved = False
+		self._result = None
+		self._error = None
+		self._onlisten = onlisten  # type: Callable
+		self._oninvoke = oninvoke  # type: Callable
+
+	def then(self, success=None, failure=None):
+		if self._successcallback or self._failurecallback:
+			raise Exception('Future already has callbacks set')
+		if self._onlisten:
+			self._onlisten()
+		self._successcallback = success
+		self._failurecallback = failure
+		if self._resolved:
+			self._invoke()
+
+	def _invoke(self):
+		if self._error is not None:
+			if self._failurecallback:
+				self._failurecallback(self._error)
+		else:
+			if self._successcallback:
+				self._successcallback(self._result)
+		if self._oninvoke:
+			self._oninvoke()
+
+	def _resolve(self, result, error):
+		if self._resolved:
+			raise Exception('Future has already been resolved')
+		self._resolved = True
+		self._result = result
+		self._error = error
+		if self._successcallback or self._failurecallback:
+			self._invoke()
+
+	def resolve(self, result=None):
+		self._resolve(result, None)
+
+	def fail(self, error):
+		self._resolve(None, error)
+
+	def __str__(self):
+		if not self._resolved:
+			return '{}[unresolved]'.format(self.__class__.__name__)
+		if self._error is not None:
+			return '{}[error: {!r}]'.format(self.__class__.__name__, self._error)
+		else:
+			return '{}[success: {!r}]'.format(self.__class__.__name__, self._result)
+
 def cleandict(d):
 	if not d:
 		return None
