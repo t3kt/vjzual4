@@ -182,42 +182,48 @@ class _TaskBatch:
 
 class Future:
 	def __init__(self, onlisten=None, oninvoke=None):
-		self._successcallback = None  # type: Callable
-		self._failurecallback = None  # type: Callable
+		self._successcallbacks = []  # type: List[Callable]
+		self._failurecallbacks = []  # type: List[Callable]
 		self._resolved = False
+		self._canceled = False
 		self._result = None
 		self._error = None
 		self._onlisten = onlisten  # type: Callable
 		self._oninvoke = oninvoke  # type: Callable
 
 	def then(self, success=None, failure=None):
-		if self._successcallback or self._failurecallback:
-			raise Exception('Future already has callbacks set')
-		if self._onlisten:
-			self._onlisten()
-		self._successcallback = success
-		self._failurecallback = failure
+		if not self._successcallbacks and not self._failurecallbacks:
+			if self._onlisten:
+				self._onlisten()
+		if success:
+			self._successcallbacks.append(success)
+		if failure:
+			self._failurecallbacks.append(failure)
 		if self._resolved:
 			self._invoke()
 		return self
 
 	def _invoke(self):
 		if self._error is not None:
-			if self._failurecallback:
-				self._failurecallback(self._error)
+			while self._failurecallbacks:
+				callback = self._failurecallbacks.pop(0)
+				callback(self._error)
 		else:
-			if self._successcallback:
-				self._successcallback(self._result)
+			while self._successcallbacks:
+				callback = self._successcallbacks.pop(0)
+				callback(self._result)
 		if self._oninvoke:
 			self._oninvoke()
 
 	def _resolve(self, result, error):
+		if self._canceled:
+			return
 		if self._resolved:
 			raise Exception('Future has already been resolved')
 		self._resolved = True
 		self._result = result
 		self._error = error
-		if self._successcallback or self._failurecallback:
+		if self._successcallbacks or self._failurecallbacks:
 			self._invoke()
 
 	def resolve(self, result=None):
@@ -228,7 +234,14 @@ class Future:
 		self._resolve(None, error)
 		return self
 
+	def cancel(self):
+		if self._resolved:
+			raise Exception('Future has already been resolved')
+		self._canceled = True
+
 	def __str__(self):
+		if self._canceled:
+			return '{}[canceled]'.format(self.__class__.__name__)
 		if not self._resolved:
 			return '{}[unresolved]'.format(self.__class__.__name__)
 		if self._error is not None:

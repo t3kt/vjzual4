@@ -27,9 +27,16 @@ try:
 except ImportError:
 	module_proxy = mod.module_proxy
 
-class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
+try:
+	import common
+except ImportError:
+	common = mod.common
+
+
+class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt):
 	def __init__(self, ownerComp):
-		super().__init__(
+		remote.RemoteBase.__init__(
+			self,
 			ownerComp,
 			actions={
 				'Connect': self.Connect,
@@ -39,11 +46,11 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
 				'appInfo': self._OnReceiveAppInfo,
 				'modInfo': self._OnReceiveModuleInfo,
 			})
+		common.TaskQueueExt.__init__(self, ownerComp)
 		self._AutoInitActionParams()
 		self.rawAppInfo = None  # type: schema.RawAppInfo
 		self.rawModuleInfos = []  # type: List[schema.RawModuleInfo]
 		self.AppSchema = None  # type: schema.AppSchema
-		self.moduleQueryQueue = None
 
 	@property
 	def _Callbacks(self):
@@ -80,10 +87,10 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
 		try:
 			self.Connected.val = False
 			self.Connection.ClearResponseTasks()
+			self.ClearTasks()
 			self.rawAppInfo = None
 			self.rawModuleInfos = []
 			self.AppSchema = None
-			self.moduleQueryQueue = None
 			self._BuildAppInfoTable()
 			self._ClearModuleTable()
 			self._ClearParamTables()
@@ -149,7 +156,6 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
 
 	def _OnReceiveAppInfo(self, cmdmesg: remote.CommandMessage):
 		self._LogBegin('_OnReceiveAppInfo({!r})'.format(cmdmesg.arg))
-		self.moduleQueryQueue = []
 		try:
 			if not cmdmesg.arg:
 				raise Exception('No app info!')
@@ -158,11 +164,16 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
 			self._BuildAppInfoTable()
 			self.ProxyManager.par.Rootpath = appinfo.path
 
-			if appinfo.modpaths:
-				self.moduleQueryQueue += sorted(appinfo.modpaths)
-				self.QueryModule(self.moduleQueryQueue.pop(0))
-			else:
-				self._OnAllModulesReceived()
+			def _makeQueryModTask(modpath):
+				return lambda: self.QueryModule(modpath)
+
+			self.AddTaskBatch(
+				[
+					_makeQueryModTask(path)
+					for path in sorted(appinfo.modpaths)
+				] + [
+					lambda: self._OnAllModulesReceived()
+				], autostart=True)
 		finally:
 			self._LogEnd()
 
@@ -235,7 +246,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
 		try:
 			if not self.Connected:
 				return
-			self.Connection.SendRequest('queryMod', modpath).then(
+			return self.Connection.SendRequest('queryMod', modpath).then(
 				success=self._OnReceiveModuleInfo,
 				failure=self._OnQueryModuleFailure)
 		finally:
@@ -250,13 +261,6 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
 				raise Exception('No app info!')
 			modinfo = schema.RawModuleInfo.FromJsonDict(arg)
 			self.rawModuleInfos.append(modinfo)
-
-			if self.moduleQueryQueue:
-				nextpath = self.moduleQueryQueue.pop(0)
-				self._LogEvent('continuing to next module: {}'.format(nextpath))
-				self.QueryModule(nextpath)
-			else:
-				self._OnAllModulesReceived()
 		finally:
 			self._LogEnd()
 
@@ -274,7 +278,20 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
 				_AddRawInfoRow(moduletable, info=modschema)
 				self._AddParamsToTable(modschema.path, modschema.params)
 				self._AddToDataNodesTable(modschema.path, modschema.nodes)
-			self.ownerComp.op('deferred_build_proxies').run(delayFrames=1)
+
+			def _makeQueryStateTask(modpath):
+				return lambda: self.QueryModuleState(modpath)
+
+			self.AddTaskBatch(
+				[
+					lambda: self.BuildModuleProxies(),
+				] + [
+					_makeQueryStateTask(m.path)
+					for m in self.AppSchema.modules
+				] + [
+					lambda: self.NotifyAppSchemaLoaded(),
+				],
+				autostart=True)
 		finally:
 			self._LogEnd()
 
@@ -283,7 +300,6 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
 		try:
 			for modschema in self.AppSchema.modules:
 				self.ProxyManager.AddProxy(modschema)
-			self.ownerComp.op('deferred_notify_app_schema_loaded').run(delayFrames=1)
 		finally:
 			self._LogEnd()
 
