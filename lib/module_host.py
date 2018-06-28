@@ -28,6 +28,7 @@ try:
 except ImportError:
 	common = mod.common
 cleandict, mergedicts, trygetpar = common.cleandict, common.mergedicts, common.trygetpar
+Future = common.Future
 
 try:
 	import control_mapping
@@ -182,7 +183,7 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 	def ProgressBar(self):
 		return self.ownerComp.op('module_header/progress_bar')
 
-	def AttachToModuleConnector(self, connector: 'ModuleHostConnector'):
+	def AttachToModuleConnector(self, connector: 'ModuleHostConnector') -> Optional[Future]:
 		self.DataNodes = []
 		self.Params = []
 		self.SubModules = []  # TODO: sub-modules!
@@ -204,6 +205,7 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 		self._BuildDataNodeTable(hostcore.op('set_data_nodes'))
 		self._BuildSubModuleTable(hostcore.op('set_sub_module_table'))
 		self._RebuildParamControlTable()
+		return None
 
 	def _RebuildParamControlTable(self):
 		hostcore = self.ownerComp.op('host_core')
@@ -462,7 +464,7 @@ class ModuleChainHost(ModuleHostBase):
 			super().AttachToModuleConnector(connector)
 			self._ClearControls()
 			self.BuildControlsIfNeeded()
-			self._BuildSubModuleHosts()
+			return self._BuildSubModuleHosts()
 		finally:
 			self._LogEnd()
 
@@ -514,17 +516,24 @@ class ModuleChainHost(ModuleHostBase):
 				host.nodeY = -100 * i
 				hostconnectorpairs.append([host, connector])
 
+			resultfuture = Future()
+
 			def _makeInitTask(h, c):
 				return lambda: self._InitSubModuleHost(h, c)
+
+			def _onFinish():
+				resultfuture.resolve()
+				self._OnSubModuleHostsConnected()
 
 			self.AddTaskBatch(
 				[
 					_makeInitTask(host, connector)
 					for host, connector in hostconnectorpairs
 				] + [
-					lambda: self._OnSubModuleHostsConnected()
+					_onFinish
 				],
 				autostart=True)
+			return resultfuture
 		finally:
 			self._LogEnd()
 

@@ -8,7 +8,7 @@ if False:
 try:
 	import td
 except ImportError:
-	from _stubs import td
+	pass
 
 def Log(msg, file=None):
 	print(
@@ -142,8 +142,13 @@ class TaskQueueExt:
 		self._UpdateProgress()
 		if task is None:
 			return
-		task()
-		self._QueueRunNextTask()
+		result = task()
+		if isinstance(result, Future):
+			result.then(
+				success=lambda _: self._QueueRunNextTask(),
+				failure=lambda _: self._QueueRunNextTask())
+		else:
+			self._QueueRunNextTask()
 
 	def _PopNextTask(self):
 		if not self._TaskBatches:
@@ -193,6 +198,7 @@ class Future:
 		self._failurecallback = failure
 		if self._resolved:
 			self._invoke()
+		return self
 
 	def _invoke(self):
 		if self._error is not None:
@@ -215,9 +221,11 @@ class Future:
 
 	def resolve(self, result=None):
 		self._resolve(result, None)
+		return self
 
 	def fail(self, error):
 		self._resolve(None, error)
+		return self
 
 	def __str__(self):
 		if not self._resolved:
@@ -226,6 +234,50 @@ class Future:
 			return '{}[error: {!r}]'.format(self.__class__.__name__, self._error)
 		else:
 			return '{}[success: {!r}]'.format(self.__class__.__name__, self._result)
+
+	@classmethod
+	def immediate(cls, value=None, onlisten=None, oninvoke=None):
+		future = cls(onlisten=onlisten, oninvoke=oninvoke)
+		future.resolve(value)
+		return future
+
+	@classmethod
+	def all(cls, *futures: 'Future', onlisten=None, oninvoke=None):
+		futures = list(futures)
+		if not futures:
+			return cls.immediate([], onlisten=onlisten, oninvoke=oninvoke)
+		merged = cls(onlisten=onlisten, oninvoke=oninvoke)
+		state = {
+			'succeeded': 0,
+			'failed': 0,
+			'results': [None] * len(futures),
+			'errors': [None] * len(futures),
+		}
+
+		def _checkcomplete():
+			if (state['succeeded'] + state['failed']) < len(futures):
+				return
+			if state['failed'] > 0:
+				merged.fail((state['errors'], state['results']))
+			else:
+				merged.resolve(state['results'])
+
+		def _makecallbacks(index):
+			def _resolver(val):
+				state['results'][index] = val
+				state['succeeded'] += 1
+				_checkcomplete()
+
+			def _failer(err):
+				state['errors'][index] = err
+				state['failed'] += 1
+				_checkcomplete()
+
+			return _resolver, _failer
+
+		for i, f in enumerate(futures):
+			f.then(*_makecallbacks(i))
+		return merged
 
 def cleandict(d):
 	if not d:
