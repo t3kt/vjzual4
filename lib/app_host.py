@@ -147,7 +147,6 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 					callback=lambda: self.ShowConnectDialog()),
 				menu.Item(
 					'Disconnect',
-					disabled=not self._RemoteClient.Connected,
 					callback=lambda: self._Disconnect())
 			]
 		elif name == 'view_menu':

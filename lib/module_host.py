@@ -28,6 +28,7 @@ try:
 except ImportError:
 	common = mod.common
 cleandict, mergedicts, trygetpar = common.cleandict, common.mergedicts, common.trygetpar
+Future = common.Future
 
 try:
 	import control_mapping
@@ -182,7 +183,7 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 	def ProgressBar(self):
 		return self.ownerComp.op('module_header/progress_bar')
 
-	def AttachToModuleConnector(self, connector: 'ModuleHostConnector'):
+	def AttachToModuleConnector(self, connector: 'ModuleHostConnector') -> Optional[Future]:
 		self.DataNodes = []
 		self.Params = []
 		self.SubModules = []  # TODO: sub-modules!
@@ -198,12 +199,15 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 			self.UiModeNames.append('map')
 			if connector.modschema.childmodpaths:
 				self.UiModeNames.append('submods')
+		else:
+			self.UiModeNames.append('nodes')
 
 		hostcore = self.ownerComp.op('host_core')
 		self._BuildParamTable(hostcore.op('set_param_table'))
 		self._BuildDataNodeTable(hostcore.op('set_data_nodes'))
 		self._BuildSubModuleTable(hostcore.op('set_sub_module_table'))
 		self._RebuildParamControlTable()
+		return None
 
 	def _RebuildParamControlTable(self):
 		hostcore = self.ownerComp.op('host_core')
@@ -462,7 +466,7 @@ class ModuleChainHost(ModuleHostBase):
 			super().AttachToModuleConnector(connector)
 			self._ClearControls()
 			self.BuildControlsIfNeeded()
-			self._BuildSubModuleHosts()
+			return self._BuildSubModuleHosts()
 		finally:
 			self._LogEnd()
 
@@ -503,35 +507,59 @@ class ModuleChainHost(ModuleHostBase):
 			template = self._ModuleHostTemplate
 			if not template:
 				return
-			hostconnectorpairs = []
-			for i, connector in enumerate(self.ModuleConnector.CreateChildModuleConnectors()):
-				host = dest.copy(template, name='mod__' + connector.modschema.name)
-				host.par.Collapsed = True
-				host.par.Uibuilder.expr = 'parent.ModuleHost.par.Uibuilder or ""'
-				host.par.hmode = 'fill'
-				host.par.alignorder = i
-				host.nodeX = 100
-				host.nodeY = -100 * i
-				hostconnectorpairs.append([host, connector])
+			hostconnectorpairs = [
+				{'host': None, 'connector': conn}
+				for conn in self.ModuleConnector.CreateChildModuleConnectors()
+			]
 
-			def _makeInitTask(h, c):
-				return lambda: self._InitSubModuleHost(h, c)
+			resultfuture = Future()
+
+			def _makeCreateTask(hcpair, index):
+				def _task():
+					hcpair['host'] = self._CreateSubModuleHost(hcpair['connector'], index, dest, template)
+				return _task
+
+			def _makeInitTask(hcpair):
+				return lambda: self._InitSubModuleHost(hcpair['host'], hcpair['connector'])
+
+			def _onFinish():
+				resultfuture.resolve()
+				self._OnSubModuleHostsConnected()
 
 			self.AddTaskBatch(
 				[
-					_makeInitTask(host, connector)
-					for host, connector in hostconnectorpairs
+					_makeCreateTask(hostconnpair, i)
+					for i, hostconnpair in enumerate(hostconnectorpairs)
+				] +
+				[
+					_makeInitTask(hostconnpair)
+					for hostconnpair in hostconnectorpairs
 				] + [
-					lambda: self._OnSubModuleHostsConnected()
+					_onFinish
 				],
 				autostart=True)
+			return resultfuture
+		finally:
+			self._LogEnd()
+
+	def _CreateSubModuleHost(self, connector, i, dest, template):
+		self._LogBegin('_CreateSubModuleHost({}, {})'.format(connector.modschema.path, i))
+		try:
+			host = dest.copy(template, name='mod__' + connector.modschema.name)
+			host.par.Collapsed = True
+			host.par.Uibuilder.expr = 'parent.ModuleHost.par.Uibuilder or ""'
+			host.par.hmode = 'fill'
+			host.par.alignorder = i
+			host.nodeX = 100
+			host.nodeY = -100 * i
+			return host
 		finally:
 			self._LogEnd()
 
 	def _InitSubModuleHost(self, host, connector):
 		self._LogBegin('_InitSubModuleHost({}, {})'.format(host, connector.modschema.path))
 		try:
-			host.AttachToModuleConnector(connector)
+			return host.AttachToModuleConnector(connector)
 		finally:
 			self._LogEnd()
 
