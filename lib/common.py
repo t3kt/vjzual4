@@ -1,3 +1,4 @@
+import datetime
 from typing import Callable, List
 
 print('vjz4/common.py loading')
@@ -12,7 +13,7 @@ except ImportError:
 
 def Log(msg, file=None):
 	print(
-		#'[%s]' % datetime.datetime.now().strftime('%m.%d %H:%M:%S'),
+		'[%s]' % datetime.datetime.now().strftime('%H:%M:%S'),
 		msg,
 		file=file)
 
@@ -242,8 +243,13 @@ class Future:
 		return future
 
 	@classmethod
+	def of(cls, obj):
+		if isinstance(obj, Future):
+			return obj
+		return cls.immediate(obj)
+
+	@classmethod
 	def all(cls, *futures: 'Future', onlisten=None, oninvoke=None):
-		futures = list(futures)
 		if not futures:
 			return cls.immediate([], onlisten=onlisten, oninvoke=oninvoke)
 		merged = cls(onlisten=onlisten, oninvoke=oninvoke)
@@ -276,7 +282,7 @@ class Future:
 			return _resolver, _failer
 
 		for i, f in enumerate(futures):
-			f.then(*_makecallbacks(i))
+			cls.of(f).then(*_makecallbacks(i))
 		return merged
 
 def cleandict(d):

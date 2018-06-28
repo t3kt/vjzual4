@@ -79,6 +79,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider):
 		self._LogBegin('Detach()')
 		try:
 			self.Connected.val = False
+			self.Connection.ClearResponseTasks()
 			self.rawAppInfo = None
 			self.rawModuleInfos = []
 			self.AppSchema = None

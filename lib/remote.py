@@ -118,6 +118,9 @@ class RemoteConnection(common.ExtensionBase):
 		if False:
 			self.par = ExpandoStub()
 
+	def ClearResponseTasks(self):
+		self._responsefutures.clear()
+
 	def HandleOscEvent(self, address, args):
 		if self._osceventhandler:
 			self._osceventhandler.HandleOscEvent(address, args)
