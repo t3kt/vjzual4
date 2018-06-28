@@ -139,9 +139,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		finally:
 			self._LogEnd()
 
-	def _GetMenuItems(self, name):
+	def OnMenuClick(self, button):
+		name = button.name
 		if name == 'app_menu':
-			return [
+			items = [
 				menu.Item(
 					'Connect',
 					callback=lambda: self.ShowConnectDialog()),
@@ -150,12 +151,24 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 					callback=lambda: self._Disconnect())
 			]
 		elif name == 'view_menu':
+			def _uimodeItem(text, mode):
+				return menu.Item(
+					text,
+					checked=self.ownerComp.par.Uimode == mode,
+					callback=lambda: setattr(self.ownerComp.par, 'Uimode', mode))
+			items = [
+				_uimodeItem(label, name)
+				for name, label in zip(
+					self.ownerComp.par.Uimode.menuNames,
+					self.ownerComp.par.Uimode.menuLabels)
+			]
+		elif name == 'debug_menu':
 			def _viewItem(text, oppath):
 				return menu.Item(
 					text,
 					disabled=not self.AppSchema,
 					callback=lambda: self.ownerComp.op(oppath).openViewer(unique=True))
-			return [
+			items = [
 				menu.Item(
 					'App Schema',
 					disabled=not self.AppSchema,
@@ -166,10 +179,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 				_viewItem('Param Parts', 'param_parts'),
 				_viewItem('Data Nodes', 'data_nodes'),
 			]
-
-	def OnMenuClick(self, button):
+		else:
+			return
 		menu.fromButton(button, h='Left', v='Bottom').Show(
-			items=self._GetMenuItems(button.name),
+			items=items,
 			autoClose=True)
 
 	def ShowAppSchema(self):
