@@ -11,30 +11,10 @@ try:
 except ImportError:
 	common = mod.common
 cleandict, excludekeys, mergedicts = common.cleandict, common.excludekeys, common.mergedicts
+BaseDataObject = common.BaseDataObject
 
 
-class BaseSchemaNode:
-	def __init__(self, **otherattrs):
-		self.otherattrs = otherattrs
-
-	def ToJsonDict(self) -> dict:
-		raise NotImplementedError()
-
-	def __repr__(self):
-		return '{}({!r})'.format(self.__class__.__name__, self.ToJsonDict())
-
-	@classmethod
-	def FromJsonDict(cls, obj):
-		return cls(**obj)
-
-	@classmethod
-	def FromJsonDicts(cls, objs: List[Dict]):
-		return [cls.FromJsonDict(obj) for obj in objs] if objs else []
-
-def _ToJsonDicts(nodes: List[BaseSchemaNode]):
-	return [n.ToJsonDict() for n in nodes] if nodes else []
-
-class RawAppInfo(BaseSchemaNode):
+class RawAppInfo(BaseDataObject):
 	def __init__(
 			self,
 			name=None,
@@ -66,7 +46,7 @@ class RawAppInfo(BaseSchemaNode):
 			'modpaths': self.modpaths,
 		}))
 
-class RawParamInfo(BaseSchemaNode):
+class RawParamInfo(BaseDataObject):
 	def __init__(
 			self,
 			name=None,
@@ -147,7 +127,7 @@ class RawParamInfo(BaseSchemaNode):
 			'startsection': self.startsection,
 		}))
 
-class RawModuleInfo(BaseSchemaNode):
+class RawModuleInfo(BaseDataObject):
 	def __init__(
 			self,
 			path=None,
@@ -199,14 +179,14 @@ class RawModuleInfo(BaseSchemaNode):
 			'parentpath': self.parentpath,
 			'childmodpaths': self.childmodpaths,
 			'partuplets': self.partuplets and [
-				_ToJsonDicts(t)
+				BaseDataObject.ToJsonDicts(t)
 				for t in self.partuplets
 			],
 			'parattrs': self.parattrs,
-			'nodes': _ToJsonDicts(self.nodes),
+			'nodes': BaseDataObject.ToJsonDicts(self.nodes),
 		}))
 
-class ParamPartSchema(BaseSchemaNode):
+class ParamPartSchema(BaseDataObject):
 	def __init__(
 			self,
 			name,
@@ -276,7 +256,7 @@ class ParamPartSchema(BaseSchemaNode):
 # and are not included in the param list, as are parameters with labels starting
 # with ':'.
 
-class ParamSchema(BaseSchemaNode):
+class ParamSchema(BaseDataObject):
 	def __init__(
 			self,
 			name=None,
@@ -332,7 +312,7 @@ class ParamSchema(BaseSchemaNode):
 			'specialtype': self.specialtype,
 			'isnode': self.isnode,
 			'mappable': self.mappable,
-			'parts': _ToJsonDicts(self.parts),
+			'parts': BaseDataObject.ToJsonDicts(self.parts),
 		}))
 
 	@classmethod
@@ -428,7 +408,7 @@ class ParamSchema(BaseSchemaNode):
 			parts=[ParamPartSchema.FromRawParamInfo(part) for part in partuplet],
 		)
 
-class DataNodeInfo(BaseSchemaNode):
+class DataNodeInfo(BaseDataObject):
 	def __init__(
 			self,
 			name=None,
@@ -465,7 +445,7 @@ class DataNodeInfo(BaseSchemaNode):
 			'texbuf': self.texbuf,
 		}))
 
-class ModuleSchema(BaseSchemaNode):
+class ModuleSchema(BaseDataObject):
 	def __init__(
 			self,
 			name=None,
@@ -483,6 +463,10 @@ class ModuleSchema(BaseSchemaNode):
 		self.parentpath = parentpath
 		self.childmodpaths = childmodpaths or []
 		self.params = params or []
+		self.paramsbyname = {
+			p.name: p
+			for p in self.params
+		}  # type: Dict[str, ParamSchema]
 		self.nodes = nodes or []
 		self.hasbypass = False
 		self.hasadvanced = False
@@ -523,8 +507,8 @@ class ModuleSchema(BaseSchemaNode):
 			'childmodpaths': self.childmodpaths,
 			'hasbypass': self.hasbypass,
 			'hasadvanced': self.hasadvanced,
-			'params': _ToJsonDicts(self.params),
-			'nodes': _ToJsonDicts(self.nodes),
+			'params': BaseDataObject.ToJsonDicts(self.params),
+			'nodes': BaseDataObject.ToJsonDicts(self.nodes),
 		}))
 
 	@classmethod
@@ -547,7 +531,7 @@ class ModuleSchema(BaseSchemaNode):
 			nodes=list(modinfo.nodes) if modinfo.nodes else None,
 		)
 
-class AppSchema(BaseSchemaNode):
+class AppSchema(BaseDataObject):
 	def __init__(
 			self,
 			name=None,
@@ -590,8 +574,8 @@ class AppSchema(BaseSchemaNode):
 			'name': self.name,
 			'label': self.label,
 			'path': self.path,
-			'modules': _ToJsonDicts(self.modules),
-			'nodes': _ToJsonDicts(self.nodes),
+			'modules': BaseDataObject.ToJsonDicts(self.modules),
+			'nodes': BaseDataObject.ToJsonDicts(self.nodes),
 			'childmodpaths': self.childmodpaths,
 		}))
 
@@ -624,7 +608,7 @@ class SchemaProvider:
 	def GetModuleSchema(self, modpath) -> Optional[ModuleSchema]:
 		raise NotImplementedError()
 
-class ClientInfo(BaseSchemaNode):
+class ClientInfo(BaseDataObject):
 	def __init__(
 			self,
 			version=None,

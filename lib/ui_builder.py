@@ -17,6 +17,10 @@ try:
 except ImportError:
 	schema = mod.schema
 
+try:
+	import devices
+except ImportError:
+	devices = mod.devices
 
 class UiBuilder:
 	def __init__(self, ownerComp):
@@ -266,7 +270,8 @@ class UiBuilder:
 			parvals=None,
 			parexprs=None,
 			addtocontrolmap=None,
-			modhostconnector=None):
+			modhostconnector=None  # type: ModuleHostConnector
+	):
 
 		def _register(ctrlop):
 			if addtocontrolmap is not None:
@@ -369,6 +374,28 @@ class UiBuilder:
 				{
 					'Param': paramname,
 					'Controltype': ctrltype,
+				},
+				parvals),
+			parexprs=parexprs)
+
+	def CreateControlMarker(
+			self,
+			dest,
+			name,
+			control,  # type: devices.ControlInfo
+			order=None, nodepos=None, parvals=None, parexprs=None):
+		return CreateFromTemplate(
+			template=self.ownerComp.op('control_marker'),
+			dest=dest,
+			name=name,
+			order=order, nodepos=nodepos,
+			parvals=mergedicts(
+				{
+					'Name': control.name,
+					'Fullname': control.fullname,
+					'Ctrltype': control.ctrltype or 'slider',
+					'Inputcc': control.inputcc if control.inputcc is not None else -1,
+					'Outputcc': control.outputcc if control.outputcc is not None else -1,
 				},
 				parvals),
 			parexprs=parexprs)
