@@ -4,6 +4,7 @@ print('vjz4/devices.py loading')
 
 if False:
 	from _stubs import *
+	from ui_builder import UiBuilder
 
 try:
 	import common
@@ -62,14 +63,15 @@ class MidiDevice(common.ExtensionBase, common.ActionsExt):
 		})
 		self._AutoInitActionParams()
 		self.Controls = []  # type: List[ControlInfo]
-		self._InitializeControls()
 
 	@property
 	def DeviceName(self):
 		return self.ownerComp.par.Name.eval() or self.ownerComp.name
 
-	def _InitializeControls(self):
+	def _InitializeControls(self, controls: List[ControlInfo]):
+		self.Controls = controls or []
 		self._FillControlTable()
+		self._BuildControlMarkers()
 
 	def _FillControlTable(self):
 		outdat = self.ownerComp.op('set_controls')
@@ -83,27 +85,49 @@ class MidiDevice(common.ExtensionBase, common.ActionsExt):
 					'outchan': 'ch1c{}'.format(control.outputcc) if control.outputcc is not None else '',
 				})
 
+	def _BuildControlMarkers(self):
+		dest = self.ownerComp.op('controls_panel')
+		for o in dest.ops('ctrl__*'):
+			o.destroy()
+		uibuilder = self.UiBuilder
+		if not uibuilder:
+			return
+		for i, control in enumerate(self.Controls):
+			uibuilder.CreateControlMarker(
+				dest=dest,
+				name='ctrl__' + control.name,
+				control=control,
+				order=i,
+				nodepos=[100, -150 * i])
+
 	def GenerateAutoMappings(
 			self,
 			modconnector: module_host.ModuleHostConnector,
 			mappings: control_mapping.ModuleControlMap):
 		mappings.ClearMappings()
-		return False
+		return
+
+	@property
+	def UiBuilder(self):
+		uibuilder = self.ownerComp.par.Uibuilder.eval()  # type: UiBuilder
+		if uibuilder:
+			return uibuilder
+		if hasattr(op, 'UiBuilder'):
+			return op.UiBuilder
 
 
 class BcrMidiDevice(MidiDevice):
 	def __init__(self, ownerComp):
 		super().__init__(ownerComp)
 
-	def _InitializeControls(self):
-		self.Controls = []  # type: List[ControlInfo]
+		controls = []  # type: List[ControlInfo]
 		devprefix = self.DeviceName + '.'
 
 		def _addrow(prefix, startctrl, ctrltype, startcc):
 			for i in range(8):
 				name = '{}{}'.format(prefix, startctrl + i)
 				cc = startcc + i
-				self.Controls.append(ControlInfo(
+				controls.append(ControlInfo(
 					name=name,
 					fullname=devprefix + name,
 					ctrltype=ctrltype,
@@ -112,15 +136,14 @@ class BcrMidiDevice(MidiDevice):
 				))
 
 		_addrow('s',  1, 'slider', 129)
+		_addrow('b',  1, 'button', 65)
+		_addrow('b',  9, 'button', 73)
+		_addrow('b', 17, 'button', 33)
 		_addrow('s',  9, 'slider', 81)
 		_addrow('s', 17, 'slider', 89)
 		_addrow('s', 25, 'slider', 97)
-		_addrow('b', 17, 'button', 33)
-		_addrow('b',  1, 'button', 65)
-		_addrow('b', 17, 'button', 33)
-		_addrow('b',  9, 'button', 73)
 
-		super()._InitializeControls()
+		self._InitializeControls(controls)
 
 	def GenerateAutoMappings(
 			self,
