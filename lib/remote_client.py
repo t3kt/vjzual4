@@ -7,10 +7,10 @@ if False:
 
 try:
 	import common
-	from common import mergedicts
 except ImportError:
 	common = mod.common
-	mergedicts = common.mergedicts
+mergedicts = common.mergedicts
+BaseDataObject = common.BaseDataObject
 
 try:
 	import remote
@@ -207,17 +207,15 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 		paramsdat = self._ParamTable
 		partsdat = self._ParamPartTable
 		for param in params:
-			_AddRawInfoRow(
+			param.AddToTable(
 				paramsdat,
-				info=param,
 				attrs={
 					'key': modpath + ':' + param.name,
 					'modpath': modpath,
 				})
 			for i, part in enumerate(param.parts):
-				_AddRawInfoRow(
+				part.AddToTable(
 					partsdat,
-					info=part,
 					attrs={
 						'key': modpath + ':' + part.name,
 						'param': param.name,
@@ -236,9 +234,8 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 			return
 		dat = self._DataNodesTable
 		for node in nodes:
-			_AddRawInfoRow(
+			node.AddToTable(
 				dat,
-				info=node,
 				attrs={'modpath': modpath})
 
 	def QueryModule(self, modpath):
@@ -275,7 +272,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 				modules=self.rawModuleInfos)
 			moduletable = self._ModuleTable
 			for modschema in self.AppSchema.modules:
-				_AddRawInfoRow(moduletable, info=modschema)
+				modschema.AddToTable(moduletable)
 				self._AddParamsToTable(modschema.path, modschema.params)
 				self._AddToDataNodesTable(modschema.path, modschema.nodes)
 
@@ -372,15 +369,3 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 		# self._LogEvent('HandleOscEvent({!r}, {!r})'.format(address, args))
 		modpath, name = address.split(':', maxsplit=1)
 		self.ProxyManager.SetParamValue(modpath, name, args[0])
-
-
-def _AddRawInfoRow(dat, info: schema.BaseSchemaNode=None, attrs=None):
-	obj = info.ToJsonDict() if info else None
-	attrs = mergedicts(obj, attrs)
-	vals = []
-	for col in dat.row(0):
-		val = attrs.get(col.val, '')
-		if isinstance(val, bool):
-			val = 1 if val else 0
-		vals.append(val)
-	dat.appendRow(vals)

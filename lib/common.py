@@ -1,5 +1,5 @@
 import datetime
-from typing import Callable, List
+from typing import Callable, Dict, List, Iterable
 
 print('vjz4/common.py loading')
 
@@ -408,3 +408,36 @@ def CreateOP(
 		comp=comp, order=order, nodepos=nodepos,
 		tags=tags, parvals=parvals, parexprs=parexprs)
 	return comp
+
+class BaseDataObject:
+	def __init__(self, **otherattrs):
+		self.otherattrs = otherattrs
+
+	def ToJsonDict(self) -> dict:
+		raise NotImplementedError()
+
+	def __repr__(self):
+		return '{}({!r})'.format(self.__class__.__name__, self.ToJsonDict())
+
+	@classmethod
+	def FromJsonDict(cls, obj):
+		return cls(**obj)
+
+	@classmethod
+	def FromJsonDicts(cls, objs: List[Dict]):
+		return [cls.FromJsonDict(obj) for obj in objs] if objs else []
+
+	@classmethod
+	def ToJsonDicts(cls, nodes: 'Iterable[BaseDataObject]'):
+		return [n.ToJsonDict() for n in nodes] if nodes else []
+
+	def AddToTable(self, dat, attrs=None):
+		obj = self.ToJsonDict()
+		attrs = mergedicts(obj, attrs)
+		vals = []
+		for col in dat.row(0):
+			val = attrs.get(col.val, '')
+			if isinstance(val, bool):
+				val = 1 if val else 0
+			vals.append(val)
+		dat.appendRow(vals)

@@ -1,3 +1,5 @@
+from typing import List
+
 print('vjz4/devices.py loading')
 
 if False:
@@ -7,6 +9,8 @@ try:
 	import common
 except ImportError:
 	common = mod.common
+BaseDataObject = common.BaseDataObject
+mergedicts, cleandict = common.mergedicts, common.cleandict
 
 try:
 	import control_mapping
@@ -18,85 +22,130 @@ try:
 except ImportError:
 	module_host = mod.module_host
 
+class ControlInfo(BaseDataObject):
+	def __init__(
+			self,
+			name,
+			fullname,
+			ctrltype=None,
+			inputcc=None,
+			outputcc=None,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.name = name
+		self.fullname = fullname
+		self.ctrltype = ctrltype
+		self.inputcc = inputcc
+		self.outputcc = outputcc
+
+	tablekeys = [
+		'name',
+		'fullname',
+		'ctrltype',
+		'inputcc',
+		'outputcc',
+	]
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'name': self.name,
+			'fullname': self.fullname,
+			'ctrltype': self.ctrltype,
+			'inputcc': self.inputcc,
+			'outputcc': self.outputcc,
+		}))
+
 class MidiDevice(common.ExtensionBase, common.ActionsExt):
-	def __init__(self, ownerComp, automapper=None):
+	def __init__(self, ownerComp):
 		common.ExtensionBase.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions={
-			'Loadcontrols': self.LoadControls,
 		})
 		self._AutoInitActionParams()
-		self.LoadControls()
-		self.automapper = automapper  # type: 'ModuleAutoMapper'
+		self.Controls = []  # type: List[ControlInfo]
+		self._InitializeControls()
 
-	def LoadControls(self):
+	@property
+	def DeviceName(self):
+		return self.ownerComp.par.Name.eval() or self.ownerComp.name
+
+	def _InitializeControls(self):
+		self._FillControlTable()
+
+	def _FillControlTable(self):
 		outdat = self.ownerComp.op('set_controls')
 		outdat.clear()
-		outdat.appendRow(['name', 'fullname', 'type', 'outcc', 'outchan'])
-		prefix = (self.ownerComp.par.Name.eval() or self.ownerComp.name) + '_'
-		controlsin = self.ownerComp.par.Controls.eval()
-		if not controlsin:
-			return
-		for i in range(1, controlsin.numRows):
-			outcc = controlsin[i, 'outcc']
-			outdat.appendRow([
-				controlsin[i, 'name'],
-				prefix + controlsin[i, 'name'],
-				controlsin[i, 'type'],
-				outcc,
-				controlsin[i, 'outchan'] or ('ch1c' + outcc),
-			])
+		outdat.appendRow(ControlInfo.tablekeys + ['inchan', 'outchan'])
+		for control in self.Controls:
+			control.AddToTable(
+				outdat,
+				attrs={
+					'inchan': 'ch1c{}'.format(control.inputcc) if control.inputcc is not None else '',
+					'outchan': 'ch1c{}'.format(control.outputcc) if control.outputcc is not None else '',
+				})
 
 	def GenerateAutoMappings(
 			self,
-			modhost: module_host.ModuleHostBase,
-			mappings: control_mapping.ModuleControlMap):
-		if not self.automapper:
-			mappings.ClearMappings()
-			return False
-		return self.automapper.GenerateMappings(
-			modhost=modhost,
-			mappings=mappings)
-
-
-class ModuleAutoMapper:
-	def __init__(self, device):
-		self.controls = device.op('controls')
-
-	def GenerateMappings(
-			self,
-			modhost: module_host.ModuleHostBase,
+			modconnector: module_host.ModuleHostConnector,
 			mappings: control_mapping.ModuleControlMap):
 		mappings.ClearMappings()
 		return False
 
-class BcrAutoMapper(ModuleAutoMapper):
-	def __init__(self, device):
-		super().__init__(device)
 
-	def GenerateMappings(
+class BcrMidiDevice(MidiDevice):
+	def __init__(self, ownerComp):
+		super().__init__(ownerComp)
+
+	def _InitializeControls(self):
+		self.Controls = []  # type: List[ControlInfo]
+		devprefix = self.DeviceName + '.'
+
+		def _addrow(prefix, startctrl, ctrltype, startcc):
+			for i in range(8):
+				name = '{}{}'.format(prefix, startctrl + i)
+				cc = startcc + i
+				self.Controls.append(ControlInfo(
+					name=name,
+					fullname=devprefix + name,
+					ctrltype=ctrltype,
+					inputcc=cc,
+					outputcc=cc,
+				))
+
+		_addrow('s',  1, 'slider', 129)
+		_addrow('s',  9, 'slider', 81)
+		_addrow('s', 17, 'slider', 89)
+		_addrow('s', 25, 'slider', 97)
+		_addrow('b', 17, 'button', 33)
+		_addrow('b',  1, 'button', 65)
+		_addrow('b', 17, 'button', 33)
+		_addrow('b',  9, 'button', 73)
+
+		super()._InitializeControls()
+
+	def GenerateAutoMappings(
 			self,
-			modhost: module_host.ModuleHostBase,
+			modconnector: module_host.ModuleHostConnector,
 			mappings: control_mapping.ModuleControlMap):
 		mappings.ClearMappings()
-		if not modhost.ModuleConnector:
+		if not modconnector:
 			return False
 		slidernames = [
-			self.controls[i, 'fullname'].val
-			for i in range(1, self.controls.numRows)
-			if self.controls[i, 'type'] == 'slider'
+			control.fullname
+			for control in self.Controls
+			if control.ctrltype == 'slider'
 		]
 		buttonnames = [
-			self.controls[i, 'fullname'].val
-			for i in range(1, self.controls.numRows)
-			if self.controls[i, 'type'] == 'button'
+			control.fullname
+			for control in self.Controls
+			if control.ctrltype == 'button'
 		]
-		if modhost.HasBypass:
-			bypasspar = modhost.GetParamByName('Bypass')
+		modschema = modconnector.modschema
+		if modschema.hasbypass:
+			bypasspar = modschema.paramsbyname.get('Bypass')
 			if bypasspar is not None and bypasspar.mappable:
 				mappings.SetMapping(
 					'Bypass',
 					control=buttonnames.pop(0))
-		params = modhost.Params
 
 		def _addButton(parname):
 			if not buttonnames:
@@ -114,7 +163,7 @@ class BcrAutoMapper(ModuleAutoMapper):
 				rangelow=rangelow,
 				rangehigh=rangehigh)
 
-		for parinfo in params:
+		for parinfo in modschema.params:
 			if not parinfo.mappable or parinfo.advanced or parinfo.hidden or parinfo.specialtype == 'switch.bypass':
 				continue
 			if parinfo.style == 'Toggle':
@@ -124,5 +173,4 @@ class BcrAutoMapper(ModuleAutoMapper):
 			elif parinfo.style in ('Float', 'Int', 'XY', 'XYZ', 'UV', 'UVW', 'WH'):
 				for part in parinfo.parts:
 					_addSlider(part.name, part.normMin, part.normMax)
-
 		return True
