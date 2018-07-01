@@ -108,7 +108,7 @@ COMP = OP
 CHOP = OP
 
 baseCOMP = COMP
-parameterexecuteDAT = textDAT = DAT
+evaluateDAT = mergeDAT = nullDAT = parameterexecuteDAT = tableDAT = textDAT = scriptDAT = DAT
 parameterCHOP = nullCHOP = selectCHOP = CHOP
 
 class app:
