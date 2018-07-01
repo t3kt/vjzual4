@@ -399,3 +399,27 @@ class UiBuilder:
 				},
 				parvals),
 			parexprs=parexprs)
+
+	def CreateNodeMarker(
+			self,
+			dest,
+			name,
+			nodeinfo,  # type: schema.DataNodeInfo
+			order=None, nodepos=None, parvals=None, parexprs=None):
+		return CreateFromTemplate(
+			template=self.ownerComp.op('node_marker'),
+			dest=dest,
+			name=name,
+			order=order, nodepos=nodepos,
+			parvals=mergedicts(
+				{
+					'Name': nodeinfo.name,
+					'Label': nodeinfo.label,
+					'Path': nodeinfo.path,
+					'Video': nodeinfo.video,
+					'Audio': nodeinfo.audio,
+					'Texbuf': nodeinfo.texbuf,
+					'h': 30,
+				},
+				parvals),
+			parexprs=parexprs)

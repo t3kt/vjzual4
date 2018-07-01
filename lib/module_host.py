@@ -83,6 +83,10 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 		return not self.Params or any(self.ownerComp.ops('controls_panel/par__*'))
 
 	@property
+	def _NodeMarkersBuilt(self):
+		return not self.Params or any(self.ownerComp.ops('nodes_panel/node__*'))
+
+	@property
 	def _MappingEditorsBuilt(self):
 		return not self.Params or any(self.ownerComp.ops('mappings_panel/map__*'))
 
@@ -293,6 +297,26 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 		finally:
 			self._LogEnd()
 
+	def BuildNodeMarkers(self):
+		self._LogBegin('BuildNodeMarkers()')
+		try:
+			dest = self.ownerComp.op('nodes_panel')
+			for marker in dest.ops('node__*'):
+				marker.destroy()
+			uibuilder = self.UiBuilder
+			if not self.ModuleConnector or not uibuilder:
+				return
+			for i, nodeinfo in enumerate(self.ModuleConnector.modschema.nodes):
+				uibuilder.CreateNodeMarker(
+					dest=dest,
+					name='node__' + nodeinfo.name,
+					nodeinfo=nodeinfo,
+					order=i,
+					nodepos=[100, -200 * i])
+			dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
+		finally:
+			self._LogEnd()
+
 	def BuildMappingEditors(self, dest):
 		uibuilder = self.UiBuilder
 		for edit in dest.ops('map__*'):
@@ -393,10 +417,18 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 		for o in self.ownerComp.ops('controls_panel/par__*'):
 			o.destroy()
 
+	def _ClearNodeMarkers(self):
+		for o in self.ownerComp.ops('nodes_panel/node__*'):
+			o.destroy()
+
 	def BuildControlsIfNeeded(self):
 		if self.ownerComp.par.Uimode == 'ctrl' and not self.ownerComp.par.Collapsed and not self._ControlsBuilt:
 			controls = self.ownerComp.op('controls_panel')
 			self.BuildControls(controls)
+
+	def BuildNodeMarkersIfNeeded(self):
+		if self.ownerComp.par.Uimode == 'nodes' and not self.ownerComp.par.Collapsed and not self._NodeMarkersBuilt:
+			self.BuildNodeMarkers()
 
 def FindSubModules(parentComp):
 	if not parentComp:
@@ -438,6 +470,7 @@ class ModuleHost(ModuleHostBase):
 			super().AttachToModuleConnector(connector)
 			self._ClearControls()
 			self.BuildControlsIfNeeded()
+			self.BuildNodeMarkersIfNeeded()
 			self.UpdateModuleHeight()
 		finally:
 			self._LogEnd()
@@ -466,6 +499,7 @@ class ModuleChainHost(ModuleHostBase):
 			super().AttachToModuleConnector(connector)
 			self._ClearControls()
 			self.BuildControlsIfNeeded()
+			self.BuildNodeMarkersIfNeeded()
 			return self._BuildSubModuleHosts()
 		finally:
 			self._LogEnd()

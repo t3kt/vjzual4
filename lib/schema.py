@@ -348,6 +348,8 @@ class ParamSchema(BaseDataObject):
 				specialtype = 'node'
 			elif name == 'Bypass':
 				return 'switch.bypass'
+			elif name == 'Source' and style == 'Str':
+				return 'node'
 		return specialtype
 
 	@staticmethod
