@@ -65,9 +65,6 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 			'Saveuistate': self.SaveUIState,
 		})
 		self.ModuleConnector = None  # type: ModuleHostConnector
-		self.DataNodes = []  # type: List[schema.DataNodeInfo]
-		self.Params = []  # type: List[schema.ParamSchema]
-		self.SubModules = []
 		self.controlsByParam = {}
 		self.paramsByControl = {}
 		self.Mappings = control_mapping.ModuleControlMap()
@@ -79,16 +76,24 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 			self.storage = {}
 
 	@property
+	def _Params(self):
+		return self.ModuleConnector and self.ModuleConnector.modschema.params or []
+
+	@property
+	def _DataNodes(self):
+		return self.ModuleConnector and self.ModuleConnector.modschema.nodes or []
+
+	@property
 	def _ControlsBuilt(self):
-		return not self.Params or any(self.ownerComp.ops('controls_panel/par__*'))
+		return not self._Params or any(self.ownerComp.ops('controls_panel/par__*'))
 
 	@property
 	def _NodeMarkersBuilt(self):
-		return not self.Params or any(self.ownerComp.ops('nodes_panel/node__*'))
+		return not self._Params or any(self.ownerComp.ops('nodes_panel/node__*'))
 
 	@property
 	def _MappingEditorsBuilt(self):
-		return not self.Params or any(self.ownerComp.ops('mappings_panel/map__*'))
+		return not self._Params or any(self.ownerComp.ops('mappings_panel/map__*'))
 
 	def OnTDPreSave(self):
 		pass
@@ -188,17 +193,12 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 		return self.ownerComp.op('module_header/progress_bar')
 
 	def AttachToModuleConnector(self, connector: 'ModuleHostConnector') -> Optional[Future]:
-		self.DataNodes = []
-		self.Params = []
-		self.SubModules = []  # TODO: sub-modules!
 		self.ModuleConnector = connector
 		self.UiModeNames.clear()
 		if connector:
-			self.DataNodes = connector.modschema.nodes
-			self.Params = connector.modschema.params
-			if self.Params:
+			if self._Params:
 				self.UiModeNames.append('ctrl')
-			if self.DataNodes:
+			if self._DataNodes:
 				self.UiModeNames.append('nodes')
 			self.UiModeNames.append('map')
 			if connector.modschema.childmodpaths:
@@ -209,7 +209,6 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 		hostcore = self.ownerComp.op('host_core')
 		self._BuildParamTable(hostcore.op('set_param_table'))
 		self._BuildDataNodeTable(hostcore.op('set_data_nodes'))
-		self._BuildSubModuleTable(hostcore.op('set_sub_module_table'))
 		self._RebuildParamControlTable()
 		return None
 
@@ -224,7 +223,7 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 	def _BuildDataNodeTable(self, dat):
 		dat.clear()
 		dat.appendRow(['name', 'label', 'path', 'video', 'audio', 'texbuf'])
-		for n in self.DataNodes:
+		for n in self._DataNodes:
 			dat.appendRow([
 				n.name,
 				n.label,
@@ -246,7 +245,7 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 			'specialtype',
 			'mappable',
 		])
-		for parinfo in self.Params:
+		for parinfo in self._Params:
 			dat.appendRow([
 				parinfo.name,
 				parinfo.label,
@@ -259,7 +258,7 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 			])
 
 	def GetParamByName(self, name):
-		for parinfo in self.Params:
+		for parinfo in self._Params:
 			if parinfo.name == name:
 				return parinfo
 
@@ -274,7 +273,7 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 			if not self.ModuleConnector or not uibuilder:
 				self._RebuildParamControlTable()
 				return
-			for i, parinfo in enumerate(self.Params):
+			for i, parinfo in enumerate(self._Params):
 				if parinfo.hidden or parinfo.specialtype.startswith('switch.'):
 					continue
 				uibuilder.CreateParControl(
@@ -359,16 +358,6 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 			ctrl.height
 			for ctrl in panels
 			if ctrl and ctrl.isPanel and ctrl.par.display)
-
-	def _BuildSubModuleTable(self, dat):
-		dat.clear()
-		dat.appendRow([
-			'name',
-			'path',
-			'label',
-		])
-		for m in self.SubModules:
-			dat.appendRow([m.name, m.path, getattr(m.par, 'Uilabel') or m.name])
 
 	def _GetContextMenuItems(self):
 		if not self.ModuleConnector:
@@ -616,22 +605,23 @@ class ModuleChainHost(ModuleHostBase):
 		def _subModuleHostParUpdater(name, val):
 			return lambda: self._SetSubModuleHostPars(name, val)
 
+		hassubmods = bool(self.ModuleConnector and self.ModuleConnector.modschema.childmodpaths)
 		items = super()._GetContextMenuItems() + [
 			menu.Item(
 				'Collapse Sub Modules',
-				disabled=not self.SubModules,
+				disabled=not hassubmods,
 				callback=_subModuleHostParUpdater('Collapsed', True)),
 			menu.Item(
 				'Expand Sub Modules',
-				disabled=not self.SubModules,
+				disabled=not hassubmods,
 				callback=_subModuleHostParUpdater('Collapsed', False)),
 			menu.Item(
 				'Sub Module Controls',
-				disabled=not self.SubModules,
+				disabled=not hassubmods,
 				callback=_subModuleHostParUpdater('Uimode', 'ctrl')),
 			menu.Item(
 				'Sub Module Nodes',
-				disabled=not self.SubModules,
+				disabled=not hassubmods,
 				callback=_subModuleHostParUpdater('Uimode', 'nodes')),
 		]
 		return items
