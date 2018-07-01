@@ -155,6 +155,8 @@ class ModuleProxyManager(common.ExtensionBase, common.ActionsExt):
 		appendkwargs = {}
 		if style in ('Float', 'Int') and len(param.parts) > 1:
 			appendkwargs['size'] = len(param.parts)
+		if style in ('TOP', 'CHOP', 'DAT', 'OP', 'COMP', 'PanelCOMP'):
+			style = 'Str'
 		appendmethod = getattr(page, 'append' + style, None)
 		if not appendmethod:
 			self._LogEvent('_AddParam(mod: {}, param: {}) - unsupported style: {}'.format(

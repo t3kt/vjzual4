@@ -247,13 +247,51 @@ class UiBuilder:
 			name=name,
 			label=parinfo.label,
 			fieldtype='string',
-			valueexpr=modhostconnector.GetParExpr(name) if modhostconnector else None,
+			valueexpr=modhostconnector.GetParExpr(parinfo.name) if modhostconnector else None,
 			defval=parinfo.parts[0].default,
 			order=order,
 			nodepos=nodepos,
 			parvals=parvals,
 			parexprs=parexprs)
 		celldat = ctrl.par.Celldat.eval()
+		# TODO: workaround for bug with initial value not being loaded
+		par = modhostconnector.GetPar(name) if modhostconnector else None
+		if par is not None:
+			celldat[0, 0] = par.eval()
+		return ctrl
+
+	def CreateParNodeSelector(
+			self, dest, name,
+			parinfo,  # type: schema.ParamSchema
+			order=None, nodepos=None,
+			parvals=None, parexprs=None,
+			modhostconnector=None,  # type: ModuleHostConnector
+	):
+		if parinfo.specialtype in ['node', 'node.v', 'node.a', 'node.t']:
+			nodetype = parinfo.specialtype
+		else:
+			nodetype = 'node'
+		ctrl = CreateFromTemplate(
+			template=self.ownerComp.op('node_selector'),
+			dest=dest, name=name, order=order, nodepos=nodepos,
+			parvals=mergedicts(
+				{
+					'Nodetype': nodetype,
+				},
+				parvals),
+			parexprs=parexprs)
+		field = ctrl.op('string')
+		valueexpr = modhostconnector.GetParExpr(parinfo.name) if modhostconnector else None
+		UpdateOP(
+			field,
+			parvals=mergedicts(
+				{'Label': parinfo.label},
+				parinfo.parts[0].default and {'Default1': parinfo.parts[0].default},
+				{'Type': 'string'}),
+			parexprs=mergedicts(
+				valueexpr and {'Value1': valueexpr},
+			))
+		celldat = field.par.Celldat.eval()
 		# TODO: workaround for bug with initial value not being loaded
 		par = modhostconnector.GetPar(name) if modhostconnector else None
 		if par is not None:
@@ -341,6 +379,16 @@ class UiBuilder:
 		elif parinfo.style == 'Str' and not parinfo.isnode:
 			# print('creating text field control for plain string {}'.format(parinfo))
 			ctrl = self.CreateParTextField(
+				dest=dest,
+				name=name,
+				parinfo=parinfo,
+				order=order,
+				nodepos=nodepos,
+				parvals=parvals,
+				parexprs=parexprs,
+				modhostconnector=modhostconnector)
+		elif parinfo.isnode:
+			ctrl = self.CreateParNodeSelector(
 				dest=dest,
 				name=name,
 				parinfo=parinfo,

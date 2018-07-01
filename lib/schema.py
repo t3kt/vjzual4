@@ -419,6 +419,7 @@ class DataNodeInfo(BaseDataObject):
 			video=None,
 			audio=None,
 			texbuf=None,
+			parentpath=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.name = name
@@ -427,6 +428,7 @@ class DataNodeInfo(BaseDataObject):
 		self.video = video
 		self.audio = audio
 		self.texbuf = texbuf
+		self.parentpath = parentpath
 
 	tablekeys = [
 		'path',
@@ -435,6 +437,7 @@ class DataNodeInfo(BaseDataObject):
 		'video',
 		'audio',
 		'texbuf',
+		'parentpath',
 	]
 
 	def ToJsonDict(self):
@@ -445,6 +448,7 @@ class DataNodeInfo(BaseDataObject):
 			'video': self.video,
 			'audio': self.audio,
 			'texbuf': self.texbuf,
+			'parentpath': self.parentpath,
 		}))
 
 class ModuleSchema(BaseDataObject):
@@ -523,6 +527,13 @@ class ModuleSchema(BaseDataObject):
 				if parschema:
 					params.append(parschema)
 			params.sort(key=attrgetter('pageindex', 'order'))
+		nodes = []
+		if modinfo.nodes:
+			for node in modinfo.nodes:
+				node = DataNodeInfo.FromJsonDict(node.ToJsonDict())
+				if not node.parentpath:
+					node.parentpath = modinfo.path
+				nodes.append(node)
 		return cls(
 			name=modinfo.name,
 			label=modinfo.label,
@@ -530,7 +541,7 @@ class ModuleSchema(BaseDataObject):
 			parentpath=modinfo.parentpath,
 			childmodpaths=list(modinfo.childmodpaths) if modinfo.childmodpaths else None,
 			params=params,
-			nodes=list(modinfo.nodes) if modinfo.nodes else None,
+			nodes=nodes,
 		)
 
 class AppSchema(BaseDataObject):
