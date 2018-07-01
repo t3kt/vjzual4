@@ -232,6 +232,7 @@ class ModuleProxyManager(common.ExtensionBase, common.ActionsExt):
 	def SetParamValue(self, modpath, name, value):
 		proxy = self.GetProxy(modpath)
 		if not proxy or not hasattr(proxy.par, name):
+			self._LogEvent('SetParamValue({!r}, {!r}, {!r}) - unable to find proxy parameter')
 			return
 		setattr(proxy.par, name, value)
 

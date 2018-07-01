@@ -7,6 +7,9 @@ def HandleDataNodeDrop(
 		selector,
 		dropName, xPos, yPos, index, totalDragged, dropExt, baseName, destPath):
 	print('HandleDataNodeDrop({!r})'.format(locals()))
+	targetpar = selector.par.Targetpar.eval()
+	if targetpar is None:
+		return
 	sourceparent = op(baseName)
 	if not sourceparent:
 		return
@@ -24,8 +27,4 @@ def HandleDataNodeDrop(
 		value = sourcenodemarker.par.Path.eval()
 	if not value:
 		return
-	field = selector.op('string')
-	celldat = field.par.Celldat.eval()
-	if not celldat:
-		return
-	celldat[0, 0] = value
+	targetpar.val = value

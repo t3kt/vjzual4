@@ -366,6 +366,6 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 	def HandleOscEvent(self, address, args):
 		if not self.Connected or ':' not in address or not args:
 			return
-		# self._LogEvent('HandleOscEvent({!r}, {!r})'.format(address, args))
+		self._LogEvent('HandleOscEvent({!r}, {!r})'.format(address, args))
 		modpath, name = address.split(':', maxsplit=1)
 		self.ProxyManager.SetParamValue(modpath, name, args[0])

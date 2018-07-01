@@ -271,32 +271,21 @@ class UiBuilder:
 			nodetype = parinfo.specialtype
 		else:
 			nodetype = 'node'
-		ctrl = CreateFromTemplate(
+		valueexpr = modhostconnector.GetParExpr(parinfo.name) if modhostconnector else None
+		return CreateFromTemplate(
 			template=self.ownerComp.op('node_selector'),
 			dest=dest, name=name, order=order, nodepos=nodepos,
 			parvals=mergedicts(
 				{
+					'Label': parinfo.label,
 					'Nodetype': nodetype,
 				},
 				parvals),
-			parexprs=parexprs)
-		field = ctrl.op('string')
-		valueexpr = modhostconnector.GetParExpr(parinfo.name) if modhostconnector else None
-		UpdateOP(
-			field,
-			parvals=mergedicts(
-				{'Label': parinfo.label},
-				parinfo.parts[0].default and {'Default1': parinfo.parts[0].default},
-				{'Type': 'string'}),
 			parexprs=mergedicts(
-				valueexpr and {'Value1': valueexpr},
-			))
-		celldat = field.par.Celldat.eval()
-		# TODO: workaround for bug with initial value not being loaded
-		par = modhostconnector.GetPar(name) if modhostconnector else None
-		if par is not None:
-			celldat[0, 0] = par.eval()
-		return ctrl
+				{
+					'Targetpar': valueexpr,
+				},
+				parexprs))
 
 	def CreateParControl(
 			self,
