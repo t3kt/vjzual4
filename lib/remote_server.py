@@ -207,7 +207,7 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 			# TODO: support having the core specify the sub-modules
 			submods = self._FindSubModules(module)
 			nodeops = self._FindDataNodes(module, modulecore)
-			parattrs = common.parseattrtable(trygetpar(modulecore, 'Parameters'))
+			parattrs = common.ParseAttrTable(trygetpar(modulecore, 'Parameters'))
 			modinfo = schema.RawModuleInfo(
 				path=modpath,
 				parentpath=module.parent().path,

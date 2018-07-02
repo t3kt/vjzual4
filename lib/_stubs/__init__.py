@@ -97,7 +97,8 @@ ParMode.CONSTANT = ParMode.EXPRESSION = ParMode.EXPORT = 0
 ExpandoStub = _Expando
 
 class Par:
-	pass
+	def eval(self):
+		return None
 
 OP = op
 
@@ -107,7 +108,7 @@ class DAT(OP):
 COMP = OP
 CHOP = OP
 
-baseCOMP = COMP
+baseCOMP = panelCOMP = COMP
 evaluateDAT = mergeDAT = nullDAT = parameterexecuteDAT = tableDAT = textDAT = scriptDAT = DAT
 parameterCHOP = nullCHOP = selectCHOP = CHOP
 

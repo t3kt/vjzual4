@@ -11,6 +11,7 @@ try:
 except ImportError:
 	common = mod.common
 cleandict, excludekeys, mergedicts = common.cleandict, common.excludekeys, common.mergedicts
+trygetdictval = common.trygetdictval
 BaseDataObject = common.BaseDataObject
 
 
@@ -232,15 +233,18 @@ class ParamPartSchema(BaseDataObject):
 		}))
 
 	@classmethod
-	def FromRawParamInfo(cls, part: RawParamInfo):
+	def FromRawParamInfo(cls, part: RawParamInfo, attrs: Dict[str, str] = None):
 		ismenu = part.style in ('Menu', 'StrMenu')
+		valueparser = None
+		if part.style in ('Float', 'Int', 'UV', 'UVW', 'XY', 'XYZ', 'RGB', 'RGBA', 'Toggle'):
+			valueparser = float
 		return cls(
 			name=part.name,
-			default=part.default,
-			minnorm=part.minnorm,
-			maxnorm=part.maxnorm,
-			minlimit=part.minlimit,
-			maxlimit=part.maxlimit,
+			default=trygetdictval(attrs, 'default', parse=valueparser, default=part.default),
+			minnorm=trygetdictval(attrs, 'minnorm', 'normmin', 'normMin', parse=float, default=part.minnorm),
+			maxnorm=trygetdictval(attrs, 'maxnorm', 'normmax', 'normMax', parse=float, default=part.maxnorm),
+			minlimit=trygetdictval(attrs, 'minlimit', 'min', parse=float, default=part.minlimit),
+			maxlimit=trygetdictval(attrs, 'maxlimit', 'max', parse=float, default=part.maxlimit),
 			menunames=part.menunames if ismenu else None,
 			menulabels=part.menulabels if ismenu else None,
 		)
@@ -269,6 +273,7 @@ class ParamSchema(BaseDataObject):
 			advanced=False,
 			specialtype=None,
 			mappable=True,
+			helptext=None,
 			parts=None,  # type: List[ParamPartSchema]
 			**otherattrs):
 		super().__init__(**otherattrs)
@@ -284,6 +289,7 @@ class ParamSchema(BaseDataObject):
 		self.specialtype = specialtype or ''
 		self.isnode = specialtype and specialtype.startswith('node')
 		self.mappable = mappable and not self.isnode
+		self.helptext = helptext
 
 	tablekeys = [
 		'name',
@@ -297,6 +303,7 @@ class ParamSchema(BaseDataObject):
 		'specialtype',
 		'isnode',
 		'mappable',
+		'helptext',
 	]
 
 	def ToJsonDict(self):
@@ -312,6 +319,7 @@ class ParamSchema(BaseDataObject):
 			'specialtype': self.specialtype,
 			'isnode': self.isnode,
 			'mappable': self.mappable,
+			'helptext': self.helptext,
 			'parts': BaseDataObject.ToJsonDicts(self.parts),
 		}))
 
@@ -407,6 +415,7 @@ class ParamSchema(BaseDataObject):
 			advanced=advanced,
 			specialtype=specialtype,
 			mappable=mappable,
+			helptext=attrs.get('helptext') or attrs.get('help'),
 			parts=[ParamPartSchema.FromRawParamInfo(part) for part in partuplet],
 		)
 
