@@ -364,7 +364,7 @@ def UpdateAttrTable(dat, attrs: Dict, clear=False):
 		dat.clear()
 	if not attrs:
 		return
-	for rowkey, rowattrs in {}.items():
+	for rowkey, rowattrs in attrs.items():
 		if not rowkey or not rowattrs:
 			continue
 		for k, v in rowattrs.items():

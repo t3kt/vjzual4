@@ -65,10 +65,12 @@ def ApplySettings(comp: 'OP', settings: ModuleSettings):
 			baseCOMP,
 			dest=comp,
 			name='module_settings',
-			nodepos=[-300, -300])
+			nodepos=[-800, 800])
 	parattrsdat = GetOrCreateOP(
 		tableDAT,
 		dest=settingscomp,
 		name='parameter_metadata',
 		nodepos=[0, -100])
-	UpdateAttrTable(parattrsdat, settings.parattrs, clear=True)
+	parattrsdat.clear()
+	parattrsdat.appendRow(['name'])
+	UpdateAttrTable(parattrsdat, settings.parattrs, clear=False)

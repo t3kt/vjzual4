@@ -31,7 +31,8 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 				'Attachmodule': self.AttachModule,
 				'Detachmodule': self.DetachModule,
 				'Updatemodulemetadata': lambda: self.UpdateModuleMetadata(),
-				'Adaptvjz3module': lambda: self.AdaptVjz3Module(),
+				'Adaptvjz3module': lambda: self.AdaptVjz3Module(destructive=False),
+				'Adaptvjz3moduledestructive': lambda: self.AdaptVjz3Module(destructive=True),
 				'Savemoduletox': lambda: self.SaveModuleTox(),
 			},
 			autoinitparexec=True)
@@ -90,27 +91,29 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 		finally:
 			self._LogEnd()
 
-	def AdaptVjz3Module(self):
+	def AdaptVjz3Module(self, destructive=False):
 		module = self.Module
-		self._LogBegin('AdaptVjz3Module({})'.format(module))
+		self._LogBegin('AdaptVjz3Module({}, destructive={})'.format(module, destructive))
 		try:
 			if not module:
 				return
 			settings = module_settings.ExtractSettings(module)
-			module.par.promoteextension1 = False
-			module.par.extname1 = ''
-			module.par.extension1 = ''
-			module.initializeExtensions()
+			if destructive:
+				module.par.promoteextension1 = False
+				module.par.extname1 = ''
+				module.par.extension1 = ''
+				module.initializeExtensions()
 			self.UpdateModuleMetadata(
 				description=common.trygetpar(module, 'Compdescription', 'Modname'))
 			page = module.appendCustomPage('Module')
 			page.appendStr('Uilabel', label=':UI Label')
 			page.appendToggle('Bypass')
 			page.appendPulse('Resetstate', label=':Reset State')
-			for par in module.pars('Solo', 'Collapsed', 'Uimode', 'Showadvanced', 'Showviewers'):
-				par.destroy()
-			if 'tmod' in module.tags:
-				module.tags.remove('tmod')
+			if destructive:
+				for par in module.pars('Solo', 'Collapsed', 'Uimode', 'Showadvanced', 'Showviewers'):
+					par.destroy()
+				if 'tmod' in module.tags:
+					module.tags.remove('tmod')
 			module.tags.add('vjzmod4')
 			shell = module.op('shell')
 			parmetadat = shell.par.Parammetaoverrides.eval() if shell else None
@@ -118,15 +121,21 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 				settings.parattrs = common.ParseAttrTable(parmetadat)
 			ignorectrls = ('shell', 'body_panel', 'controls_panel')
 			extractor = _Vjz3ParAttrExtractor(self, settings)
-			for ctrl in module.findChildren(type=panelCOMP, maxDepth=1):
+			destroyops = module.ops('shell', 'body_panel', 'controls_panel')
+			for ctrl in module.ops('*'):
+				if not ctrl.isPanel:
+					continue
 				if ctrl.name in ignorectrls:
 					continue
-				extractor.ExtractFromControl(ctrl)
+				if extractor.ExtractFromControl(ctrl):
+					destroyops.append(ctrl)
 
-			# for o in module.ops('shell', 'body_panel', 'controls_panel'):
-			# 	o.destroy()
-
+			self._LogEvent('Applying settings: {}'.format(settings))
 			module_settings.ApplySettings(module, settings)
+
+			if destructive:
+				for o in destroyops:
+					o.destroy()
 		finally:
 			self._LogEnd()
 
@@ -145,7 +154,7 @@ class _Vjz3ParAttrExtractor:
 		self._LogEvent = editor._LogEvent
 
 	def ExtractFromControl(self, ctrl):
-		self._LogBegin('extractFromControl({})'.format(ctrl))
+		self._LogBegin('ExtractFromControl({})'.format(ctrl))
 		try:
 			par = None
 			if hasattr(ctrl.par, 'Value1'):
@@ -157,9 +166,10 @@ class _Vjz3ParAttrExtractor:
 
 			if par is None:
 				self._LogEvent('Unable to extract par from control {}'.format(ctrl))
-				return
+				return False
 
 			self._ExtractCommonAttrs(ctrl, par)
+			return True
 		finally:
 			self._LogEnd()
 
@@ -226,8 +236,8 @@ class _Vjz3ParAttrExtractor:
 		self._SetParAttrs(par.name, attrs)
 		return par
 
-	def _SetParAttrs(self, parname, attrs):
-		self.settings.SetParAttrs(parname, attrs, clear=False, overwrite=False)
+	def _SetParAttrs(self, parname, attrs, overwrite=False):
+		self.settings.SetParAttrs(parname, attrs, clear=False, overwrite=overwrite)
 
 	def _GetValueParRef(self, valuepar):
 		if valuepar is None or not valuepar.expr:
@@ -236,13 +246,26 @@ class _Vjz3ParAttrExtractor:
 		return getattr(self.module.par, parname, None) if parname else None
 
 	def _ExtractCommonAttrs(self, ctrl, par):
-		if ctrl.python:
-			pass
-		else:
-			pass
+		parname = par.tupletName
 		ctrlparent = ctrl.panelParent()
+		hasadvanced = self._HasAdvancedDisplayExpr(ctrl)
+		if hasadvanced is None and ctrlparent and ctrlparent != self.module and ctrlparent.name != 'controls_panel':
+			hasadvanced = self._HasAdvancedDisplayExpr(ctrlparent)
+		if hasadvanced is not None:
+			self._SetParAttrs(parname, {'advanced': int(hasadvanced)}, overwrite=True)
 
-		pass
+	@staticmethod
+	def _HasAdvancedDisplayExpr(ctrl):
+		if not ctrl or not hasattr(ctrl.par, 'display'):
+			return None
+		displaypar = ctrl.par.display
+		expr = ctrl.par.display.expr
+		if displaypar.mode != ParMode.EXPRESSION or not expr:
+			return None
+		if ctrl.python:
+			if 'parent.tmod.par.Showadvanced' in expr or 'parent().par.Showadvanced' in expr:
+				return True
+		return False
 
 def _ExtractIfPrefixed(expr, *prefixes):
 	if not expr:
