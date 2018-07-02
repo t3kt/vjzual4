@@ -80,9 +80,9 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 				return
 			toxfilepar = module.par.externaltox
 			toxfile = toxfilepar.eval()
-			if not toxfile.expr:
+			if not toxfilepar.expr or "var('shelldir')" in toxfilepar.expr or 'var("shelldir")' in toxfilepar.expr:
 				toxfile = 'modules/{}.tox'.format(module.name)
-				toxfile.expr = '({!r} if mod.os.path.exists({!r}) else None) or ""'.format(toxfile, toxfile)
+				toxfilepar.expr = '({!r} if (mod.os.path.exists({!r}) and me.par.clone.eval() in (None, me)) else None) or ""'.format(toxfile, toxfile)
 			if not toxfile:
 				self._LogEvent('No associated tox file')
 				return
@@ -103,8 +103,9 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 				module.par.extname1 = ''
 				module.par.extension1 = ''
 				module.initializeExtensions()
+				module.par.clone.expr = 'op({!r}) or ""'.format(module.path)
 			self.UpdateModuleMetadata(
-				description=common.trygetpar(module, 'Compdescription', 'Modname'))
+				description=common.trygetpar(module, 'Compdescription', 'Uilabel'))
 			page = module.appendCustomPage('Module')
 			page.appendStr('Uilabel', label=':UI Label')
 			page.appendToggle('Bypass')
