@@ -160,13 +160,15 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			uibuilder = self.UiBuilder
 			if not self.AppSchema or not uibuilder:
 				return
+			body = dest.op('body_panel')
 			for i, nodeinfo in enumerate(self.AppSchema.nodes):
 				uibuilder.CreateNodeMarker(
 					dest=dest,
 					name='node__{}'.format(i),
 					nodeinfo=nodeinfo,
 					order=i,
-					nodepos=[100, -200 * i])
+					nodepos=[100, -200 * i],
+					panelparent=body)
 		finally:
 			self._LogEnd()
 

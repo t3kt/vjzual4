@@ -354,6 +354,7 @@ def UpdateOP(
 		order=None,
 		nodepos=None,
 		tags=None,
+		panelparent=None,
 		parvals=None,
 		parexprs=None):
 	if parvals:
@@ -369,6 +370,8 @@ def UpdateOP(
 		comp.nodeCenterY = nodepos[1]
 	if tags:
 		comp.tags.update(tags)
+	if panelparent:
+		panelparent.outputCOMPConnectors[0].connect(comp)
 
 def _ResolveDest(dest):
 	deststr = str(dest)
@@ -384,12 +387,13 @@ def CreateFromTemplate(
 		order=None,
 		nodepos=None,
 		tags=None,
+		panelparent=None,
 		parvals=None,
 		parexprs=None):
 	dest = _ResolveDest(dest)
 	comp = dest.copy(template, name=name)
 	UpdateOP(
-		comp=comp, order=order, nodepos=nodepos,
+		comp=comp, order=order, nodepos=nodepos, panelparent=panelparent,
 		tags=tags, parvals=parvals, parexprs=parexprs)
 	return comp
 
@@ -400,12 +404,13 @@ def CreateOP(
 		order=None,
 		nodepos=None,
 		tags=None,
+		panelparent=None,
 		parvals=None,
 		parexprs=None):
 	dest = _ResolveDest(dest)
 	comp = dest.create(optype, name)
 	UpdateOP(
-		comp=comp, order=order, nodepos=nodepos,
+		comp=comp, order=order, nodepos=nodepos, panelparent=panelparent,
 		tags=tags, parvals=parvals, parexprs=parexprs)
 	return comp
 

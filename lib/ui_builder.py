@@ -420,12 +420,12 @@ class UiBuilder:
 			dest,
 			name,
 			control,  # type: devices.ControlInfo
-			order=None, nodepos=None, parvals=None, parexprs=None):
+			panelparent=None, order=None, nodepos=None, parvals=None, parexprs=None):
 		return CreateFromTemplate(
 			template=self.ownerComp.op('control_marker'),
 			dest=dest,
 			name=name,
-			order=order, nodepos=nodepos,
+			order=order, nodepos=nodepos, panelparent=panelparent,
 			parvals=mergedicts(
 				{
 					'Name': control.name,
@@ -442,12 +442,12 @@ class UiBuilder:
 			dest,
 			name,
 			nodeinfo,  # type: schema.DataNodeInfo
-			order=None, nodepos=None, parvals=None, parexprs=None):
+			panelparent=None, order=None, nodepos=None, parvals=None, parexprs=None):
 		return CreateFromTemplate(
 			template=self.ownerComp.op('node_marker'),
 			dest=dest,
 			name=name,
-			order=order, nodepos=nodepos,
+			order=order, nodepos=nodepos, panelparent=panelparent,
 			parvals=mergedicts(
 				{
 					'Name': nodeinfo.name,
