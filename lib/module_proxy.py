@@ -119,13 +119,26 @@ class ModuleProxyManager(common.ExtensionBase, common.ActionsExt):
 				for param in params
 				if param.pagename == pagename
 			])
+		nontextnames = []
+		textnames = []
+		textstyles = ('Str', 'StrMenu', 'TOP', 'CHOP', 'DAT', 'OP', 'COMP', 'PanelCOMP')
+		for param in params:
+			if param.isnode or param.style in textstyles:
+				textnames.append(param.parts[0].name)
+			else:
+				for part in param.parts:
+					nontextnames.append(part.name)
 		pargetter = CreateOP(
 			parameterCHOP,
 			dest=proxycomp,
 			name='__get_pars',
 			nodepos=[-600, 0],
-			parvals={'renameto': modschema.path + ':*'}
-		)
+			parvals={
+				'parameters': ' '.join(nontextnames),
+				'renameto': modschema.path + ':*',
+				'custom': True,
+				'builtin': False,
+			})
 		ownparvals = CreateOP(
 			nullCHOP,
 			dest=proxycomp,
@@ -146,6 +159,40 @@ class ModuleProxyManager(common.ExtensionBase, common.ActionsExt):
 			name='__par_vals',
 			nodepos=[-200, -50])
 		parvals.inputConnectors[0].connect(paraggregator)
+
+		textpargetterexprs = CreateOP(
+			tableDAT,
+			dest=proxycomp,
+			name='__text_par_exprs',
+			nodepos=[-600, -200])
+		textpargetterexprs.clear()
+		for name in textnames:
+			textpargetterexprs.appendRow(
+				[
+					repr(modschema.path + ':' + name),
+					'op({!r}).par.{}'.format(proxycomp.path, name)
+				])
+		textpargettereval = CreateOP(
+			evaluateDAT,
+			dest=proxycomp,
+			name='__own_text_par_vals',
+			nodepos=[-400, -200])
+		textpargettereval.inputConnectors[0].connect(textpargetterexprs)
+		textparaggregator = CreateOP(
+			mergeDAT,
+			dest=proxycomp,
+			name='__aggregate_text_pars',
+			nodepos=[-600, -300],
+			parvals={
+				'dat': '__own_text_par_vals */__text_par_vals',
+			})
+		textparvals = CreateOP(
+			nullDAT,
+			dest=proxycomp,
+			name='__text_par_vals',
+			nodepos=[-200, -250])
+		textparvals.inputConnectors[0].connect(textparaggregator)
+
 		proxycomp.componentCloneImmune = True
 		return proxycomp
 
@@ -155,6 +202,8 @@ class ModuleProxyManager(common.ExtensionBase, common.ActionsExt):
 		appendkwargs = {}
 		if style in ('Float', 'Int') and len(param.parts) > 1:
 			appendkwargs['size'] = len(param.parts)
+		elif style in ('TOP', 'CHOP', 'DAT', 'OP', 'COMP', 'PanelCOMP'):
+			style = 'Str'
 		appendmethod = getattr(page, 'append' + style, None)
 		if not appendmethod:
 			self._LogEvent('_AddParam(mod: {}, param: {}) - unsupported style: {}'.format(
@@ -173,9 +222,9 @@ class ModuleProxyManager(common.ExtensionBase, common.ActionsExt):
 					par.max = part.maxlimit
 				par.default = part.default
 				par.normMin, par.normMax = part.minnorm, part.maxnorm
-		if style in ('Toggle', 'Str'):
+		elif style in ('Toggle', 'Str'):
 			partuplet[0].default = param.parts[0].default
-		if style in ('Menu', 'StrMenu'):
+		elif style in ('Menu', 'StrMenu'):
 			partuplet[0].default = param.parts[0].default
 			partuplet[0].menuNames = param.parts[0].menunames
 			partuplet[0].menuLabels = param.parts[0].menulabels
@@ -183,6 +232,7 @@ class ModuleProxyManager(common.ExtensionBase, common.ActionsExt):
 	def SetParamValue(self, modpath, name, value):
 		proxy = self.GetProxy(modpath)
 		if not proxy or not hasattr(proxy.par, name):
+			self._LogEvent('SetParamValue({!r}, {!r}, {!r}) - unable to find proxy parameter')
 			return
 		setattr(proxy.par, name, value)
 

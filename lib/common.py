@@ -1,5 +1,5 @@
 import datetime
-from typing import Callable, List
+from typing import Callable, Dict, List, Iterable
 
 print('vjz4/common.py loading')
 
@@ -354,6 +354,7 @@ def UpdateOP(
 		order=None,
 		nodepos=None,
 		tags=None,
+		panelparent=None,
 		parvals=None,
 		parexprs=None):
 	if parvals:
@@ -369,6 +370,8 @@ def UpdateOP(
 		comp.nodeCenterY = nodepos[1]
 	if tags:
 		comp.tags.update(tags)
+	if panelparent:
+		panelparent.outputCOMPConnectors[0].connect(comp)
 
 def _ResolveDest(dest):
 	deststr = str(dest)
@@ -384,12 +387,13 @@ def CreateFromTemplate(
 		order=None,
 		nodepos=None,
 		tags=None,
+		panelparent=None,
 		parvals=None,
 		parexprs=None):
 	dest = _ResolveDest(dest)
 	comp = dest.copy(template, name=name)
 	UpdateOP(
-		comp=comp, order=order, nodepos=nodepos,
+		comp=comp, order=order, nodepos=nodepos, panelparent=panelparent,
 		tags=tags, parvals=parvals, parexprs=parexprs)
 	return comp
 
@@ -400,11 +404,45 @@ def CreateOP(
 		order=None,
 		nodepos=None,
 		tags=None,
+		panelparent=None,
 		parvals=None,
 		parexprs=None):
 	dest = _ResolveDest(dest)
 	comp = dest.create(optype, name)
 	UpdateOP(
-		comp=comp, order=order, nodepos=nodepos,
+		comp=comp, order=order, nodepos=nodepos, panelparent=panelparent,
 		tags=tags, parvals=parvals, parexprs=parexprs)
 	return comp
+
+class BaseDataObject:
+	def __init__(self, **otherattrs):
+		self.otherattrs = otherattrs
+
+	def ToJsonDict(self) -> dict:
+		raise NotImplementedError()
+
+	def __repr__(self):
+		return '{}({!r})'.format(self.__class__.__name__, self.ToJsonDict())
+
+	@classmethod
+	def FromJsonDict(cls, obj):
+		return cls(**obj)
+
+	@classmethod
+	def FromJsonDicts(cls, objs: List[Dict]):
+		return [cls.FromJsonDict(obj) for obj in objs] if objs else []
+
+	@classmethod
+	def ToJsonDicts(cls, nodes: 'Iterable[BaseDataObject]'):
+		return [n.ToJsonDict() for n in nodes] if nodes else []
+
+	def AddToTable(self, dat, attrs=None):
+		obj = self.ToJsonDict()
+		attrs = mergedicts(obj, attrs)
+		vals = []
+		for col in dat.row(0):
+			val = attrs.get(col.val, '')
+			if isinstance(val, bool):
+				val = 1 if val else 0
+			vals.append(val)
+		dat.appendRow(vals)

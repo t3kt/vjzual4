@@ -17,6 +17,10 @@ try:
 except ImportError:
 	schema = mod.schema
 
+try:
+	import devices
+except ImportError:
+	devices = mod.devices
 
 class UiBuilder:
 	def __init__(self, ownerComp):
@@ -243,7 +247,7 @@ class UiBuilder:
 			name=name,
 			label=parinfo.label,
 			fieldtype='string',
-			valueexpr=modhostconnector.GetParExpr(name) if modhostconnector else None,
+			valueexpr=modhostconnector.GetParExpr(parinfo.name) if modhostconnector else None,
 			defval=parinfo.parts[0].default,
 			order=order,
 			nodepos=nodepos,
@@ -256,6 +260,33 @@ class UiBuilder:
 			celldat[0, 0] = par.eval()
 		return ctrl
 
+	def CreateParNodeSelector(
+			self, dest, name,
+			parinfo,  # type: schema.ParamSchema
+			order=None, nodepos=None,
+			parvals=None, parexprs=None,
+			modhostconnector=None,  # type: ModuleHostConnector
+	):
+		if parinfo.specialtype in ['node', 'node.v', 'node.a', 'node.t']:
+			nodetype = parinfo.specialtype
+		else:
+			nodetype = 'node'
+		valueexpr = modhostconnector.GetParExpr(parinfo.name) if modhostconnector else None
+		return CreateFromTemplate(
+			template=self.ownerComp.op('node_selector'),
+			dest=dest, name=name, order=order, nodepos=nodepos,
+			parvals=mergedicts(
+				{
+					'Label': parinfo.label,
+					'Nodetype': nodetype,
+				},
+				parvals),
+			parexprs=mergedicts(
+				{
+					'Targetpar': valueexpr,
+				},
+				parexprs))
+
 	def CreateParControl(
 			self,
 			dest,
@@ -266,7 +297,8 @@ class UiBuilder:
 			parvals=None,
 			parexprs=None,
 			addtocontrolmap=None,
-			modhostconnector=None):
+			modhostconnector=None  # type: ModuleHostConnector
+	):
 
 		def _register(ctrlop):
 			if addtocontrolmap is not None:
@@ -344,6 +376,16 @@ class UiBuilder:
 				parvals=parvals,
 				parexprs=parexprs,
 				modhostconnector=modhostconnector)
+		elif parinfo.isnode:
+			ctrl = self.CreateParNodeSelector(
+				dest=dest,
+				name=name,
+				parinfo=parinfo,
+				order=order,
+				nodepos=nodepos,
+				parvals=parvals,
+				parexprs=parexprs,
+				modhostconnector=modhostconnector)
 		else:
 			print('Unsupported par style: {!r})'.format(parinfo))
 			return None
@@ -369,6 +411,52 @@ class UiBuilder:
 				{
 					'Param': paramname,
 					'Controltype': ctrltype,
+				},
+				parvals),
+			parexprs=parexprs)
+
+	def CreateControlMarker(
+			self,
+			dest,
+			name,
+			control,  # type: devices.ControlInfo
+			panelparent=None, order=None, nodepos=None, parvals=None, parexprs=None):
+		return CreateFromTemplate(
+			template=self.ownerComp.op('control_marker'),
+			dest=dest,
+			name=name,
+			order=order, nodepos=nodepos, panelparent=panelparent,
+			parvals=mergedicts(
+				{
+					'Name': control.name,
+					'Fullname': control.fullname,
+					'Ctrltype': control.ctrltype or 'slider',
+					'Inputcc': control.inputcc if control.inputcc is not None else -1,
+					'Outputcc': control.outputcc if control.outputcc is not None else -1,
+				},
+				parvals),
+			parexprs=parexprs)
+
+	def CreateNodeMarker(
+			self,
+			dest,
+			name,
+			nodeinfo,  # type: schema.DataNodeInfo
+			panelparent=None, order=None, nodepos=None, parvals=None, parexprs=None):
+		return CreateFromTemplate(
+			template=self.ownerComp.op('node_marker'),
+			dest=dest,
+			name=name,
+			order=order, nodepos=nodepos, panelparent=panelparent,
+			parvals=mergedicts(
+				{
+					'Name': nodeinfo.name,
+					'Label': nodeinfo.label,
+					'Path': nodeinfo.path,
+					'Video': nodeinfo.video,
+					'Audio': nodeinfo.audio,
+					'Texbuf': nodeinfo.texbuf,
+					'h': 30,
 				},
 				parvals),
 			parexprs=parexprs)

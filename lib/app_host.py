@@ -6,6 +6,7 @@ print('vjz4/app_host.py loading')
 if False:
 	from _stubs import *
 	from _stubs.PopDialogExt import PopDialogExt
+	from ui_builder import UiBuilder
 
 try:
 	import common
@@ -61,6 +62,11 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			self.AppSchema = appschema
 			self.ownerComp.op('schema_json').clear()
 			self._BuildSubModuleHosts()
+			self.AddTaskBatch(
+				[
+					lambda: self._BuildNodeMarkers(),
+				],
+				autostart=True)
 		finally:
 			self._LogEnd()
 
@@ -68,6 +74,8 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		self._LogEvent('OnDetach()')
 		for o in self.ownerComp.ops('schema_json', 'app_info', 'modules', 'params', 'param_parts', 'data_nodes'):
 			o.closeViewer()
+		for o in self.ownerComp.ops('nodes/node__*'):
+			o.destroy()
 		self.AppSchema = None
 
 	def OnTDPreSave(self):
@@ -75,15 +83,19 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			o.destroy()
 
 	@property
-	def _SubModuleHosts(self) -> List[module_host.ModuleHostBase]:
-		return self.ownerComp.ops('modules_panel/mod__*')
-
-	@property
 	def _ModuleHostTemplate(self):
 		template = self.ownerComp.par.Modulehosttemplate.eval()
 		if not template and hasattr(op, 'Vjz4'):
 			template = op.Vjz4.op('./module_host')
 		return template
+
+	@property
+	def UiBuilder(self):
+		uibuilder = self.ownerComp.par.Uibuilder.eval()  # type: UiBuilder
+		if uibuilder:
+			return uibuilder
+		if hasattr(op, 'UiBuilder'):
+			return op.UiBuilder
 
 	def _BuildSubModuleHosts(self):
 		self._LogBegin('_BuildSubModuleHosts()')
@@ -139,9 +151,31 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		finally:
 			self._LogEnd()
 
-	def _GetMenuItems(self, name):
+	def _BuildNodeMarkers(self):
+		self._LogBegin('_BuildNodeMarkers()')
+		try:
+			dest = self.ownerComp.op('nodes')
+			for marker in dest.ops('node__*'):
+				marker.destroy()
+			uibuilder = self.UiBuilder
+			if not self.AppSchema or not uibuilder:
+				return
+			body = dest.op('body_panel')
+			for i, nodeinfo in enumerate(self.AppSchema.nodes):
+				uibuilder.CreateNodeMarker(
+					dest=dest,
+					name='node__{}'.format(i),
+					nodeinfo=nodeinfo,
+					order=i,
+					nodepos=[100, -200 * i],
+					panelparent=body)
+		finally:
+			self._LogEnd()
+
+	def OnMenuClick(self, button):
+		name = button.name
 		if name == 'app_menu':
-			return [
+			items = [
 				menu.Item(
 					'Connect',
 					callback=lambda: self.ShowConnectDialog()),
@@ -150,12 +184,25 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 					callback=lambda: self._Disconnect())
 			]
 		elif name == 'view_menu':
+			def _uimodeItem(text, par, mode):
+				return menu.Item(
+					text,
+					checked=par == mode,
+					callback=lambda: setattr(par, 'val', mode))
+			sidemodepar = self.ownerComp.par.Sidepanelmode
+			items = [
+				_uimodeItem(label, sidemodepar, name)
+				for name, label in zip(
+					sidemodepar.menuNames,
+					sidemodepar.menuLabels)
+			]
+		elif name == 'debug_menu':
 			def _viewItem(text, oppath):
 				return menu.Item(
 					text,
 					disabled=not self.AppSchema,
 					callback=lambda: self.ownerComp.op(oppath).openViewer(unique=True))
-			return [
+			items = [
 				menu.Item(
 					'App Schema',
 					disabled=not self.AppSchema,
@@ -166,10 +213,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 				_viewItem('Param Parts', 'param_parts'),
 				_viewItem('Data Nodes', 'data_nodes'),
 			]
-
-	def OnMenuClick(self, button):
+		else:
+			return
 		menu.fromButton(button, h='Left', v='Bottom').Show(
-			items=self._GetMenuItems(button.name),
+			items=items,
 			autoClose=True)
 
 	def ShowAppSchema(self):
