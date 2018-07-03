@@ -187,23 +187,24 @@ class _Vjz3ParAttrExtractor:
 		par = self._GetValueParRef(ctrl.par.Value1)
 		if par is None:
 			return
+		suffix = str(par.vecIndex + 1) if par.name != par.tupletName else ''
 		attrs = {
-			'help': trygetpar(ctrl, 'Help'),
-			'label': trygetpar(ctrl, 'Label'),
-			'default': trygetpar(ctrl, 'Default1'),
+			'help' + suffix: trygetpar(ctrl, 'Help'),
+			'label' + suffix: trygetpar(ctrl, 'Label'),
+			'default' + suffix: trygetpar(ctrl, 'Default1'),
 		}
 		rangelow = getattr(ctrl.par, 'Rangelow1', None)
 		rangehigh = getattr(ctrl.par, 'Rangehigh1', None)
 		if rangelow is not None:
 			if getattr(ctrl.par, 'Clamplow1', None):
-				attrs['minlimit'] = rangelow.eval()
+				attrs['minlimit' + suffix] = rangelow.eval()
 			else:
-				attrs['minnorm'] = rangelow.eval()
+				attrs['minnorm' + suffix] = rangelow.eval()
 		if rangehigh is not None:
 			if getattr(ctrl.par, 'Clamphigh1', None):
-				attrs['maxlimit'] = rangehigh.eval()
+				attrs['maxlimit' + suffix] = rangehigh.eval()
 			else:
-				attrs['maxnorm'] = rangehigh.eval()
+				attrs['maxnorm' + suffix] = rangehigh.eval()
 		self._SetParAttrs(par.tupletName, attrs)
 		return par
 
@@ -211,9 +212,10 @@ class _Vjz3ParAttrExtractor:
 		par = self._GetParByTargetAndName(ctrl, targetop=ctrl.par.Targetop.eval(), parname=ctrl.par.Targetpar.eval())
 		if par is None:
 			return None
+		suffix = str(par.vecIndex + 1) if par.name != par.tupletName else ''
 		attrs = {
-			'help': trygetpar(ctrl, 'Help'),
-			'label': trygetpar(ctrl, 'Label'),
+			'help' + suffix: trygetpar(ctrl, 'Help'),
+			'label' + suffix: trygetpar(ctrl, 'Label'),
 		}
 		self._SetParAttrs(par.tupletName, attrs)
 		return par

@@ -191,6 +191,7 @@ class ParamPartSchema(BaseDataObject):
 	def __init__(
 			self,
 			name,
+			label=None,
 			default=None,
 			minnorm=0,
 			maxnorm=1,
@@ -198,36 +199,41 @@ class ParamPartSchema(BaseDataObject):
 			maxlimit=None,
 			menunames=None,
 			menulabels=None,
+			helptext=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.name = name
+		self.label = label
 		self.default = default
 		self.minnorm = minnorm
 		self.maxnorm = maxnorm
 		self.minlimit = minlimit
 		self.maxlimit = maxlimit
+		self.helptext = helptext
 		self.menunames = menunames
 		self.menulabels = menulabels
 
 	tablekeys = [
 		'name',
+		'label',
 		'minlimit',
 		'maxlimit',
 		'minnorm',
 		'maxnorm',
 		'default',
-		'menunames',
-		'menulabels',
+		'helptext',
 	]
 
 	def ToJsonDict(self):
 		return cleandict(mergedicts(self.otherattrs, {
 			'name': self.name,
+			'label': self.label,
 			'minlimit': self.minlimit,
 			'maxlimit': self.maxlimit,
 			'minnorm': self.minnorm,
 			'maxnorm': self.maxnorm,
 			'default': self.default,
+			'helptext': self.helptext,
 			'menunames': self.menunames,
 			'menulabels': self.menulabels,
 		}))
@@ -238,13 +244,22 @@ class ParamPartSchema(BaseDataObject):
 		valueparser = None
 		if part.style in ('Float', 'Int', 'UV', 'UVW', 'XY', 'XYZ', 'RGB', 'RGBA', 'Toggle'):
 			valueparser = float
+		suffix = str(part.vecindex + 1) if part.name != part.tupletname else ''
+
+		def getpartattr(*keys: str, parse=None, default=None):
+			if suffix:
+				keys = [k + suffix for k in keys]
+			return trygetdictval(attrs, *keys, default=default, parse=parse)
+
 		return cls(
 			name=part.name,
-			default=trygetdictval(attrs, 'default', parse=valueparser, default=part.default),
-			minnorm=trygetdictval(attrs, 'minnorm', 'normmin', 'normMin', parse=float, default=part.minnorm),
-			maxnorm=trygetdictval(attrs, 'maxnorm', 'normmax', 'normMax', parse=float, default=part.maxnorm),
-			minlimit=trygetdictval(attrs, 'minlimit', 'min', parse=float, default=part.minlimit),
-			maxlimit=trygetdictval(attrs, 'maxlimit', 'max', parse=float, default=part.maxlimit),
+			label=getpartattr('label', default=part.label),
+			default=getpartattr('default', parse=valueparser, default=part.default),
+			minnorm=getpartattr('minnorm', 'normmin', 'normMin', parse=float, default=part.minnorm),
+			maxnorm=getpartattr('maxnorm', 'normmax', 'normMax', parse=float, default=part.maxnorm),
+			minlimit=getpartattr('minlimit', 'min', parse=float, default=part.minlimit),
+			maxlimit=getpartattr('maxlimit', 'max', parse=float, default=part.maxlimit),
+			helptext=getpartattr('helptext', 'help', parse=str),
 			menunames=part.menunames if ismenu else None,
 			menulabels=part.menulabels if ismenu else None,
 		)
@@ -415,7 +430,7 @@ class ParamSchema(BaseDataObject):
 			advanced=advanced,
 			specialtype=specialtype,
 			mappable=mappable,
-			helptext=attrs.get('helptext') or attrs.get('help'),
+			helptext=trygetdictval(attrs, 'helptext', 'help', parse=str),
 			parts=[ParamPartSchema.FromRawParamInfo(part) for part in partuplet],
 		)
 

@@ -73,4 +73,5 @@ def ApplySettings(comp: 'OP', settings: ModuleSettings):
 		nodepos=[0, -100])
 	parattrsdat.clear()
 	parattrsdat.appendRow(['name'])
+	settingscomp.par.opviewer = './parameter_metadata'
 	UpdateAttrTable(parattrsdat, settings.parattrs, clear=False)
