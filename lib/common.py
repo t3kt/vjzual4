@@ -463,12 +463,14 @@ def GetOrCreateOP(
 			parexprs=parexprs)
 	return comp
 
-def AddOrUpdatePar(appendmethod, name, label, value=None, expr=None):
+def AddOrUpdatePar(appendmethod, name, label, value=None, expr=None, readonly=None):
 	p = appendmethod(name, label=label)[0]
 	if expr is not None:
 		p.expr = expr
 	elif value is not None:
 		p.val = value
+	if readonly is not None:
+		p.readOnly = readonly
 	return p
 
 class BaseDataObject:

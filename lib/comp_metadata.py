@@ -17,10 +17,10 @@ def UpdateCompMetadata(
 		author='tekt@optexture.com'):
 	page = comp.appendCustomPage(':meta')
 	_makeLastPage(comp, page)
-	AddOrUpdatePar(page.appendStr, 'Compdescription', 'Description', description)
-	AddOrUpdatePar(page.appendInt, 'Compversion', 'Version', version)
-	AddOrUpdatePar(page.appendStr, 'Compwebsite', 'Website', website)
-	AddOrUpdatePar(page.appendStr, 'Compauthor', 'Author', author)
+	AddOrUpdatePar(page.appendStr, 'Compdescription', 'Description', description, readonly=True)
+	AddOrUpdatePar(page.appendInt, 'Compversion', 'Version', version, readonly=True)
+	AddOrUpdatePar(page.appendStr, 'Compwebsite', 'Website', website, readonly=True)
+	AddOrUpdatePar(page.appendStr, 'Compauthor', 'Author', author, readonly=True)
 	page.sort('Compdescription', 'Compversion', 'Compwebsite', 'Compauthor')
 
 
