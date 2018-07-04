@@ -22,6 +22,11 @@ try:
 except ImportError:
 	schema = mod.schema
 
+try:
+	import module_settings
+except ImportError:
+	module_settings = mod.module_settings
+
 class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 	def __init__(self, ownerComp):
 		super().__init__(
@@ -50,8 +55,11 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 		try:
 			self._AllModulePaths = []
 			self._BuildModuleTable()
-			for o in self._LocalParGetters.children:
+			pargetters = self._LocalParGetters
+			for o in pargetters.ops('__pars__*'):
 				o.destroy()
+			textparexprs = pargetters.op('text_par_exprs')
+			textparexprs.clear()
 			self.ownerComp.op('sel_primary_video_source').par.top = ''
 			self.ownerComp.op('sel_secondary_video_source').par.top = ''
 			for send in self.ownerComp.ops('primary_syphonspout_out', 'secondary_syphonspout_out'):
@@ -69,7 +77,16 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 			self._AllModulePaths = [m.path for m in self._FindSubModules(self.AppRoot, recursive=True, sort=False)]
 			self._BuildModuleTable()
 			pargetters = self._LocalParGetters
+			textparstyles = ('Str', 'StrMenu', 'TOP', 'CHOP', 'DAT', 'COMP', 'SOP', 'PanelCOMP', 'OBJ', 'OP')
+			textpars = []
 			for i, modpath in enumerate(self._AllModulePaths):
+				modop = self.ownerComp.op(modpath)
+				nontextnames = []
+				for par in modop.customPars:
+					if par.style in textparstyles:
+						textpars.append(par)
+					else:
+						nontextnames.append(par.name)
 				CreateOP(
 					parameterCHOP,
 					dest=pargetters,
@@ -80,9 +97,17 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 					],
 					parvals={
 						'ops': modpath,
-						'parameters': '*',
+						'parameters': ' '.join(nontextnames),
 						'renameto': modpath[1:] + ':*',
 					})
+			textparexprs = pargetters.op('text_par_exprs')
+			textparexprs.clear()
+			for par in textpars:
+				textparexprs.appendRow(
+					[
+						repr(par.owner.path + ':' + par.name),
+						'op({!r}).par.{}'.format(par.owner.path, par.name),
+					])
 		finally:
 			self._LogEnd()
 
@@ -183,11 +208,14 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 			module = self.ownerComp.op(modpath)
 			if not module:
 				raise Exception('Module not found: {}'.format(modpath))
+			settings = module_settings.ExtractSettings(module)
 			modulecore = module.op('core')
 			# TODO: support having the core specify the sub-modules
 			submods = self._FindSubModules(module)
 			nodeops = self._FindDataNodes(module, modulecore)
-			parattrs = common.parseattrtable(trygetpar(modulecore, 'Parameters'))
+			coreparattrsdat = trygetpar(modulecore, 'Parameters')
+			if coreparattrsdat and not settings.parattrs:
+				settings.parattrs = common.ParseAttrTable(coreparattrsdat)
 			modinfo = schema.RawModuleInfo(
 				path=modpath,
 				parentpath=module.parent().path,
@@ -199,7 +227,7 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 					for t in module.customTuplets
 				],
 				nodes=[self._GetNodeInfo(n) for n in nodeops],
-				parattrs=parattrs,
+				parattrs=settings.parattrs,
 			)
 			return modinfo
 		finally:

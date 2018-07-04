@@ -336,8 +336,18 @@ def trygetpar(o, *names, default=None, parse=None):
 			return parse(val) if parse else val
 	return default
 
-def parseattrtable(dat):
-	dat = op(dat)  # type: DAT
+def trygetdictval(d: Dict, *keys, default=None, parse=None):
+	if d:
+		for key in keys:
+			if key not in d:
+				continue
+			val = d[key]
+			if val == '' and parse:
+				continue
+			return parse(val) if parse else val
+	return default
+
+def ParseAttrTable(dat):
 	if not dat:
 		return {}
 	cols = [c.val for c in dat.row(0)]
@@ -349,11 +359,31 @@ def parseattrtable(dat):
 		for cells in dat.rows()[1:]
 	}
 
+def UpdateAttrTable(dat, attrs: Dict, clear=False):
+	if clear:
+		dat.clear()
+	if not attrs:
+		return
+	for rowkey, rowattrs in attrs.items():
+		if not rowkey or not rowattrs:
+			continue
+		for k, v in rowattrs.items():
+			GetOrAddCell(dat, rowkey, k).val = v
+
+def GetOrAddCell(dat, row, col):
+	if dat[row, col] is None:
+		if not dat.row(row):
+			dat.appendRow([row])
+		if not dat.col(col):
+			dat.appendCol([col])
+	return dat[row, col]
+
 def UpdateOP(
 		comp,
 		order=None,
 		nodepos=None,
 		tags=None,
+		panelparent=None,
 		parvals=None,
 		parexprs=None):
 	if parvals:
@@ -369,6 +399,8 @@ def UpdateOP(
 		comp.nodeCenterY = nodepos[1]
 	if tags:
 		comp.tags.update(tags)
+	if panelparent:
+		panelparent.outputCOMPConnectors[0].connect(comp)
 
 def _ResolveDest(dest):
 	deststr = str(dest)
@@ -384,12 +416,13 @@ def CreateFromTemplate(
 		order=None,
 		nodepos=None,
 		tags=None,
+		panelparent=None,
 		parvals=None,
 		parexprs=None):
 	dest = _ResolveDest(dest)
 	comp = dest.copy(template, name=name)
 	UpdateOP(
-		comp=comp, order=order, nodepos=nodepos,
+		comp=comp, order=order, nodepos=nodepos, panelparent=panelparent,
 		tags=tags, parvals=parvals, parexprs=parexprs)
 	return comp
 
@@ -400,14 +433,45 @@ def CreateOP(
 		order=None,
 		nodepos=None,
 		tags=None,
+		panelparent=None,
 		parvals=None,
 		parexprs=None):
 	dest = _ResolveDest(dest)
 	comp = dest.create(optype, name)
 	UpdateOP(
-		comp=comp, order=order, nodepos=nodepos,
+		comp=comp, order=order, nodepos=nodepos, panelparent=panelparent,
 		tags=tags, parvals=parvals, parexprs=parexprs)
 	return comp
+
+def GetOrCreateOP(
+		optype,
+		dest,
+		name,
+		nodepos=None,
+		tags=None,
+		parvals=None,
+		parexprs=None):
+	comp = dest.op(name)
+	if not comp:
+		comp = CreateOP(
+			optype,
+			dest=dest,
+			name=name,
+			nodepos=nodepos,
+			tags=tags,
+			parvals=parvals,
+			parexprs=parexprs)
+	return comp
+
+def AddOrUpdatePar(appendmethod, name, label, value=None, expr=None, readonly=None):
+	p = appendmethod(name, label=label)[0]
+	if expr is not None:
+		p.expr = expr
+	elif value is not None:
+		p.val = value
+	if readonly is not None:
+		p.readOnly = readonly
+	return p
 
 class BaseDataObject:
 	def __init__(self, **otherattrs):
