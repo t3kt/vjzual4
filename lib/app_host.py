@@ -181,7 +181,11 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 					callback=lambda: self.ShowConnectDialog()),
 				menu.Item(
 					'Disconnect',
-					callback=lambda: self._Disconnect())
+					dividerafter=True,
+					callback=lambda: self._Disconnect()),
+				menu.Item(
+					'Connection Properties',
+					callback=lambda: self._RemoteClient.openParameters()),
 			]
 		elif name == 'view_menu':
 			def _uimodeItem(text, par, mode):
