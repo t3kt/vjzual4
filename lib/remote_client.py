@@ -369,3 +369,25 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 		self._LogEvent('HandleOscEvent({!r}, {!r})'.format(address, args))
 		modpath, name = address.split(':', maxsplit=1)
 		self.ProxyManager.SetParamValue(modpath, name, args[0])
+
+	def SetPrimaryVideoSource(self, path, toggle=False):
+		self._LogBegin('SetPrimaryVideoSource({}{})'.format(path, 'toggle' if toggle else ''))
+		try:
+			if toggle and path == self.ownerComp.par.Primaryvideosource:
+				path = None
+			self.Connection.SendCommand('setPrimaryVideoSrc', path or '')
+			self.ownerComp.par.Primaryvideoreceiveactive = bool(path)
+			self.ownerComp.par.Primaryvideosource = path or ''
+		finally:
+			self._LogEnd()
+
+	def SetSecondaryVideoSource(self, path, toggle=False):
+		self._LogBegin('SetSecondaryVideoSource({}{})'.format(path, 'toggle' if toggle else ''))
+		try:
+			if toggle and path == self.ownerComp.par.Secondaryvideosource:
+				path = None
+			self.Connection.SendCommand('setSecondaryVideoSrc', path or '')
+			self.ownerComp.par.Secondaryvideoreceiveactive = bool(path)
+			self.ownerComp.par.Secondaryvideosource = path or ''
+		finally:
+			self._LogEnd()

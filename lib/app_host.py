@@ -45,6 +45,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		self._AutoInitActionParams()
 		self.AppSchema = None  # type: schema.AppSchema
 		self.ownerComp.op('schema_json').clear()
+		self.OnDetach()
 
 	@property
 	def _RemoteClient(self) -> remote_client.RemoteClient:
@@ -71,12 +72,16 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			self._LogEnd()
 
 	def OnDetach(self):
-		self._LogEvent('OnDetach()')
-		for o in self.ownerComp.ops('schema_json', 'app_info', 'modules', 'params', 'param_parts', 'data_nodes'):
-			o.closeViewer()
-		for o in self.ownerComp.ops('nodes/node__*'):
-			o.destroy()
-		self.AppSchema = None
+		self._LogBegin('OnDetach()')
+		try:
+			for o in self.ownerComp.ops('schema_json', 'app_info', 'modules', 'params', 'param_parts', 'data_nodes'):
+				o.closeViewer()
+			for o in self.ownerComp.ops('nodes/node__*'):
+				o.destroy()
+			self.AppSchema = None
+			self.SetPreviewSource(None)
+		finally:
+			self._LogEnd()
 
 	def OnTDPreSave(self):
 		for o in self.ownerComp.ops('modules_panel/mod__*'):
@@ -166,6 +171,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 					dest=dest,
 					name='node__{}'.format(i),
 					nodeinfo=nodeinfo,
+					previewbutton=True,
 					order=i,
 					nodepos=[100, -200 * i],
 					panelparent=body)
@@ -264,6 +270,15 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			oktext='Connect',
 			default='{}:{}'.format(client.par.Address.eval(), client.par.Commandsendport.eval()),
 			ok=_ok)
+
+	# this is called by node marker preview button click handlers
+	def SetPreviewSource(self, path, toggle=False):
+		self._LogBegin('SetPreviewSource({}{})'.format(path, 'toggle' if toggle else ''))
+		try:
+			self._RemoteClient.SetSecondaryVideoSource(path, toggle=toggle)
+			pass
+		finally:
+			self._LogEnd()
 
 def _ParseAddress(text: str, defaulthost='localhost', defaultport=9500) -> Tuple[str, int]:
 	text = text and text.strip()

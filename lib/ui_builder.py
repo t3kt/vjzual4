@@ -442,6 +442,7 @@ class UiBuilder:
 			dest,
 			name,
 			nodeinfo,  # type: schema.DataNodeInfo
+			previewbutton=False,
 			panelparent=None, order=None, nodepos=None, parvals=None, parexprs=None):
 		return CreateFromTemplate(
 			template=self.ownerComp.op('node_marker'),
@@ -456,6 +457,7 @@ class UiBuilder:
 					'Video': nodeinfo.video,
 					'Audio': nodeinfo.audio,
 					'Texbuf': nodeinfo.texbuf,
+					'Showpreviewbutton': previewbutton,
 					'h': 30,
 				},
 				parvals),

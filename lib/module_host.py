@@ -6,6 +6,7 @@ print('vjz4/module_host.py loading')
 if False:
 	from _stubs import *
 	from ui_builder import UiBuilder
+	from app_host import AppHost
 
 
 try:
@@ -165,7 +166,12 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 	@property
 	def ParentHost(self) -> 'ModuleHostBase':
 		parent = getattr(self.ownerComp.parent, 'ModuleHost', None)
-		return parent or getattr(self.ownerComp.parent, 'AppHost', None)
+		return parent or self.AppHost
+
+	@property
+	def AppHost(self):
+		apphost = getattr(self.ownerComp.parent, 'AppHost', None)  # type: AppHost
+		return apphost
 
 	@property
 	def ModulePath(self):
@@ -305,12 +311,14 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 			uibuilder = self.UiBuilder
 			if not self.ModuleConnector or not uibuilder:
 				return
+			hasapphost = bool(self.AppHost)
 			for i, nodeinfo in enumerate(self.ModuleConnector.modschema.nodes):
 				uibuilder.CreateNodeMarker(
 					dest=dest,
 					name='node__' + nodeinfo.name,
 					nodeinfo=nodeinfo,
 					order=i,
+					previewbutton=hasapphost,
 					nodepos=[100, -200 * i])
 			dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
 		finally:
