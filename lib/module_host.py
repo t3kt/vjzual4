@@ -543,8 +543,6 @@ class ModuleChainHost(ModuleHostBase):
 				for conn in self.ModuleConnector.CreateChildModuleConnectors()
 			]
 
-			resultfuture = Future()
-
 			def _makeCreateTask(hcpair, index):
 				def _task():
 					hcpair['host'] = self._CreateSubModuleHost(hcpair['connector'], index, dest, template)
@@ -553,11 +551,7 @@ class ModuleChainHost(ModuleHostBase):
 			def _makeInitTask(hcpair):
 				return lambda: self._InitSubModuleHost(hcpair['host'], hcpair['connector'])
 
-			def _onFinish():
-				resultfuture.resolve()
-				self._OnSubModuleHostsConnected()
-
-			self.AddTaskBatch(
+			return self.AddTaskBatch(
 				[
 					_makeCreateTask(hostconnpair, i)
 					for i, hostconnpair in enumerate(hostconnectorpairs)
@@ -566,10 +560,9 @@ class ModuleChainHost(ModuleHostBase):
 					_makeInitTask(hostconnpair)
 					for hostconnpair in hostconnectorpairs
 				] + [
-					_onFinish
+					lambda: self._OnSubModuleHostsConnected()
 				],
 				autostart=True)
-			return resultfuture
 		finally:
 			self._LogEnd()
 

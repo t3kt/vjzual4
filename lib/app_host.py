@@ -13,6 +13,7 @@ try:
 except ImportError:
 	common = mod.common
 parseint = common.parseint
+Future = common.Future
 
 try:
 	import module_host
@@ -63,13 +64,13 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		try:
 			self.AppSchema = appschema
 			self.ownerComp.op('schema_json').clear()
-			self._BuildSubModuleHosts()
-			self.AddTaskBatch(
-				[
-					lambda: self._BuildNodeMarkers(),
-					lambda: self._RegisterNodeMarkers(),
-				],
-				autostart=True)
+			self._BuildSubModuleHosts().then(
+				success=lambda _: self.AddTaskBatch(
+					[
+						lambda: self._BuildNodeMarkers(),
+						lambda: self._RegisterNodeMarkers(),
+					],
+					autostart=True))
 		finally:
 			self._LogEnd()
 
@@ -113,10 +114,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			for m in dest.ops('mod__*'):
 				m.destroy()
 			if not self.AppSchema:
-				return
+				return Future.immediate()
 			template = self._ModuleHostTemplate
 			if not template:
-				return
+				return Future.immediate()
 			hostconnectorpairs = []
 			for i, modschema in enumerate(self.AppSchema.childmodules):
 				self._LogEvent('creating host for sub module {}'.format(modschema.path))
@@ -135,7 +136,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			def _makeInitTask(h, c):
 				return lambda: self._InitSubModuleHost(h, c)
 
-			self.AddTaskBatch(
+			return self.AddTaskBatch(
 				[
 					_makeInitTask(host, connector)
 					for host, connector in hostconnectorpairs
@@ -149,7 +150,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def _InitSubModuleHost(self, host, connector):
 		self._LogBegin('_InitSubModuleHost({}, {})'.format(host, connector.modschema.path))
 		try:
-			host.AttachToModuleConnector(connector)
+			return host.AttachToModuleConnector(connector)
 		finally:
 			self._LogEnd()
 

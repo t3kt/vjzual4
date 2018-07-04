@@ -139,21 +139,29 @@ class TaskQueueExt:
 		td.run('op({!r}).RunNextTask()'.format(self.ownerComp.path), delayFrames=1)
 
 	def RunNextTask(self):
-		task = self._PopNextTask()
+		if not self._TaskBatches:
+			self._UpdateProgress()
+			return
+
+		task, batch = self._PopNextTask()
 		self._UpdateProgress()
 		if task is None:
 			return
 		result = task()
-		if isinstance(result, Future):
-			result.then(
-				success=lambda _: self._QueueRunNextTask(),
-				failure=lambda _: self._QueueRunNextTask())
-		else:
+
+		def _onfinish(*_):
+			if not batch.tasks:
+				batch.future.resolve()
 			self._QueueRunNextTask()
 
+		if isinstance(result, Future):
+			result.then(
+				success=_onfinish,
+				failure=_onfinish)
+		else:
+			_onfinish()
+
 	def _PopNextTask(self):
-		if not self._TaskBatches:
-			return None
 		while self._TaskBatches:
 			batch = self._TaskBatches[0]
 			task = None
@@ -162,7 +170,8 @@ class TaskQueueExt:
 			if not batch.tasks:
 				self._TaskBatches.pop(0)
 			if task is not None:
-				return task
+				return task, batch
+		return None, None
 
 	def AddTaskBatch(self, tasks: List[Callable], autostart=True):
 		batch = _TaskBatch(tasks)
@@ -170,6 +179,7 @@ class TaskQueueExt:
 		self._UpdateProgress()
 		if autostart:
 			self._QueueRunNextTask()
+		return batch.future
 
 	def ClearTasks(self):
 		self._TaskBatches.clear()
@@ -179,6 +189,7 @@ class _TaskBatch:
 	def __init__(self, tasks: List[Callable]):
 		self.total = len(tasks)
 		self.tasks = tasks
+		self.future = Future()
 
 class Future:
 	def __init__(self, onlisten=None, oninvoke=None):
