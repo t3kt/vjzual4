@@ -449,6 +449,7 @@ class UiBuilder:
 			dest=dest,
 			name=name,
 			order=order, nodepos=nodepos, panelparent=panelparent,
+			tags=['vjz4nodemarker'],
 			parvals=mergedicts(
 				{
 					'Name': nodeinfo.name,

@@ -1,5 +1,5 @@
 import json
-from typing import Callable, List, Tuple
+from typing import Callable, Dict, List, Tuple
 
 print('vjz4/app_host.py loading')
 
@@ -45,6 +45,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		self._AutoInitActionParams()
 		self.AppSchema = None  # type: schema.AppSchema
 		self.ownerComp.op('schema_json').clear()
+		self.nodeMarkersByPath = {}  # type: Dict[str, List[str]]
 		self.OnDetach()
 
 	@property
@@ -66,6 +67,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			self.AddTaskBatch(
 				[
 					lambda: self._BuildNodeMarkers(),
+					lambda: self._RegisterNodeMarkers(),
 				],
 				autostart=True)
 		finally:
@@ -79,6 +81,8 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			for o in self.ownerComp.ops('nodes/node__*'):
 				o.destroy()
 			self.AppSchema = None
+			self.nodeMarkersByPath.clear()
+			self._BuildNodeMarkerTable()
 			self.SetPreviewSource(None)
 		finally:
 			self._LogEnd()
@@ -222,12 +226,41 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 				_viewItem('Params', 'params'),
 				_viewItem('Param Parts', 'param_parts'),
 				_viewItem('Data Nodes', 'data_nodes'),
+				menu.Item(
+					'Reload code',
+					callback=lambda: op.Vjz4.op('RELOAD_CODE').run())
 			]
 		else:
 			return
 		menu.fromButton(button, h='Left', v='Bottom').Show(
 			items=items,
 			autoClose=True)
+
+	def _RegisterNodeMarkers(self):
+		self._LogBegin('_RegisterNodeMarkers()')
+		try:
+			self.nodeMarkersByPath.clear()
+			for panel in self.ownerComp.ops('nodes_panel', 'modules_panel'):
+				for marker in panel.findChildren(tags=['vjz4nodemarker']):
+					self._LogEvent('registering marker {}'.format(marker.path))
+					for par in marker.pars('Path', 'Video', 'Audio', 'Texbuf'):
+						path = par.eval()
+						self._LogEvent('  registering par {} value: {}'.format(par.name, path))
+						if not path:
+							continue
+						if path in self.nodeMarkersByPath:
+							self.nodeMarkersByPath[path].append(marker.path)
+						else:
+							self.nodeMarkersByPath[path] = [marker.path]
+			self._BuildNodeMarkerTable()
+		finally:
+			self._LogEnd()
+
+	def _BuildNodeMarkerTable(self):
+		dat = self.ownerComp.op('set_node_markers_by_path')
+		dat.clear()
+		for path, markerpaths in self.nodeMarkersByPath.items():
+			dat.appendRow([path] + markerpaths)
 
 	def ShowAppSchema(self):
 		dat = self.ownerComp.op('schema_json')
