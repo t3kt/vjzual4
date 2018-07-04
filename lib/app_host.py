@@ -1,4 +1,5 @@
 import json
+from operator import itemgetter
 from typing import Callable, Dict, List, Tuple
 
 print('vjz4/app_host.py loading')
@@ -241,7 +242,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		self._LogBegin('_RegisterNodeMarkers()')
 		try:
 			self.nodeMarkersByPath.clear()
-			for panel in self.ownerComp.ops('nodes_panel', 'modules_panel'):
+			for panel in self.ownerComp.ops('nodes', 'modules_panel'):
 				for marker in panel.findChildren(tags=['vjz4nodemarker']):
 					self._LogEvent('registering marker {}'.format(marker.path))
 					for par in marker.pars('Path', 'Video', 'Audio', 'Texbuf'):
@@ -260,8 +261,8 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def _BuildNodeMarkerTable(self):
 		dat = self.ownerComp.op('set_node_markers_by_path')
 		dat.clear()
-		for path, markerpaths in self.nodeMarkersByPath.items():
-			dat.appendRow([path] + markerpaths)
+		for path, markerpaths in sorted(self.nodeMarkersByPath.items(), key=itemgetter(0)):
+			dat.appendRow([path] + sorted(markerpaths))
 
 	def ShowAppSchema(self):
 		dat = self.ownerComp.op('schema_json')

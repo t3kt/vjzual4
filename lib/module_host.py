@@ -424,8 +424,13 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 			self.BuildControls(controls)
 
 	def BuildNodeMarkersIfNeeded(self):
-		if self.ownerComp.par.Uimode == 'nodes' and not self.ownerComp.par.Collapsed and not self._NodeMarkersBuilt:
+		# if self.ownerComp.par.Uimode == 'nodes' and not self.ownerComp.par.Collapsed and not self._NodeMarkersBuilt:
+		if not self._NodeMarkersBuilt:
 			self.BuildNodeMarkers()
+
+	def BuildUiIfNeeded(self):
+		self.BuildControlsIfNeeded()
+		# self.BuildNodeMarkersIfNeeded()
 
 def FindSubModules(parentComp):
 	if not parentComp:
