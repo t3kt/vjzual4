@@ -48,6 +48,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		self.AppSchema = None  # type: schema.AppSchema
 		self.ownerComp.op('schema_json').clear()
 		self.nodeMarkersByPath = {}  # type: Dict[str, List[str]]
+		self.previewMarkers = []  # type: List[op]
 		self.OnDetach()
 
 	@property
@@ -251,9 +252,9 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 						if not path:
 							continue
 						if path in self.nodeMarkersByPath:
-							self.nodeMarkersByPath[path].append(marker.path)
+							self.nodeMarkersByPath[path].append(marker)
 						else:
-							self.nodeMarkersByPath[path] = [marker.path]
+							self.nodeMarkersByPath[path] = [marker]
 			self._BuildNodeMarkerTable()
 		finally:
 			self._LogEnd()
@@ -261,8 +262,8 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def _BuildNodeMarkerTable(self):
 		dat = self.ownerComp.op('set_node_markers_by_path')
 		dat.clear()
-		for path, markerpaths in sorted(self.nodeMarkersByPath.items(), key=itemgetter(0)):
-			dat.appendRow([path] + sorted(markerpaths))
+		for path, markers in sorted(self.nodeMarkersByPath.items(), key=itemgetter(0)):
+			dat.appendRow([path] + sorted([marker.path for marker in markers]))
 
 	def ShowAppSchema(self):
 		dat = self.ownerComp.op('schema_json')
@@ -308,12 +309,41 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 
 	# this is called by node marker preview button click handlers
 	def SetPreviewSource(self, path, toggle=False):
-		self._LogBegin('SetPreviewSource({}{})'.format(path, 'toggle' if toggle else ''))
+		self._LogBegin('SetPreviewSource({}{})'.format(path, ', toggle' if toggle else ''))
 		try:
-			self._RemoteClient.SetSecondaryVideoSource(path, toggle=toggle)
-			pass
+			client = self._RemoteClient
+			hassource = self._SetVideoSource(
+				path=path,
+				toggle=toggle,
+				sourcepar=client.par.Secondaryvideosource,
+				activepar=client.par.Secondaryvideoreceiveactive,
+				command='setSecondaryVideoSrc')
+			self.ownerComp.op('nodes/preview_panel').par.display = hassource
+			for marker in self.previewMarkers:
+				marker.par.Previewactive = False
+			self.previewMarkers.clear()
+			if hassource and path in self.nodeMarkersByPath:
+				self.previewMarkers += self.nodeMarkersByPath[path]
+				for marker in self.previewMarkers:
+					marker.par.Previewactive = True
 		finally:
 			self._LogEnd()
+
+	def _GetNodeVideoPath(self, path):
+		if not self.AppSchema:
+			return None
+		node = self.AppSchema.nodesbypath.get(path)
+		return node.video if node else None
+
+	def _SetVideoSource(self, path, toggle, activepar, sourcepar, command):
+		if toggle and path == sourcepar:
+			path = None
+		vidpath = self._GetNodeVideoPath(path)
+		client = self._RemoteClient
+		client.Connection.SendCommand(command, vidpath or '')
+		sourcepar.val = path or ''
+		activepar.val = bool(vidpath)
+		return bool(vidpath)
 
 def _ParseAddress(text: str, defaulthost='localhost', defaultport=9500) -> Tuple[str, int]:
 	text = text and text.strip()

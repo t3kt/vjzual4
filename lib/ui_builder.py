@@ -459,6 +459,7 @@ class UiBuilder:
 					'Audio': nodeinfo.audio,
 					'Texbuf': nodeinfo.texbuf,
 					'Showpreviewbutton': previewbutton,
+					'Previewactive': False,
 					'h': 30,
 				},
 				parvals),
