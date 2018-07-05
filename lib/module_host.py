@@ -665,3 +665,6 @@ class ModuleHostConnector:
 
 	def CreateChildModuleConnectors(self) -> 'List[ModuleHostConnector]':
 		return []
+
+	def __str__(self):
+		return '{}({})'.format(self.__class__.__name__, self.modpath)

@@ -600,6 +600,13 @@ class AppSchema(BaseDataObject):
 			for modpath in self.childmodpaths
 		]
 
+	def __str__(self):
+		return '{}({})'.format(self.__class__.__name__, {
+			'name': self.name,
+			'label': self.label,
+			'path': self.path,
+		})
+
 	tablekeys = [
 		'name',
 		'label',

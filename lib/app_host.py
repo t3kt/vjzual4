@@ -62,20 +62,17 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def GetModuleSchema(self, modpath):
 		return self.AppSchema and self.AppSchema.modulesbypath.get(modpath)
 
+	@loggedmethod
 	def OnAppSchemaLoaded(self, appschema: schema.AppSchema):
-		self._LogBegin('OnAppSchemaLoaded()')
-		try:
-			self.AppSchema = appschema
-			self.ownerComp.op('schema_json').clear()
-			self._BuildSubModuleHosts().then(
-				success=lambda _: self.AddTaskBatch(
-					[
-						lambda: self._BuildNodeMarkers(),
-						lambda: self._RegisterNodeMarkers(),
-					],
-					autostart=True))
-		finally:
-			self._LogEnd()
+		self.AppSchema = appschema
+		self.ownerComp.op('schema_json').clear()
+		self._BuildSubModuleHosts().then(
+			success=lambda _: self.AddTaskBatch(
+				[
+					lambda: self._BuildNodeMarkers(),
+					lambda: self._RegisterNodeMarkers(),
+				],
+				autostart=True))
 
 	@loggedmethod
 	def OnDetach(self):
@@ -144,12 +141,9 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			],
 			autostart=True)
 
+	@loggedmethod
 	def _InitSubModuleHost(self, host, connector):
-		self._LogBegin('_InitSubModuleHost({}, {})'.format(host, connector.modschema.path))
-		try:
-			return host.AttachToModuleConnector(connector)
-		finally:
-			self._LogEnd()
+		return host.AttachToModuleConnector(connector)
 
 	@loggedmethod
 	def _OnSubModuleHostsConnected(self):
@@ -261,13 +255,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 				indent='  ')
 			dat.openViewer(unique=True)
 
+	@loggedmethod
 	def _ConnectTo(self, host, port):
-		self._LogBegin('_ConnectTo({}, {})'.format(host, port))
-		try:
-			self._RemoteClient.par.Active = True
-			self._RemoteClient.Connect(host, port)
-		finally:
-			self._LogEnd()
+		self._RemoteClient.par.Active = True
+		self._RemoteClient.Connect(host, port)
 
 	@loggedmethod
 	def _Disconnect(self):
@@ -291,26 +282,23 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			ok=_ok)
 
 	# this is called by node marker preview button click handlers
+	@loggedmethod
 	def SetPreviewSource(self, path, toggle=False):
-		self._LogBegin('SetPreviewSource({}{})'.format(path, ', toggle' if toggle else ''))
-		try:
-			client = self._RemoteClient
-			hassource = self._SetVideoSource(
-				path=path,
-				toggle=toggle,
-				sourcepar=client.par.Secondaryvideosource,
-				activepar=client.par.Secondaryvideoreceiveactive,
-				command='setSecondaryVideoSrc')
-			self.ownerComp.op('nodes/preview_panel').par.display = hassource
+		client = self._RemoteClient
+		hassource = self._SetVideoSource(
+			path=path,
+			toggle=toggle,
+			sourcepar=client.par.Secondaryvideosource,
+			activepar=client.par.Secondaryvideoreceiveactive,
+			command='setSecondaryVideoSrc')
+		self.ownerComp.op('nodes/preview_panel').par.display = hassource
+		for marker in self.previewMarkers:
+			marker.par.Previewactive = False
+		self.previewMarkers.clear()
+		if hassource and path in self.nodeMarkersByPath:
+			self.previewMarkers += self.nodeMarkersByPath[path]
 			for marker in self.previewMarkers:
-				marker.par.Previewactive = False
-			self.previewMarkers.clear()
-			if hassource and path in self.nodeMarkersByPath:
-				self.previewMarkers += self.nodeMarkersByPath[path]
-				for marker in self.previewMarkers:
-					marker.par.Previewactive = True
-		finally:
-			self._LogEnd()
+				marker.par.Previewactive = True
 
 	def _GetNodeVideoPath(self, path):
 		if not self.AppSchema:
