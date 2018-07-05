@@ -72,6 +72,15 @@ class ExtensionBase:
 		if self.enablelogging:
 			_logger.LogEnd(self.ownerComp.path, self._GetLogId(), event)
 
+def loggedmethod(func: Callable):
+	def wrapper(self: ExtensionBase, *args, **kwargs):
+		self._LogBegin('{}({}{}{})'.format(func.__name__, args or '', ', ' if (args and kwargs) else '', kwargs or ''))
+		try:
+			return func(self, *args, **kwargs)
+		finally:
+			self._LogEnd()
+	return wrapper
+
 class ActionsExt:
 	def __init__(self, ownerComp, actions=None, autoinitparexec=True):
 		self.ownerComp = ownerComp
@@ -139,21 +148,29 @@ class TaskQueueExt:
 		td.run('op({!r}).RunNextTask()'.format(self.ownerComp.path), delayFrames=1)
 
 	def RunNextTask(self):
-		task = self._PopNextTask()
+		if not self._TaskBatches:
+			self._UpdateProgress()
+			return
+
+		task, batch = self._PopNextTask()
 		self._UpdateProgress()
 		if task is None:
 			return
 		result = task()
-		if isinstance(result, Future):
-			result.then(
-				success=lambda _: self._QueueRunNextTask(),
-				failure=lambda _: self._QueueRunNextTask())
-		else:
+
+		def _onfinish(*_):
+			if not batch.tasks:
+				batch.future.resolve()
 			self._QueueRunNextTask()
 
+		if isinstance(result, Future):
+			result.then(
+				success=_onfinish,
+				failure=_onfinish)
+		else:
+			_onfinish()
+
 	def _PopNextTask(self):
-		if not self._TaskBatches:
-			return None
 		while self._TaskBatches:
 			batch = self._TaskBatches[0]
 			task = None
@@ -162,7 +179,8 @@ class TaskQueueExt:
 			if not batch.tasks:
 				self._TaskBatches.pop(0)
 			if task is not None:
-				return task
+				return task, batch
+		return None, None
 
 	def AddTaskBatch(self, tasks: List[Callable], autostart=True):
 		batch = _TaskBatch(tasks)
@@ -170,6 +188,7 @@ class TaskQueueExt:
 		self._UpdateProgress()
 		if autostart:
 			self._QueueRunNextTask()
+		return batch.future
 
 	def ClearTasks(self):
 		self._TaskBatches.clear()
@@ -179,6 +198,7 @@ class _TaskBatch:
 	def __init__(self, tasks: List[Callable]):
 		self.total = len(tasks)
 		self.tasks = tasks
+		self.future = Future()
 
 class Future:
 	def __init__(self, onlisten=None, oninvoke=None):
@@ -336,8 +356,18 @@ def trygetpar(o, *names, default=None, parse=None):
 			return parse(val) if parse else val
 	return default
 
-def parseattrtable(dat):
-	dat = op(dat)  # type: DAT
+def trygetdictval(d: Dict, *keys, default=None, parse=None):
+	if d:
+		for key in keys:
+			if key not in d:
+				continue
+			val = d[key]
+			if val == '' and parse:
+				continue
+			return parse(val) if parse else val
+	return default
+
+def ParseAttrTable(dat):
 	if not dat:
 		return {}
 	cols = [c.val for c in dat.row(0)]
@@ -348,6 +378,25 @@ def parseattrtable(dat):
 		}
 		for cells in dat.rows()[1:]
 	}
+
+def UpdateAttrTable(dat, attrs: Dict, clear=False):
+	if clear:
+		dat.clear()
+	if not attrs:
+		return
+	for rowkey, rowattrs in attrs.items():
+		if not rowkey or not rowattrs:
+			continue
+		for k, v in rowattrs.items():
+			GetOrAddCell(dat, rowkey, k).val = v
+
+def GetOrAddCell(dat, row, col):
+	if dat[row, col] is None:
+		if not dat.row(row):
+			dat.appendRow([row])
+		if not dat.col(col):
+			dat.appendCol([col])
+	return dat[row, col]
 
 def UpdateOP(
 		comp,
@@ -413,6 +462,36 @@ def CreateOP(
 		comp=comp, order=order, nodepos=nodepos, panelparent=panelparent,
 		tags=tags, parvals=parvals, parexprs=parexprs)
 	return comp
+
+def GetOrCreateOP(
+		optype,
+		dest,
+		name,
+		nodepos=None,
+		tags=None,
+		parvals=None,
+		parexprs=None):
+	comp = dest.op(name)
+	if not comp:
+		comp = CreateOP(
+			optype,
+			dest=dest,
+			name=name,
+			nodepos=nodepos,
+			tags=tags,
+			parvals=parvals,
+			parexprs=parexprs)
+	return comp
+
+def AddOrUpdatePar(appendmethod, name, label, value=None, expr=None, readonly=None):
+	p = appendmethod(name, label=label)[0]
+	if expr is not None:
+		p.expr = expr
+	elif value is not None:
+		p.val = value
+	if readonly is not None:
+		p.readOnly = readonly
+	return p
 
 class BaseDataObject:
 	def __init__(self, **otherattrs):

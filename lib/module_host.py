@@ -6,6 +6,7 @@ print('vjz4/module_host.py loading')
 if False:
 	from _stubs import *
 	from ui_builder import UiBuilder
+	from app_host import AppHost
 
 
 try:
@@ -165,7 +166,12 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 	@property
 	def ParentHost(self) -> 'ModuleHostBase':
 		parent = getattr(self.ownerComp.parent, 'ModuleHost', None)
-		return parent or getattr(self.ownerComp.parent, 'AppHost', None)
+		return parent or self.AppHost
+
+	@property
+	def AppHost(self):
+		apphost = getattr(self.ownerComp.parent, 'AppHost', None)  # type: AppHost
+		return apphost
 
 	@property
 	def ModulePath(self):
@@ -305,12 +311,14 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 			uibuilder = self.UiBuilder
 			if not self.ModuleConnector or not uibuilder:
 				return
+			hasapphost = bool(self.AppHost)
 			for i, nodeinfo in enumerate(self.ModuleConnector.modschema.nodes):
 				uibuilder.CreateNodeMarker(
 					dest=dest,
 					name='node__' + nodeinfo.name,
 					nodeinfo=nodeinfo,
 					order=i,
+					previewbutton=hasapphost,
 					nodepos=[100, -200 * i])
 			dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
 		finally:
@@ -416,8 +424,13 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 			self.BuildControls(controls)
 
 	def BuildNodeMarkersIfNeeded(self):
-		if self.ownerComp.par.Uimode == 'nodes' and not self.ownerComp.par.Collapsed and not self._NodeMarkersBuilt:
+		# if self.ownerComp.par.Uimode == 'nodes' and not self.ownerComp.par.Collapsed and not self._NodeMarkersBuilt:
+		if not self._NodeMarkersBuilt:
 			self.BuildNodeMarkers()
+
+	def BuildUiIfNeeded(self):
+		self.BuildControlsIfNeeded()
+		# self.BuildNodeMarkersIfNeeded()
 
 def FindSubModules(parentComp):
 	if not parentComp:
@@ -535,8 +548,6 @@ class ModuleChainHost(ModuleHostBase):
 				for conn in self.ModuleConnector.CreateChildModuleConnectors()
 			]
 
-			resultfuture = Future()
-
 			def _makeCreateTask(hcpair, index):
 				def _task():
 					hcpair['host'] = self._CreateSubModuleHost(hcpair['connector'], index, dest, template)
@@ -545,11 +556,7 @@ class ModuleChainHost(ModuleHostBase):
 			def _makeInitTask(hcpair):
 				return lambda: self._InitSubModuleHost(hcpair['host'], hcpair['connector'])
 
-			def _onFinish():
-				resultfuture.resolve()
-				self._OnSubModuleHostsConnected()
-
-			self.AddTaskBatch(
+			return self.AddTaskBatch(
 				[
 					_makeCreateTask(hostconnpair, i)
 					for i, hostconnpair in enumerate(hostconnectorpairs)
@@ -558,10 +565,9 @@ class ModuleChainHost(ModuleHostBase):
 					_makeInitTask(hostconnpair)
 					for hostconnpair in hostconnectorpairs
 				] + [
-					_onFinish
+					lambda: self._OnSubModuleHostsConnected()
 				],
 				autostart=True)
-			return resultfuture
 		finally:
 			self._LogEnd()
 
@@ -659,3 +665,6 @@ class ModuleHostConnector:
 
 	def CreateChildModuleConnectors(self) -> 'List[ModuleHostConnector]':
 		return []
+
+	def __str__(self):
+		return '{}({})'.format(self.__class__.__name__, self.modpath)

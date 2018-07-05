@@ -22,6 +22,11 @@ try:
 except ImportError:
 	schema = mod.schema
 
+try:
+	import module_settings
+except ImportError:
+	module_settings = mod.module_settings
+
 class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 	def __init__(self, ownerComp):
 		super().__init__(
@@ -203,11 +208,14 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 			module = self.ownerComp.op(modpath)
 			if not module:
 				raise Exception('Module not found: {}'.format(modpath))
+			settings = module_settings.ExtractSettings(module)
 			modulecore = module.op('core')
 			# TODO: support having the core specify the sub-modules
 			submods = self._FindSubModules(module)
 			nodeops = self._FindDataNodes(module, modulecore)
-			parattrs = common.parseattrtable(trygetpar(modulecore, 'Parameters'))
+			coreparattrsdat = trygetpar(modulecore, 'Parameters')
+			if coreparattrsdat and not settings.parattrs:
+				settings.parattrs = common.ParseAttrTable(coreparattrsdat)
 			modinfo = schema.RawModuleInfo(
 				path=modpath,
 				parentpath=module.parent().path,
@@ -219,7 +227,7 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 					for t in module.customTuplets
 				],
 				nodes=[self._GetNodeInfo(n) for n in nodeops],
-				parattrs=parattrs,
+				parattrs=settings.parattrs,
 			)
 			return modinfo
 		finally:
