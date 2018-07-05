@@ -15,6 +15,7 @@ except ImportError:
 cleandict, mergedicts = common.cleandict, common.mergedicts
 trygetdictval = common.trygetdictval
 trygetpar = common.trygetpar
+loggedmethod = common.loggedmethod
 
 try:
 	import module_settings
@@ -39,17 +40,13 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 		self._AutoInitActionParams()
 		self.AttachModule()
 
-
 	@property
 	def Module(self):
 		return self.ownerComp.par.Module.eval()
 
+	@loggedmethod
 	def DetachModule(self):
-		self._LogBegin('DetachModule()')
-		try:
-			self.ownerComp.par.Module = None
-		finally:
-			self._LogEnd()
+		self.ownerComp.par.Module = None
 
 	def AttachModule(self):
 		module = self.ownerComp.par.Module.eval()
