@@ -15,6 +15,7 @@ except ImportError:
 	common = mod.common
 parseint = common.parseint
 Future = common.Future
+loggedmethod = common.loggedmethod
 
 try:
 	import module_host
@@ -76,19 +77,16 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		finally:
 			self._LogEnd()
 
+	@loggedmethod
 	def OnDetach(self):
-		self._LogBegin('OnDetach()')
-		try:
-			for o in self.ownerComp.ops('schema_json', 'app_info', 'modules', 'params', 'param_parts', 'data_nodes'):
-				o.closeViewer()
-			for o in self.ownerComp.ops('nodes/node__*'):
-				o.destroy()
-			self.AppSchema = None
-			self.nodeMarkersByPath.clear()
-			self._BuildNodeMarkerTable()
-			self.SetPreviewSource(None)
-		finally:
-			self._LogEnd()
+		for o in self.ownerComp.ops('schema_json', 'app_info', 'modules', 'params', 'param_parts', 'data_nodes'):
+			o.closeViewer()
+		for o in self.ownerComp.ops('nodes/node__*'):
+			o.destroy()
+		self.AppSchema = None
+		self.nodeMarkersByPath.clear()
+		self._BuildNodeMarkerTable()
+		self.SetPreviewSource(None)
 
 	def OnTDPreSave(self):
 		for o in self.ownerComp.ops('modules_panel/mod__*'):
@@ -109,45 +107,42 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		if hasattr(op, 'UiBuilder'):
 			return op.UiBuilder
 
+	@loggedmethod
 	def _BuildSubModuleHosts(self):
-		self._LogBegin('_BuildSubModuleHosts()')
-		try:
-			dest = self.ownerComp.op('modules_panel')
-			for m in dest.ops('mod__*'):
-				m.destroy()
-			if not self.AppSchema:
-				return Future.immediate()
-			template = self._ModuleHostTemplate
-			if not template:
-				return Future.immediate()
-			hostconnectorpairs = []
-			for i, modschema in enumerate(self.AppSchema.childmodules):
-				self._LogEvent('creating host for sub module {}'.format(modschema.path))
-				host = dest.copy(template, name='mod__' + modschema.name)  # type: module_host.ModuleChainHost
-				host.par.Uibuilder.expr = 'parent.AppHost.par.Uibuilder or ""'
-				host.par.Modulehosttemplate.expr = 'op.Vjz4.op("module_host")'
-				host.par.hmode = 'fixed'
-				host.par.vmode = 'fill'
-				host.par.w = 250
-				host.par.alignorder = i
-				host.nodeX = 100
-				host.nodeY = -100 * i
-				connector = self._RemoteClient.ProxyManager.GetModuleProxyHost(modschema, self.AppSchema)
-				hostconnectorpairs.append([host, connector])
+		dest = self.ownerComp.op('modules_panel')
+		for m in dest.ops('mod__*'):
+			m.destroy()
+		if not self.AppSchema:
+			return Future.immediate()
+		template = self._ModuleHostTemplate
+		if not template:
+			return Future.immediate()
+		hostconnectorpairs = []
+		for i, modschema in enumerate(self.AppSchema.childmodules):
+			self._LogEvent('creating host for sub module {}'.format(modschema.path))
+			host = dest.copy(template, name='mod__' + modschema.name)  # type: module_host.ModuleChainHost
+			host.par.Uibuilder.expr = 'parent.AppHost.par.Uibuilder or ""'
+			host.par.Modulehosttemplate.expr = 'op.Vjz4.op("module_host")'
+			host.par.hmode = 'fixed'
+			host.par.vmode = 'fill'
+			host.par.w = 250
+			host.par.alignorder = i
+			host.nodeX = 100
+			host.nodeY = -100 * i
+			connector = self._RemoteClient.ProxyManager.GetModuleProxyHost(modschema, self.AppSchema)
+			hostconnectorpairs.append([host, connector])
 
-			def _makeInitTask(h, c):
-				return lambda: self._InitSubModuleHost(h, c)
+		def _makeInitTask(h, c):
+			return lambda: self._InitSubModuleHost(h, c)
 
-			return self.AddTaskBatch(
-				[
-					_makeInitTask(host, connector)
-					for host, connector in hostconnectorpairs
-				] + [
-					lambda: self._OnSubModuleHostsConnected()
-				],
-				autostart=True)
-		finally:
-			self._LogEnd()
+		return self.AddTaskBatch(
+			[
+				_makeInitTask(host, connector)
+				for host, connector in hostconnectorpairs
+			] + [
+				lambda: self._OnSubModuleHostsConnected()
+			],
+			autostart=True)
 
 	def _InitSubModuleHost(self, host, connector):
 		self._LogBegin('_InitSubModuleHost({}, {})'.format(host, connector.modschema.path))
@@ -156,34 +151,28 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		finally:
 			self._LogEnd()
 
+	@loggedmethod
 	def _OnSubModuleHostsConnected(self):
-		self._LogBegin('_OnSubModuleHostsConnected()')
-		try:
-			pass
-		finally:
-			self._LogEnd()
+		pass
 
+	@loggedmethod
 	def _BuildNodeMarkers(self):
-		self._LogBegin('_BuildNodeMarkers()')
-		try:
-			dest = self.ownerComp.op('nodes')
-			for marker in dest.ops('node__*'):
-				marker.destroy()
-			uibuilder = self.UiBuilder
-			if not self.AppSchema or not uibuilder:
-				return
-			body = dest.op('body_panel')
-			for i, nodeinfo in enumerate(self.AppSchema.nodes):
-				uibuilder.CreateNodeMarker(
-					dest=dest,
-					name='node__{}'.format(i),
-					nodeinfo=nodeinfo,
-					previewbutton=True,
-					order=i,
-					nodepos=[100, -200 * i],
-					panelparent=body)
-		finally:
-			self._LogEnd()
+		dest = self.ownerComp.op('nodes')
+		for marker in dest.ops('node__*'):
+			marker.destroy()
+		uibuilder = self.UiBuilder
+		if not self.AppSchema or not uibuilder:
+			return
+		body = dest.op('body_panel')
+		for i, nodeinfo in enumerate(self.AppSchema.nodes):
+			uibuilder.CreateNodeMarker(
+				dest=dest,
+				name='node__{}'.format(i),
+				nodeinfo=nodeinfo,
+				previewbutton=True,
+				order=i,
+				nodepos=[100, -200 * i],
+				panelparent=body)
 
 	def OnMenuClick(self, button):
 		name = button.name
@@ -239,25 +228,22 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			items=items,
 			autoClose=True)
 
+	@loggedmethod
 	def _RegisterNodeMarkers(self):
-		self._LogBegin('_RegisterNodeMarkers()')
-		try:
-			self.nodeMarkersByPath.clear()
-			for panel in self.ownerComp.ops('nodes', 'modules_panel'):
-				for marker in panel.findChildren(tags=['vjz4nodemarker']):
-					self._LogEvent('registering marker {}'.format(marker.path))
-					for par in marker.pars('Path', 'Video', 'Audio', 'Texbuf'):
-						path = par.eval()
-						self._LogEvent('  registering par {} value: {}'.format(par.name, path))
-						if not path:
-							continue
-						if path in self.nodeMarkersByPath:
-							self.nodeMarkersByPath[path].append(marker)
-						else:
-							self.nodeMarkersByPath[path] = [marker]
-			self._BuildNodeMarkerTable()
-		finally:
-			self._LogEnd()
+		self.nodeMarkersByPath.clear()
+		for panel in self.ownerComp.ops('nodes', 'modules_panel'):
+			for marker in panel.findChildren(tags=['vjz4nodemarker']):
+				self._LogEvent('registering marker {}'.format(marker.path))
+				for par in marker.pars('Path', 'Video', 'Audio', 'Texbuf'):
+					path = par.eval()
+					self._LogEvent('  registering par {} value: {}'.format(par.name, path))
+					if not path:
+						continue
+					if path in self.nodeMarkersByPath:
+						self.nodeMarkersByPath[path].append(marker)
+					else:
+						self.nodeMarkersByPath[path] = [marker]
+		self._BuildNodeMarkerTable()
 
 	def _BuildNodeMarkerTable(self):
 		dat = self.ownerComp.op('set_node_markers_by_path')
@@ -283,17 +269,14 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		finally:
 			self._LogEnd()
 
+	@loggedmethod
 	def _Disconnect(self):
-		self._LogBegin('_Disconnect()')
-		try:
-			self._RemoteClient.Detach()
-			self._RemoteClient.par.Active = False
-			self.ownerComp.op('schema_json').clear()
-			dest = self.ownerComp.op('modules_panel')
-			for m in dest.ops('mod__*'):
-				m.destroy()
-		finally:
-			self._LogEnd()
+		self._RemoteClient.Detach()
+		self._RemoteClient.par.Active = False
+		self.ownerComp.op('schema_json').clear()
+		dest = self.ownerComp.op('modules_panel')
+		for m in dest.ops('mod__*'):
+			m.destroy()
 
 	def ShowConnectDialog(self):
 		def _ok(text):

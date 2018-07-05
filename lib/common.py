@@ -72,6 +72,15 @@ class ExtensionBase:
 		if self.enablelogging:
 			_logger.LogEnd(self.ownerComp.path, self._GetLogId(), event)
 
+def loggedmethod(func: Callable):
+	def wrapper(self: ExtensionBase, *args, **kwargs):
+		self._LogBegin('{}({}{}{})'.format(func.__name__, args or '', ', ' if (args and kwargs) else '', kwargs or ''))
+		try:
+			return func(self, *args, **kwargs)
+		finally:
+			self._LogEnd()
+	return wrapper
+
 class ActionsExt:
 	def __init__(self, ownerComp, actions=None, autoinitparexec=True):
 		self.ownerComp = ownerComp
