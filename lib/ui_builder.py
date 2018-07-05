@@ -442,12 +442,14 @@ class UiBuilder:
 			dest,
 			name,
 			nodeinfo,  # type: schema.DataNodeInfo
+			previewbutton=False,
 			panelparent=None, order=None, nodepos=None, parvals=None, parexprs=None):
 		return CreateFromTemplate(
 			template=self.ownerComp.op('node_marker'),
 			dest=dest,
 			name=name,
 			order=order, nodepos=nodepos, panelparent=panelparent,
+			tags=['vjz4nodemarker'],
 			parvals=mergedicts(
 				{
 					'Name': nodeinfo.name,
@@ -456,6 +458,8 @@ class UiBuilder:
 					'Video': nodeinfo.video,
 					'Audio': nodeinfo.audio,
 					'Texbuf': nodeinfo.texbuf,
+					'Showpreviewbutton': previewbutton,
+					'Previewactive': False,
 					'h': 30,
 				},
 				parvals),

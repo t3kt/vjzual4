@@ -1,5 +1,6 @@
 import json
-from typing import Callable, List, Tuple
+from operator import itemgetter
+from typing import Callable, Dict, List, Tuple
 
 print('vjz4/app_host.py loading')
 
@@ -13,6 +14,7 @@ try:
 except ImportError:
 	common = mod.common
 parseint = common.parseint
+Future = common.Future
 
 try:
 	import module_host
@@ -45,6 +47,9 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		self._AutoInitActionParams()
 		self.AppSchema = None  # type: schema.AppSchema
 		self.ownerComp.op('schema_json').clear()
+		self.nodeMarkersByPath = {}  # type: Dict[str, List[str]]
+		self.previewMarkers = []  # type: List[op]
+		self.OnDetach()
 
 	@property
 	def _RemoteClient(self) -> remote_client.RemoteClient:
@@ -61,22 +66,29 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		try:
 			self.AppSchema = appschema
 			self.ownerComp.op('schema_json').clear()
-			self._BuildSubModuleHosts()
-			self.AddTaskBatch(
-				[
-					lambda: self._BuildNodeMarkers(),
-				],
-				autostart=True)
+			self._BuildSubModuleHosts().then(
+				success=lambda _: self.AddTaskBatch(
+					[
+						lambda: self._BuildNodeMarkers(),
+						lambda: self._RegisterNodeMarkers(),
+					],
+					autostart=True))
 		finally:
 			self._LogEnd()
 
 	def OnDetach(self):
-		self._LogEvent('OnDetach()')
-		for o in self.ownerComp.ops('schema_json', 'app_info', 'modules', 'params', 'param_parts', 'data_nodes'):
-			o.closeViewer()
-		for o in self.ownerComp.ops('nodes/node__*'):
-			o.destroy()
-		self.AppSchema = None
+		self._LogBegin('OnDetach()')
+		try:
+			for o in self.ownerComp.ops('schema_json', 'app_info', 'modules', 'params', 'param_parts', 'data_nodes'):
+				o.closeViewer()
+			for o in self.ownerComp.ops('nodes/node__*'):
+				o.destroy()
+			self.AppSchema = None
+			self.nodeMarkersByPath.clear()
+			self._BuildNodeMarkerTable()
+			self.SetPreviewSource(None)
+		finally:
+			self._LogEnd()
 
 	def OnTDPreSave(self):
 		for o in self.ownerComp.ops('modules_panel/mod__*'):
@@ -104,10 +116,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			for m in dest.ops('mod__*'):
 				m.destroy()
 			if not self.AppSchema:
-				return
+				return Future.immediate()
 			template = self._ModuleHostTemplate
 			if not template:
-				return
+				return Future.immediate()
 			hostconnectorpairs = []
 			for i, modschema in enumerate(self.AppSchema.childmodules):
 				self._LogEvent('creating host for sub module {}'.format(modschema.path))
@@ -126,7 +138,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			def _makeInitTask(h, c):
 				return lambda: self._InitSubModuleHost(h, c)
 
-			self.AddTaskBatch(
+			return self.AddTaskBatch(
 				[
 					_makeInitTask(host, connector)
 					for host, connector in hostconnectorpairs
@@ -140,7 +152,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def _InitSubModuleHost(self, host, connector):
 		self._LogBegin('_InitSubModuleHost({}, {})'.format(host, connector.modschema.path))
 		try:
-			host.AttachToModuleConnector(connector)
+			return host.AttachToModuleConnector(connector)
 		finally:
 			self._LogEnd()
 
@@ -166,6 +178,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 					dest=dest,
 					name='node__{}'.format(i),
 					nodeinfo=nodeinfo,
+					previewbutton=True,
 					order=i,
 					nodepos=[100, -200 * i],
 					panelparent=body)
@@ -216,12 +229,41 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 				_viewItem('Params', 'params'),
 				_viewItem('Param Parts', 'param_parts'),
 				_viewItem('Data Nodes', 'data_nodes'),
+				menu.Item(
+					'Reload code',
+					callback=lambda: op.Vjz4.op('RELOAD_CODE').run())
 			]
 		else:
 			return
 		menu.fromButton(button, h='Left', v='Bottom').Show(
 			items=items,
 			autoClose=True)
+
+	def _RegisterNodeMarkers(self):
+		self._LogBegin('_RegisterNodeMarkers()')
+		try:
+			self.nodeMarkersByPath.clear()
+			for panel in self.ownerComp.ops('nodes', 'modules_panel'):
+				for marker in panel.findChildren(tags=['vjz4nodemarker']):
+					self._LogEvent('registering marker {}'.format(marker.path))
+					for par in marker.pars('Path', 'Video', 'Audio', 'Texbuf'):
+						path = par.eval()
+						self._LogEvent('  registering par {} value: {}'.format(par.name, path))
+						if not path:
+							continue
+						if path in self.nodeMarkersByPath:
+							self.nodeMarkersByPath[path].append(marker)
+						else:
+							self.nodeMarkersByPath[path] = [marker]
+			self._BuildNodeMarkerTable()
+		finally:
+			self._LogEnd()
+
+	def _BuildNodeMarkerTable(self):
+		dat = self.ownerComp.op('set_node_markers_by_path')
+		dat.clear()
+		for path, markers in sorted(self.nodeMarkersByPath.items(), key=itemgetter(0)):
+			dat.appendRow([path] + sorted([marker.path for marker in markers]))
 
 	def ShowAppSchema(self):
 		dat = self.ownerComp.op('schema_json')
@@ -264,6 +306,44 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			oktext='Connect',
 			default='{}:{}'.format(client.par.Address.eval(), client.par.Commandsendport.eval()),
 			ok=_ok)
+
+	# this is called by node marker preview button click handlers
+	def SetPreviewSource(self, path, toggle=False):
+		self._LogBegin('SetPreviewSource({}{})'.format(path, ', toggle' if toggle else ''))
+		try:
+			client = self._RemoteClient
+			hassource = self._SetVideoSource(
+				path=path,
+				toggle=toggle,
+				sourcepar=client.par.Secondaryvideosource,
+				activepar=client.par.Secondaryvideoreceiveactive,
+				command='setSecondaryVideoSrc')
+			self.ownerComp.op('nodes/preview_panel').par.display = hassource
+			for marker in self.previewMarkers:
+				marker.par.Previewactive = False
+			self.previewMarkers.clear()
+			if hassource and path in self.nodeMarkersByPath:
+				self.previewMarkers += self.nodeMarkersByPath[path]
+				for marker in self.previewMarkers:
+					marker.par.Previewactive = True
+		finally:
+			self._LogEnd()
+
+	def _GetNodeVideoPath(self, path):
+		if not self.AppSchema:
+			return None
+		node = self.AppSchema.nodesbypath.get(path)
+		return node.video if node else None
+
+	def _SetVideoSource(self, path, toggle, activepar, sourcepar, command):
+		if toggle and path == sourcepar:
+			path = None
+		vidpath = self._GetNodeVideoPath(path)
+		client = self._RemoteClient
+		client.Connection.SendCommand(command, vidpath or '')
+		sourcepar.val = path or ''
+		activepar.val = bool(vidpath)
+		return bool(vidpath)
 
 def _ParseAddress(text: str, defaulthost='localhost', defaultport=9500) -> Tuple[str, int]:
 	text = text and text.strip()
