@@ -506,6 +506,9 @@ class ModuleSchema(BaseDataObject):
 			if par.specialtype == 'switch.bypass':
 				self.hasbypass = True
 
+	def __str__(self):
+		return '{}({})'.format(self.__class__.__name__, self.path)
+
 	@property
 	def parampartnames(self):
 		for param in self.params:

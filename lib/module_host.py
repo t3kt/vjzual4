@@ -30,6 +30,7 @@ except ImportError:
 	common = mod.common
 cleandict, mergedicts, trygetpar = common.cleandict, common.mergedicts, common.trygetpar
 Future = common.Future
+loggedmethod = common.loggedmethod
 
 try:
 	import control_mapping
@@ -268,61 +269,55 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 			if parinfo.name == name:
 				return parinfo
 
+	@loggedmethod
 	def BuildControls(self, dest):
-		self._LogBegin('BuildControls()')
-		try:
-			uibuilder = self.UiBuilder
-			for ctrl in dest.ops('par__*'):
-				ctrl.destroy()
-			self.controlsByParam = {}
-			self.paramsByControl = {}
-			if not self.ModuleConnector or not uibuilder:
-				self._RebuildParamControlTable()
-				return
-			for i, parinfo in enumerate(self._Params):
-				if parinfo.hidden or parinfo.specialtype.startswith('switch.'):
-					continue
-				uibuilder.CreateParControl(
-					dest=dest,
-					name='par__' + parinfo.name,
-					parinfo=parinfo,
-					order=i,
-					nodepos=[100, -200 * i],
-					parexprs=mergedicts(
-						parinfo.advanced and {'display': 'parent.ModuleHost.par.Showadvanced'}
-					),
-					addtocontrolmap=self.controlsByParam,
-					modhostconnector=self.ModuleConnector)
-			self.paramsByControl = {
-				name: ctrl
-				for name, ctrl in self.controlsByParam.items()
-			}
+		uibuilder = self.UiBuilder
+		for ctrl in dest.ops('par__*'):
+			ctrl.destroy()
+		self.controlsByParam = {}
+		self.paramsByControl = {}
+		if not self.ModuleConnector or not uibuilder:
 			self._RebuildParamControlTable()
-			dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
-		finally:
-			self._LogEnd()
+			return
+		for i, parinfo in enumerate(self._Params):
+			if parinfo.hidden or parinfo.specialtype.startswith('switch.'):
+				continue
+			uibuilder.CreateParControl(
+				dest=dest,
+				name='par__' + parinfo.name,
+				parinfo=parinfo,
+				order=i,
+				nodepos=[100, -200 * i],
+				parexprs=mergedicts(
+					parinfo.advanced and {'display': 'parent.ModuleHost.par.Showadvanced'}
+				),
+				addtocontrolmap=self.controlsByParam,
+				modhostconnector=self.ModuleConnector)
+		self.paramsByControl = {
+			name: ctrl
+			for name, ctrl in self.controlsByParam.items()
+		}
+		self._RebuildParamControlTable()
+		dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
 
+	@loggedmethod
 	def BuildNodeMarkers(self):
-		self._LogBegin('BuildNodeMarkers()')
-		try:
-			dest = self.ownerComp.op('nodes_panel')
-			for marker in dest.ops('node__*'):
-				marker.destroy()
-			uibuilder = self.UiBuilder
-			if not self.ModuleConnector or not uibuilder:
-				return
-			hasapphost = bool(self.AppHost)
-			for i, nodeinfo in enumerate(self.ModuleConnector.modschema.nodes):
-				uibuilder.CreateNodeMarker(
-					dest=dest,
-					name='node__' + nodeinfo.name,
-					nodeinfo=nodeinfo,
-					order=i,
-					previewbutton=hasapphost,
-					nodepos=[100, -200 * i])
-			dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
-		finally:
-			self._LogEnd()
+		dest = self.ownerComp.op('nodes_panel')
+		for marker in dest.ops('node__*'):
+			marker.destroy()
+		uibuilder = self.UiBuilder
+		if not self.ModuleConnector or not uibuilder:
+			return
+		hasapphost = bool(self.AppHost)
+		for i, nodeinfo in enumerate(self.ModuleConnector.modschema.nodes):
+			uibuilder.CreateNodeMarker(
+				dest=dest,
+				name='node__' + nodeinfo.name,
+				nodeinfo=nodeinfo,
+				order=i,
+				previewbutton=hasapphost,
+				nodepos=[100, -200 * i])
+		dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
 
 	def BuildMappingEditors(self, dest):
 		uibuilder = self.UiBuilder
@@ -466,16 +461,13 @@ class ModuleHost(ModuleHostBase):
 		super().__init__(ownerComp)
 		self._AutoInitActionParams()
 
+	@loggedmethod
 	def AttachToModuleConnector(self, connector: 'ModuleHostConnector'):
-		self._LogBegin('AttachToModuleConnector()')
-		try:
-			super().AttachToModuleConnector(connector)
-			self._ClearControls()
-			self.BuildControlsIfNeeded()
-			self.BuildNodeMarkersIfNeeded()
-			self.UpdateModuleHeight()
-		finally:
-			self._LogEnd()
+		super().AttachToModuleConnector(connector)
+		self._ClearControls()
+		self.BuildControlsIfNeeded()
+		self.BuildNodeMarkersIfNeeded()
+		self.UpdateModuleHeight()
 
 	def BuildMappingEditorsIfNeeded(self):
 		if self.ownerComp.par.Uimode == 'map' and not self.ownerComp.par.Collapsed and not self._MappingEditorsBuilt:
@@ -495,16 +487,13 @@ class ModuleChainHost(ModuleHostBase):
 		for o in self.ownerComp.ops('controls_panel/par__*', 'sub_modules_panel/mod__*'):
 			o.destroy()
 
+	@loggedmethod
 	def AttachToModuleConnector(self, connector: 'ModuleHostConnector'):
-		self._LogBegin('AttachToModuleConnector()')
-		try:
-			super().AttachToModuleConnector(connector)
-			self._ClearControls()
-			self.BuildControlsIfNeeded()
-			self.BuildNodeMarkersIfNeeded()
-			return self._BuildSubModuleHosts()
-		finally:
-			self._LogEnd()
+		super().AttachToModuleConnector(connector)
+		self._ClearControls()
+		self.BuildControlsIfNeeded()
+		self.BuildNodeMarkersIfNeeded()
+		return self._BuildSubModuleHosts()
 
 	def ClearUIState(self):
 		for m in self._SubModuleHosts:
@@ -532,73 +521,63 @@ class ModuleChainHost(ModuleHostBase):
 			template = op.Vjz4.op('./module_host')
 		return template
 
+	@loggedmethod
 	def _BuildSubModuleHosts(self):
-		self._LogBegin('_BuildSubModuleHosts()')
-		try:
-			dest = self.ownerComp.op('./sub_modules_panel')
-			for m in dest.ops('mod__*'):
-				m.destroy()
-			if not self.ModuleConnector:
-				return
-			template = self._ModuleHostTemplate
-			if not template:
-				return
-			hostconnectorpairs = [
-				{'host': None, 'connector': conn}
-				for conn in self.ModuleConnector.CreateChildModuleConnectors()
-			]
+		dest = self.ownerComp.op('./sub_modules_panel')
+		for m in dest.ops('mod__*'):
+			m.destroy()
+		if not self.ModuleConnector:
+			return
+		template = self._ModuleHostTemplate
+		if not template:
+			return
+		hostconnectorpairs = [
+			{'host': None, 'connector': conn}
+			for conn in self.ModuleConnector.CreateChildModuleConnectors()
+		]
 
-			def _makeCreateTask(hcpair, index):
-				def _task():
-					hcpair['host'] = self._CreateSubModuleHost(hcpair['connector'], index, dest, template)
-				return _task
+		def _makeCreateTask(hcpair, index):
+			def _task():
+				hcpair['host'] = self._CreateSubModuleHost(hcpair['connector'], index)
+			return _task
 
-			def _makeInitTask(hcpair):
-				return lambda: self._InitSubModuleHost(hcpair['host'], hcpair['connector'])
+		def _makeInitTask(hcpair):
+			return lambda: self._InitSubModuleHost(hcpair['host'], hcpair['connector'])
 
-			return self.AddTaskBatch(
-				[
-					_makeCreateTask(hostconnpair, i)
-					for i, hostconnpair in enumerate(hostconnectorpairs)
-				] +
-				[
-					_makeInitTask(hostconnpair)
-					for hostconnpair in hostconnectorpairs
-				] + [
-					lambda: self._OnSubModuleHostsConnected()
-				],
-				autostart=True)
-		finally:
-			self._LogEnd()
+		return self.AddTaskBatch(
+			[
+				_makeCreateTask(hostconnpair, i)
+				for i, hostconnpair in enumerate(hostconnectorpairs)
+			] +
+			[
+				_makeInitTask(hostconnpair)
+				for hostconnpair in hostconnectorpairs
+			] + [
+				lambda: self._OnSubModuleHostsConnected()
+			],
+			autostart=True)
 
-	def _CreateSubModuleHost(self, connector, i, dest, template):
-		self._LogBegin('_CreateSubModuleHost({}, {})'.format(connector.modschema.path, i))
-		try:
-			host = dest.copy(template, name='mod__' + connector.modschema.name)
-			host.par.Collapsed = True
-			host.par.Uibuilder.expr = 'parent.ModuleHost.par.Uibuilder or ""'
-			host.par.hmode = 'fill'
-			host.par.alignorder = i
-			host.nodeX = 100
-			host.nodeY = -100 * i
-			return host
-		finally:
-			self._LogEnd()
+	@loggedmethod
+	def _CreateSubModuleHost(self, connector, i):
+		template = self._ModuleHostTemplate
+		dest = self.ownerComp.op('./sub_modules_panel')
+		host = dest.copy(template, name='mod__' + connector.modschema.name)
+		host.par.Collapsed = True
+		host.par.Uibuilder.expr = 'parent.ModuleHost.par.Uibuilder or ""'
+		host.par.hmode = 'fill'
+		host.par.alignorder = i
+		host.nodeX = 100
+		host.nodeY = -100 * i
+		return host
 
+	@loggedmethod
 	def _InitSubModuleHost(self, host, connector):
-		self._LogBegin('_InitSubModuleHost({}, {})'.format(host, connector.modschema.path))
-		try:
-			return host.AttachToModuleConnector(connector)
-		finally:
-			self._LogEnd()
+		return host.AttachToModuleConnector(connector)
 
+	@loggedmethod
 	def _OnSubModuleHostsConnected(self):
-		self._LogBegin('_OnSubModuleHostsConnected()')
-		try:
-			# TODO: load ui state etc
-			self.UpdateModuleHeight()
-		finally:
-			self._LogEnd()
+		# TODO: load ui state etc
+		self.UpdateModuleHeight()
 
 	def _SetSubModuleHostPars(self, name, val):
 		for m in self._SubModuleHosts:
