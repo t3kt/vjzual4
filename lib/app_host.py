@@ -1,6 +1,6 @@
 import json
 from operator import itemgetter
-from typing import Callable, Dict, List, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 print('vjz4/app_host.py loading')
 
@@ -47,7 +47,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		})
 		self._AutoInitActionParams()
 		self.AppSchema = None  # type: schema.AppSchema
-		self.ownerComp.op('schema_json').clear()
+		self._ShowSchemaJson(None)
 		self.nodeMarkersByPath = {}  # type: Dict[str, List[str]]
 		self.previewMarkers = []  # type: List[op]
 		self.OnDetach()
@@ -65,7 +65,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	@loggedmethod
 	def OnAppSchemaLoaded(self, appschema: schema.AppSchema):
 		self.AppSchema = appschema
-		self.ownerComp.op('schema_json').clear()
+		self._ShowSchemaJson(None)
 		self._BuildSubModuleHosts().then(
 			success=lambda _: self.AddTaskBatch(
 				[
@@ -76,8 +76,9 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 
 	@loggedmethod
 	def OnDetach(self):
-		for o in self.ownerComp.ops('schema_json', 'app_info', 'modules', 'params', 'param_parts', 'data_nodes'):
+		for o in self.ownerComp.ops('app_info', 'modules', 'params', 'param_parts', 'data_nodes'):
 			o.closeViewer()
+		self._ShowSchemaJson(None)
 		for o in self.ownerComp.ops('nodes/node__*'):
 			o.destroy()
 		self.AppSchema = None
@@ -227,6 +228,15 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			items=items,
 			autoClose=True)
 
+	def GetModuleAdditionalMenuItems(self, modhost: module_host.ModuleHost):
+		return [
+			menu.Item(
+				'View Schema',
+				disabled=not modhost.ModuleConnector,
+				callback=lambda: self._ShowSchemaJson(modhost.ModuleConnector.modschema)
+			)
+		]
+
 	@loggedmethod
 	def _RegisterNodeMarkers(self):
 		self.nodeMarkersByPath.clear()
@@ -249,13 +259,15 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			dat.appendRow([path] + sorted([marker.path for marker in markers]))
 
 	def ShowAppSchema(self):
+		self._ShowSchemaJson(self.AppSchema)
+
+	def _ShowSchemaJson(self, info: 'Optional[common.BaseDataObject]'):
 		dat = self.ownerComp.op('schema_json')
-		if not self.AppSchema:
+		if not info:
 			dat.text = ''
+			dat.closeViewer()
 		else:
-			dat.text = json.dumps(
-				self.AppSchema.ToJsonDict(),
-				indent='  ')
+			dat.text = json.dumps(info.ToJsonDict(), indent='  ')
 			dat.openViewer(unique=True)
 
 	@loggedmethod
@@ -267,7 +279,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def _Disconnect(self):
 		self._RemoteClient.Detach()
 		self._RemoteClient.par.Active = False
-		self.ownerComp.op('schema_json').clear()
+		self._ShowSchemaJson(None)
 		dest = self.ownerComp.op('modules_panel')
 		for m in dest.ops('mod__*'):
 			m.destroy()

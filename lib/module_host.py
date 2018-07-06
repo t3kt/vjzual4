@@ -448,23 +448,25 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 				callback=lambda: setattr(self.ownerComp.par, 'Showadvanced', not self.ownerComp.par.Showadvanced),
 				dividerafter=True),
 			# _MenuItem('Host Parameters', callback=lambda: self.ownerComp.openParameters()),
-			menu.Item(
-				'Collapse Sub Modules',
-				disabled=not hassubmods,
-				callback=_subModuleHostParUpdater('Collapsed', True)),
-			menu.Item(
-				'Expand Sub Modules',
-				disabled=not hassubmods,
-				callback=_subModuleHostParUpdater('Collapsed', False)),
-			menu.Item(
-				'Sub Module Controls',
-				disabled=not hassubmods,
-				callback=_subModuleHostParUpdater('Uimode', 'ctrl')),
-			menu.Item(
-				'Sub Module Nodes',
-				disabled=not hassubmods,
-				callback=_subModuleHostParUpdater('Uimode', 'nodes')),
 		]
+		if hassubmods:
+			items += [
+				menu.Item(
+					'Collapse Sub Modules',
+					callback=_subModuleHostParUpdater('Collapsed', True)),
+				menu.Item(
+					'Expand Sub Modules',
+					callback=_subModuleHostParUpdater('Collapsed', False)),
+				menu.Item(
+					'Sub Module Controls',
+					callback=_subModuleHostParUpdater('Uimode', 'ctrl')),
+				menu.Item(
+					'Sub Module Nodes',
+					callback=_subModuleHostParUpdater('Uimode', 'nodes')),
+			]
+		apphost = self.AppHost
+		if apphost:
+			items += apphost.GetModuleAdditionalMenuItems(self)
 		return items
 
 	def ShowContextMenu(self):
