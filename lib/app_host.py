@@ -93,7 +93,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def _ModuleHostTemplate(self):
 		template = self.ownerComp.par.Modulehosttemplate.eval()
 		if not template and hasattr(op, 'Vjz4'):
-			template = op.Vjz4.op('./module_host')
+			template = op.Vjz4.op('./module_chain_host')
 		return template
 
 	@property
@@ -119,7 +119,8 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			self._LogEvent('creating host for sub module {}'.format(modschema.path))
 			host = dest.copy(template, name='mod__' + modschema.name)  # type: module_host.ModuleChainHost
 			host.par.Uibuilder.expr = 'parent.AppHost.par.Uibuilder or ""'
-			host.par.Modulehosttemplate.expr = 'op.Vjz4.op("module_host")'
+			host.par.Modulehosttemplate = 'op({!r})'.format(template.path)
+			host.par.Autoheight = False
 			host.par.hmode = 'fixed'
 			host.par.vmode = 'fill'
 			host.par.w = 250
@@ -147,7 +148,11 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 
 	@loggedmethod
 	def _OnSubModuleHostsConnected(self):
-		pass
+		self.UpdateModuleWidths()
+
+	def UpdateModuleWidths(self):
+		for m in self.ownerComp.ops('modules_panel/mod__*'):
+			m.par.w = 100 if m.par.Collapsed else 250
 
 	@loggedmethod
 	def _BuildNodeMarkers(self):
@@ -227,10 +232,8 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		self.nodeMarkersByPath.clear()
 		for panel in self.ownerComp.ops('nodes', 'modules_panel'):
 			for marker in panel.findChildren(tags=['vjz4nodemarker']):
-				self._LogEvent('registering marker {}'.format(marker.path))
 				for par in marker.pars('Path', 'Video', 'Audio', 'Texbuf'):
 					path = par.eval()
-					self._LogEvent('  registering par {} value: {}'.format(par.name, path))
 					if not path:
 						continue
 					if path in self.nodeMarkersByPath:

@@ -8,6 +8,10 @@ if False:
 	from ui_builder import UiBuilder
 	from app_host import AppHost
 
+try:
+	import td
+except ImportError:
+	pass
 
 try:
 	import comp_metadata
@@ -56,7 +60,7 @@ def _GetOrAdd(d, key, default):
 		d[key] = val = default
 	return val
 
-class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
+class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 	"""Base class for components that host modules, such as ModuleHost or ModuleEditor."""
 	def __init__(self, ownerComp):
 		common.ExtensionBase.__init__(self, ownerComp)
@@ -71,6 +75,7 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 		self.paramsByControl = {}
 		self.Mappings = control_mapping.ModuleControlMap()
 		self.UiModeNames = DependList([])
+		self._AutoInitActionParams()
 
 		# trick pycharm
 		if False:
@@ -98,7 +103,8 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 		return not self._Params or any(self.ownerComp.ops('mappings_panel/map__*'))
 
 	def OnTDPreSave(self):
-		pass
+		for o in self.ownerComp.ops('controls_panel/par__*', 'sub_modules_panel/mod__*'):
+			o.destroy()
 
 	def _GetUIState(self, autoinit) -> Optional[DependDict]:
 		parent = self.ParentHost
@@ -134,6 +140,8 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 		return self._GetUIState(autoinit=True)
 
 	def ClearUIState(self):
+		for m in self._SubModuleHosts:
+			m.ClearUIState()
 		parent = self.ParentHost
 		if not parent:
 			if 'UIState' in self.ownerComp.storage:
@@ -155,6 +163,8 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 		uistate = self.UIState
 		for name in ['Collapsed', 'Uimode']:
 			uistate[name] = getattr(self.ownerComp.par, name).eval()
+		for m in self._SubModuleHosts:
+			m.SaveUIState()
 
 	def LoadUIState(self):
 		uistate = self._GetUIState(autoinit=False)
@@ -163,9 +173,11 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 		self.ownerComp.par.Collapsed = uistate.get('Collapsed', False)
 		if 'Uimode' in uistate and uistate['Uimode'] in self.ownerComp.par.Uimode.menuNames:
 			self.ownerComp.par.Uimode = uistate['Uimode']
+		for m in self._SubModuleHosts:
+			m.LoadUIState()
 
 	@property
-	def ParentHost(self) -> 'ModuleHostBase':
+	def ParentHost(self) -> 'ModuleHost':
 		parent = getattr(self.ownerComp.parent, 'ModuleHost', None)
 		return parent or self.AppHost
 
@@ -199,10 +211,32 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 	def ProgressBar(self):
 		return self.ownerComp.op('module_header/progress_bar')
 
+	@property
+	def _SubModuleHosts(self) -> 'List[ModuleHost]':
+		return self.ownerComp.ops('sub_modules_panel/mod__*')
+
+	@property
+	def _ModuleHostTemplate(self):
+		template = self.ownerComp.par.Modulehosttemplate.eval()
+		if not template and hasattr(op, 'Vjz4'):
+			template = op.Vjz4.op('module_chain_host')
+		return template
+
+	@loggedmethod
 	def AttachToModuleConnector(self, connector: 'ModuleHostConnector') -> Optional[Future]:
 		self.ModuleConnector = connector
+		header = self.ownerComp.op('module_header')
+		bypassbutton = header.op('bypass_button')
+		bypassbutton.par.display = False
+		bypassbutton.par.Value1.expr = ''
+		title = header.op('panel_title/bg')
+		titlehelp = header.op('panel_title/help')
+		title.par.text = titlehelp.text = ''
+		bodypanel = self.ownerComp.op('body_panel')
+		bodypanel.par.opacity = 1
 		self.UiModeNames.clear()
 		if connector:
+			title.par.text = titlehelp.text = connector.modschema.label
 			if self._Params:
 				self.UiModeNames.append('ctrl')
 			if self._DataNodes:
@@ -210,6 +244,11 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 			self.UiModeNames.append('map')
 			if connector.modschema.childmodpaths:
 				self.UiModeNames.append('submods')
+			if connector.modschema.hasbypass:
+				bypassexpr = connector.GetParExpr('Bypass')
+				bypassbutton.par.display = True
+				bypassbutton.par.Value1.expr = bypassexpr
+				bodypanel.par.opacity.expr = '0.5 if {} else 1'.format(bypassexpr)
 		else:
 			self.UiModeNames.append('nodes')
 
@@ -217,7 +256,10 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 		self._BuildParamTable(hostcore.op('set_param_table'))
 		self._BuildDataNodeTable(hostcore.op('set_data_nodes'))
 		self._RebuildParamControlTable()
-		return None
+		self._ClearControls()
+		self.BuildControlsIfNeeded()
+		self.BuildNodeMarkersIfNeeded()
+		return self._BuildSubModuleHosts()
 
 	def _RebuildParamControlTable(self):
 		hostcore = self.ownerComp.op('host_core')
@@ -345,12 +387,21 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 				))
 		dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
 
+	def BuildMappingEditorsIfNeeded(self):
+		if self.ownerComp.par.Uimode == 'map' and not self.ownerComp.par.Collapsed and not self._MappingEditorsBuilt:
+			panel = self.ownerComp.op('mappings_panel')
+			self.BuildMappingEditors(panel)
+
+	@loggedmethod
 	def UpdateModuleHeight(self):
 		if not self.ownerComp.par.Autoheight:
 			return
 		maxheight = self.ownerComp.par.Maxheight
-		h = self.HeightOfVisiblePanels(self.ownerComp.ops(
-			'module_header', 'nodes_panel', 'controls_panel', 'sub_modules_panel', 'mappings_panel'))
+		if self.ownerComp.par.Collapsed:
+			panels = self.ownerComp.ops('module_header')
+		else:
+			panels = self.ownerComp.ops('module_header', 'nodes_panel', 'controls_panel', 'sub_modules_panel', 'mappings_panel')
+		h = self.HeightOfVisiblePanels(panels)
 		if 0 < maxheight < h:
 			h = maxheight
 		self.ownerComp.par.h = h
@@ -365,6 +416,11 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 	def _GetContextMenuItems(self):
 		if not self.ModuleConnector:
 			return []
+
+		def _subModuleHostParUpdater(name, val):
+			return lambda: self._SetSubModuleHostPars(name, val)
+
+		hassubmods = bool(self.ModuleConnector and self.ModuleConnector.modschema.childmodpaths)
 		items = [
 			menu.Item(
 				'Parameters',
@@ -386,6 +442,22 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 				callback=lambda: setattr(self.ownerComp.par, 'Showadvanced', not self.ownerComp.par.Showadvanced),
 				dividerafter=True),
 			# _MenuItem('Host Parameters', callback=lambda: self.ownerComp.openParameters()),
+			menu.Item(
+				'Collapse Sub Modules',
+				disabled=not hassubmods,
+				callback=_subModuleHostParUpdater('Collapsed', True)),
+			menu.Item(
+				'Expand Sub Modules',
+				disabled=not hassubmods,
+				callback=_subModuleHostParUpdater('Collapsed', False)),
+			menu.Item(
+				'Sub Module Controls',
+				disabled=not hassubmods,
+				callback=_subModuleHostParUpdater('Uimode', 'ctrl')),
+			menu.Item(
+				'Sub Module Nodes',
+				disabled=not hassubmods,
+				callback=_subModuleHostParUpdater('Uimode', 'nodes')),
 		]
 		return items
 
@@ -427,114 +499,28 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 		self.BuildControlsIfNeeded()
 		# self.BuildNodeMarkersIfNeeded()
 
-def FindSubModules(parentComp):
-	if not parentComp:
-		return []
-	submodules = parentComp.findChildren(tags=['vjzmod4', 'tmod'], maxDepth=1)
-	if all(hasattr(m.par, 'alignorder') for m in submodules):
-		submodules.sort(key=attrgetter('par.alignorder'))
-	else:
-		distx = abs(max(m.nodeX for m in submodules) - min(m.nodeX for m in submodules))
-		disty = abs(max(m.nodeY for m in submodules) - min(m.nodeY for m in submodules))
-		if distx > disty:
-			submodules.sort(key=attrgetter('nodeX'))
-		else:
-			submodules.sort(key=attrgetter('nodeY'))
-	return submodules
-
-def _getActiveEditor():
-	pane = ui.panes.current
-	if pane.type == PaneType.NETWORKEDITOR:
-		return pane
-	for pane in ui.panes:
-		if pane.type == PaneType.NETWORKEDITOR:
-			return pane
-
-def _editComp(comp):
-	editor = _getActiveEditor()
-	if editor:
-		editor.owner = comp
-
-
-class ModuleHost(ModuleHostBase):
-	def __init__(self, ownerComp):
-		super().__init__(ownerComp)
-		self._AutoInitActionParams()
-
-	@loggedmethod
-	def AttachToModuleConnector(self, connector: 'ModuleHostConnector'):
-		super().AttachToModuleConnector(connector)
-		self._ClearControls()
-		self.BuildControlsIfNeeded()
-		self.BuildNodeMarkersIfNeeded()
-		self.UpdateModuleHeight()
-
-	def BuildMappingEditorsIfNeeded(self):
-		if self.ownerComp.par.Uimode == 'map' and not self.ownerComp.par.Collapsed and not self._MappingEditorsBuilt:
-			panel = self.ownerComp.op('mappings_panel')
-			self.BuildMappingEditors(panel)
-
-	def OnTDPreSave(self):
-		self._ClearControls()
-
-
-class ModuleChainHost(ModuleHostBase):
-	def __init__(self, ownerComp):
-		super().__init__(ownerComp)
-		self._AutoInitActionParams()
-
-	def OnTDPreSave(self):
-		for o in self.ownerComp.ops('controls_panel/par__*', 'sub_modules_panel/mod__*'):
-			o.destroy()
-
-	@loggedmethod
-	def AttachToModuleConnector(self, connector: 'ModuleHostConnector'):
-		super().AttachToModuleConnector(connector)
-		self._ClearControls()
-		self.BuildControlsIfNeeded()
-		self.BuildNodeMarkersIfNeeded()
-		return self._BuildSubModuleHosts()
-
-	def ClearUIState(self):
-		for m in self._SubModuleHosts:
-			m.ClearUIState()
-		super().ClearUIState()
-
-	def SaveUIState(self):
-		super().SaveUIState()
-		for m in self._SubModuleHosts:
-			m.SaveUIState()
-
-	def LoadUIState(self):
-		super().LoadUIState()
-		for m in self._SubModuleHosts:
-			m.LoadUIState()
-
-	@property
-	def _SubModuleHosts(self) -> List[ModuleHostBase]:
-		return self.ownerComp.ops('sub_modules_panel/mod__*')
-
-	@property
-	def _ModuleHostTemplate(self):
-		template = self.ownerComp.par.Modulehosttemplate.eval()
-		if not template and hasattr(op, 'Vjz4'):
-			template = op.Vjz4.op('./module_host')
-		return template
-
 	@loggedmethod
 	def _BuildSubModuleHosts(self):
 		dest = self.ownerComp.op('./sub_modules_panel')
 		for m in dest.ops('mod__*'):
 			m.destroy()
 		if not self.ModuleConnector:
-			return
+			self._LogEvent('No module connector attached!')
+			self._OnSubModuleHostsConnected()
+			return None
 		template = self._ModuleHostTemplate
 		if not template:
-			return
+			self._LogEvent('No module host template! Cannot build sub module hosts!')
+			self._OnSubModuleHostsConnected()
+			return None
 		hostconnectorpairs = [
 			{'host': None, 'connector': conn}
 			for conn in self.ModuleConnector.CreateChildModuleConnectors()
 		]
+		if not hostconnectorpairs:
+			self._LogEvent('No sub modules to build')
+			self._OnSubModuleHostsConnected()
+			return None
 
 		def _makeCreateTask(hcpair, index):
 			def _task():
@@ -563,6 +549,7 @@ class ModuleChainHost(ModuleHostBase):
 		dest = self.ownerComp.op('./sub_modules_panel')
 		host = dest.copy(template, name='mod__' + connector.modschema.name)
 		host.par.Collapsed = True
+		host.par.Autoheight = True
 		host.par.Uibuilder.expr = 'parent.ModuleHost.par.Uibuilder or ""'
 		host.par.hmode = 'fill'
 		host.par.alignorder = i
@@ -582,35 +569,6 @@ class ModuleChainHost(ModuleHostBase):
 	def _SetSubModuleHostPars(self, name, val):
 		for m in self._SubModuleHosts:
 			setattr(m.par, name, val)
-
-	def _GetContextMenuItems(self):
-		if not self.ModuleConnector:
-			return []
-
-		def _subModuleHostParUpdater(name, val):
-			return lambda: self._SetSubModuleHostPars(name, val)
-
-		hassubmods = bool(self.ModuleConnector and self.ModuleConnector.modschema.childmodpaths)
-		items = super()._GetContextMenuItems() + [
-			menu.Item(
-				'Collapse Sub Modules',
-				disabled=not hassubmods,
-				callback=_subModuleHostParUpdater('Collapsed', True)),
-			menu.Item(
-				'Expand Sub Modules',
-				disabled=not hassubmods,
-				callback=_subModuleHostParUpdater('Collapsed', False)),
-			menu.Item(
-				'Sub Module Controls',
-				disabled=not hassubmods,
-				callback=_subModuleHostParUpdater('Uimode', 'ctrl')),
-			menu.Item(
-				'Sub Module Nodes',
-				disabled=not hassubmods,
-				callback=_subModuleHostParUpdater('Uimode', 'nodes')),
-		]
-		return items
-
 
 class ModuleHostConnector:
 	def __init__(
@@ -645,5 +603,5 @@ class ModuleHostConnector:
 	def CreateChildModuleConnectors(self) -> 'List[ModuleHostConnector]':
 		return []
 
-	def __str__(self):
+	def __repr__(self):
 		return '{}({})'.format(self.__class__.__name__, self.modpath)
