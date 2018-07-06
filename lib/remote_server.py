@@ -216,6 +216,7 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 			coreparattrsdat = trygetpar(modulecore, 'Parameters')
 			if coreparattrsdat and not settings.parattrs:
 				settings.parattrs = common.ParseAttrTable(coreparattrsdat)
+			nodes = [self._GetNodeInfo(n) for n in nodeops]
 			modinfo = schema.RawModuleInfo(
 				path=modpath,
 				parentpath=module.parent().path,
@@ -226,8 +227,9 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 					[self._BuildParamInfo(p) for p in t]
 					for t in module.customTuplets
 				],
-				nodes=[self._GetNodeInfo(n) for n in nodeops],
 				parattrs=settings.parattrs,
+				nodes=nodes,
+				primarynode=nodes[0].path if nodes else None,
 			)
 			return modinfo
 		finally:
@@ -236,13 +238,17 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 	@staticmethod
 	def _FindDataNodes(module, modulecore):
 		nodespar = modulecore and getattr(modulecore.par, 'Nodes', None)
-		nodesval = nodespar.eval() if nodespar else None
-		if nodesval:
-			if isinstance(nodesval, (list, tuple)):
-				return module.ops(*nodesval)
+		nodes = nodespar.eval() if nodespar else None
+		if nodes:
+			if isinstance(nodes, (list, tuple)):
+				return module.ops(*nodes)
 			else:
-				return module.ops(nodesval)
-		return module.findChildren(tags=['vjznode', 'tdatanode'], maxDepth=1)
+				return module.ops(nodes)
+		nodes = module.findChildren(tags=['vjznode', 'tdatanode'], maxDepth=1)
+		if not nodes:
+			for n in module.ops('out_node', 'out1', 'video_out'):
+				return [n]
+		return nodes
 
 	def _GetNodeInfo(self, nodeop):
 		if nodeop.isTOP:

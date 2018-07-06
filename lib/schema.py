@@ -139,6 +139,7 @@ class RawModuleInfo(BaseDataObject):
 			partuplets=None,
 			parattrs=None,
 			nodes=None,
+			primarynode=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.path = path
@@ -149,7 +150,7 @@ class RawModuleInfo(BaseDataObject):
 		self.partuplets = partuplets or []  # type: List[Tuple[RawParamInfo]]
 		self.parattrs = parattrs or {}  # type: Dict[Dict[str, str]]
 		self.nodes = nodes or []  # type: List[DataNodeInfo]
-		# TODO: data nodes
+		self.primarynode = primarynode  # type: str
 
 	@classmethod
 	def FromJsonDict(cls, obj):
@@ -170,6 +171,7 @@ class RawModuleInfo(BaseDataObject):
 		'name',
 		'label',
 		'parentpath',
+		'primarynode',
 	]
 
 	def ToJsonDict(self):
@@ -185,6 +187,7 @@ class RawModuleInfo(BaseDataObject):
 			],
 			'parattrs': self.parattrs,
 			'nodes': BaseDataObject.ToJsonDicts(self.nodes),
+			'primarynode': self.primarynode,
 		}))
 
 class ParamPartSchema(BaseDataObject):
@@ -485,6 +488,7 @@ class ModuleSchema(BaseDataObject):
 			childmodpaths=None,
 			params=None,  # type: List[ParamSchema]
 			nodes=None,  # type: List[DataNodeInfo]
+			primarynode=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.name = name
@@ -500,6 +504,13 @@ class ModuleSchema(BaseDataObject):
 		self.nodes = nodes or []
 		self.hasbypass = False
 		self.hasadvanced = False
+		self.primarynodepath = primarynode
+		self.primarynode = None  # type: Optional[DataNodeInfo]
+		if self.primarynodepath:
+			for node in self.nodes:
+				if node.path == self.primarynodepath:
+					self.primarynode = node
+					break
 		for par in self.params:
 			if par.advanced:
 				self.hasadvanced = True
@@ -529,6 +540,7 @@ class ModuleSchema(BaseDataObject):
 		'parentpath',
 		'hasbypass',
 		'hasadvanced',
+		'primarynode',
 	]
 
 	def ToJsonDict(self):
@@ -542,6 +554,7 @@ class ModuleSchema(BaseDataObject):
 			'hasadvanced': self.hasadvanced,
 			'params': BaseDataObject.ToJsonDicts(self.params),
 			'nodes': BaseDataObject.ToJsonDicts(self.nodes),
+			'primarynode': self.primarynodepath,
 		}))
 
 	@classmethod
@@ -569,6 +582,7 @@ class ModuleSchema(BaseDataObject):
 			childmodpaths=list(modinfo.childmodpaths) if modinfo.childmodpaths else None,
 			params=params,
 			nodes=nodes,
+			primarynode=modinfo.primarynode,
 		)
 
 class AppSchema(BaseDataObject):
