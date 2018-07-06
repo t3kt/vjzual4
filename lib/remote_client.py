@@ -324,7 +324,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 				params = list(modschema.parampartnames) if modschema else None
 			if not params:
 				return
-			self.Connection.SendRequest('queryModState', {'path': modpath, 'params': params}).then(
+			return self.Connection.SendRequest('queryModState', {'path': modpath, 'params': params}).then(
 				success=self._OnReceiveModuleState,
 				failure=self._OnQueryModuleStateFailure)
 		finally:

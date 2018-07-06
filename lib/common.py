@@ -37,9 +37,9 @@ class IndentedLogger:
 		if not path and not opid:
 			Log('%s%s' % (self._indentStr, event), file=self._outFile)
 		elif not opid:
-			Log('%s%s (%s)' % (self._indentStr, event, path or ''), file=self._outFile)
+			Log('%s%s %s' % (self._indentStr, path or '', event), file=self._outFile)
 		else:
-			Log('%s[%s] %s (%s)' % (self._indentStr, opid or '', event, path or ''), file=self._outFile)
+			Log('%s[%s] %s %s' % (self._indentStr, opid or '', path or '', event), file=self._outFile)
 
 	def LogBegin(self, path, opid, event):
 		self.LogEvent(path, opid, event)
@@ -71,6 +71,15 @@ class ExtensionBase:
 	def _LogEnd(self, event=None):
 		if self.enablelogging:
 			_logger.LogEnd(self.ownerComp.path, self._GetLogId(), event)
+
+def loggedmethod(func: Callable):
+	def wrapper(self: ExtensionBase, *args, **kwargs):
+		self._LogBegin('{}({}{}{})'.format(func.__name__, args or '', ', ' if (args and kwargs) else '', kwargs or ''))
+		try:
+			return func(self, *args, **kwargs)
+		finally:
+			self._LogEnd()
+	return wrapper
 
 class ActionsExt:
 	def __init__(self, ownerComp, actions=None, autoinitparexec=True):
@@ -151,7 +160,8 @@ class TaskQueueExt:
 
 		def _onfinish(*_):
 			if not batch.tasks:
-				batch.future.resolve()
+				if not batch.future.isresolved:
+					batch.future.resolve()
 			self._QueueRunNextTask()
 
 		if isinstance(result, Future):
@@ -249,6 +259,14 @@ class Future:
 		if self._resolved:
 			raise Exception('Future has already been resolved')
 		self._canceled = True
+
+	@property
+	def isresolved(self):
+		return self._resolved
+
+	@property
+	def result(self):
+		return self._result
 
 	def __str__(self):
 		if self._canceled:
