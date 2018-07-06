@@ -76,6 +76,7 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		self.Mappings = control_mapping.ModuleControlMap()
 		self.UiModeNames = DependList([])
 		self._AutoInitActionParams()
+		self.ownerComp.tags.add('vjz4modhost')
 
 		# trick pycharm
 		if False:
@@ -227,13 +228,16 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		self.ModuleConnector = connector
 		header = self.ownerComp.op('module_header')
 		bypassbutton = header.op('bypass_button')
+		previewbutton = header.op('preview_button')
 		bypassbutton.par.display = False
 		bypassbutton.par.Value1.expr = ''
+		previewbutton.par.display = False
 		title = header.op('panel_title/bg')
 		titlehelp = header.op('panel_title/help')
 		title.par.text = titlehelp.text = ''
 		bodypanel = self.ownerComp.op('body_panel')
 		bodypanel.par.opacity = 1
+		header.par.Previewactive = False
 		self.UiModeNames.clear()
 		if connector:
 			title.par.text = titlehelp.text = connector.modschema.label
@@ -249,6 +253,8 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 				bypassbutton.par.display = True
 				bypassbutton.par.Value1.expr = bypassexpr
 				bodypanel.par.opacity.expr = '0.5 if {} else 1'.format(bypassexpr)
+			if connector.modschema.primarynode:
+				previewbutton.par.display = True
 		else:
 			self.UiModeNames.append('nodes')
 
@@ -569,6 +575,15 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 	def _SetSubModuleHostPars(self, name, val):
 		for m in self._SubModuleHosts:
 			setattr(m.par, name, val)
+
+	def PreviewPrimaryNode(self):
+		if not self.ModuleConnector or not self.ModuleConnector.modschema.primarynode:
+			return
+		apphost = self.AppHost
+		if not apphost:
+			return
+		apphost.SetPreviewSource(self.ModuleConnector.modschema.primarynode.path, toggle=True)
+
 
 class ModuleHostConnector:
 	def __init__(

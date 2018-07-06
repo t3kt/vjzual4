@@ -299,9 +299,19 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			marker.par.Previewactive = False
 		self.previewMarkers.clear()
 		if hassource and path in self.nodeMarkersByPath:
+			# TODO: clean this up
+			modpath = self.AppSchema.modulepathsbyprimarynodepath.get(path)
 			self.previewMarkers += self.nodeMarkersByPath[path]
 			for marker in self.previewMarkers:
 				marker.par.Previewactive = True
+		else:
+			modpath = None
+		for host in self._AllModuleHosts:
+			header = host.op('module_header')
+			if host.ModuleConnector and modpath and host.ModuleConnector.modpath == modpath:
+				header.par.Previewactive = True
+			else:
+				header.par.Previewactive = False
 
 	def _GetNodeVideoPath(self, path):
 		if not self.AppSchema:
@@ -318,6 +328,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		sourcepar.val = path or ''
 		activepar.val = bool(vidpath)
 		return bool(vidpath)
+
+	@property
+	def _AllModuleHosts(self):
+		return self.ownerComp.op('modules_panel').findChildren(tags=['vjz4modhost'], maxDepth=None)
 
 def _ParseAddress(text: str, defaulthost='localhost', defaultport=9500) -> Tuple[str, int]:
 	text = text and text.strip()
