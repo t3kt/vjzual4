@@ -604,9 +604,12 @@ class AppSchema(BaseDataObject):
 			for modschema in self.modules
 		}
 		self.nodes = []  # type: List[DataNodeInfo]
+		self.modulepathsbyprimarynodepath = {}
 		for modschema in self.modules:
 			if modschema.nodes:
 				self.nodes += modschema.nodes
+				if modschema.primarynode:
+					self.modulepathsbyprimarynodepath[modschema.primarynode.path] = modschema.path
 		self.nodesbypath = {
 			nodeinfo.path: nodeinfo
 			for nodeinfo in self.nodes
