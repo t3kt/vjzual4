@@ -60,7 +60,7 @@ def _GetOrAdd(d, key, default):
 		d[key] = val = default
 	return val
 
-class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
+class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 	"""Base class for components that host modules, such as ModuleHost or ModuleEditor."""
 	def __init__(self, ownerComp):
 		common.ExtensionBase.__init__(self, ownerComp)
@@ -177,7 +177,7 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 			m.LoadUIState()
 
 	@property
-	def ParentHost(self) -> 'ModuleHostBase':
+	def ParentHost(self) -> 'ModuleHost':
 		parent = getattr(self.ownerComp.parent, 'ModuleHost', None)
 		return parent or self.AppHost
 
@@ -212,21 +212,31 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 		return self.ownerComp.op('module_header/progress_bar')
 
 	@property
-	def _SubModuleHosts(self) -> 'List[ModuleHostBase]':
+	def _SubModuleHosts(self) -> 'List[ModuleHost]':
 		return self.ownerComp.ops('sub_modules_panel/mod__*')
 
 	@property
 	def _ModuleHostTemplate(self):
 		template = self.ownerComp.par.Modulehosttemplate.eval()
 		if not template and hasattr(op, 'Vjz4'):
-			template = op.Vjz4.op('./module_chain_host')
+			template = op.Vjz4.op('module_chain_host')
 		return template
 
 	@loggedmethod
 	def AttachToModuleConnector(self, connector: 'ModuleHostConnector') -> Optional[Future]:
 		self.ModuleConnector = connector
+		header = self.ownerComp.op('module_header')
+		bypassbutton = header.op('bypass_button')
+		bypassbutton.par.display = False
+		bypassbutton.par.Value1.expr = ''
+		title = header.op('panel_title/bg')
+		titlehelp = header.op('panel_title/help')
+		title.par.text = titlehelp.text = ''
+		bodypanel = self.ownerComp.op('body_panel')
+		bodypanel.par.opacity = 1
 		self.UiModeNames.clear()
 		if connector:
+			title.par.text = titlehelp.text = connector.modschema.label
 			if self._Params:
 				self.UiModeNames.append('ctrl')
 			if self._DataNodes:
@@ -234,6 +244,11 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 			self.UiModeNames.append('map')
 			if connector.modschema.childmodpaths:
 				self.UiModeNames.append('submods')
+			if connector.modschema.hasbypass:
+				bypassexpr = connector.GetParExpr('Bypass')
+				bypassbutton.par.display = True
+				bypassbutton.par.Value1.expr = bypassexpr
+				bodypanel.par.opacity.expr = '0.5 if {} else 1'.format(bypassexpr)
 		else:
 			self.UiModeNames.append('nodes')
 
@@ -554,11 +569,6 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 	def _SetSubModuleHostPars(self, name, val):
 		for m in self._SubModuleHosts:
 			setattr(m.par, name, val)
-
-class ModuleChainHost(ModuleHostBase):
-	def __init__(self, ownerComp):
-		super().__init__(ownerComp)
-
 
 class ModuleHostConnector:
 	def __init__(

@@ -120,6 +120,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			host = dest.copy(template, name='mod__' + modschema.name)  # type: module_host.ModuleChainHost
 			host.par.Uibuilder.expr = 'parent.AppHost.par.Uibuilder or ""'
 			host.par.Modulehosttemplate = 'op({!r})'.format(template.path)
+			host.par.Autoheight = False
 			host.par.hmode = 'fixed'
 			host.par.vmode = 'fill'
 			host.par.w = 250
@@ -147,7 +148,11 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 
 	@loggedmethod
 	def _OnSubModuleHostsConnected(self):
-		pass
+		self.UpdateModuleWidths()
+
+	def UpdateModuleWidths(self):
+		for m in self.ownerComp.ops('modules_panel/mod__*'):
+			m.par.w = 100 if m.par.Collapsed else 250
 
 	@loggedmethod
 	def _BuildNodeMarkers(self):
