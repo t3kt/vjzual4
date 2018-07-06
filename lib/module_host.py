@@ -8,6 +8,10 @@ if False:
 	from ui_builder import UiBuilder
 	from app_host import AppHost
 
+try:
+	import td
+except ImportError:
+	pass
 
 try:
 	import comp_metadata
@@ -345,12 +349,18 @@ class ModuleHostBase(common.ExtensionBase, common.ActionsExt, common.TaskQueueEx
 				))
 		dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
 
+	@loggedmethod
 	def UpdateModuleHeight(self):
 		if not self.ownerComp.par.Autoheight:
+			self._LogEvent('Module does not use auto-height')
 			return
 		maxheight = self.ownerComp.par.Maxheight
-		h = self.HeightOfVisiblePanels(self.ownerComp.ops(
-			'module_header', 'nodes_panel', 'controls_panel', 'sub_modules_panel', 'mappings_panel'))
+		if self.ownerComp.par.Collapsed:
+			panels = self.ownerComp.ops('module_header')
+		else:
+			panels = self.ownerComp.ops('module_header', 'nodes_panel', 'controls_panel', 'sub_modules_panel', 'mappings_panel')
+		h = self.HeightOfVisiblePanels(panels)
+		self._LogEvent('Visible panels height: {}'.format(h))
 		if 0 < maxheight < h:
 			h = maxheight
 		self.ownerComp.par.h = h
@@ -518,7 +528,7 @@ class ModuleChainHost(ModuleHostBase):
 	def _ModuleHostTemplate(self):
 		template = self.ownerComp.par.Modulehosttemplate.eval()
 		if not template and hasattr(op, 'Vjz4'):
-			template = op.Vjz4.op('./module_host')
+			template = op.Vjz4.op('./module_chain_host')
 		return template
 
 	@loggedmethod
@@ -527,14 +537,22 @@ class ModuleChainHost(ModuleHostBase):
 		for m in dest.ops('mod__*'):
 			m.destroy()
 		if not self.ModuleConnector:
-			return
+			self._LogEvent('No module connector attached!')
+			self._OnSubModuleHostsConnected()
+			return None
 		template = self._ModuleHostTemplate
 		if not template:
-			return
+			self._LogEvent('No module host template! Cannot build sub module hosts!')
+			self._OnSubModuleHostsConnected()
+			return None
 		hostconnectorpairs = [
 			{'host': None, 'connector': conn}
 			for conn in self.ModuleConnector.CreateChildModuleConnectors()
 		]
+		if not hostconnectorpairs:
+			self._LogEvent('No sub modules to build')
+			self._OnSubModuleHostsConnected()
+			return None
 
 		def _makeCreateTask(hcpair, index):
 			def _task():
@@ -563,6 +581,7 @@ class ModuleChainHost(ModuleHostBase):
 		dest = self.ownerComp.op('./sub_modules_panel')
 		host = dest.copy(template, name='mod__' + connector.modschema.name)
 		host.par.Collapsed = True
+		host.par.Autoheight = True
 		host.par.Uibuilder.expr = 'parent.ModuleHost.par.Uibuilder or ""'
 		host.par.hmode = 'fill'
 		host.par.alignorder = i
@@ -645,5 +664,5 @@ class ModuleHostConnector:
 	def CreateChildModuleConnectors(self) -> 'List[ModuleHostConnector]':
 		return []
 
-	def __str__(self):
+	def __repr__(self):
 		return '{}({})'.format(self.__class__.__name__, self.modpath)
