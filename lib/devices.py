@@ -1,4 +1,4 @@
-from typing import List
+from typing import Dict, List
 
 print('vjz4/devices.py loading')
 
@@ -10,8 +10,14 @@ try:
 	import common
 except ImportError:
 	common = mod.common
-BaseDataObject = common.BaseDataObject
 mergedicts, cleandict = common.mergedicts, common.cleandict
+loggedmethod = common.loggedmethod
+
+try:
+	import schema
+except ImportError:
+	schema = mod.schema
+DeviceControlInfo = schema.DeviceControlInfo
 
 try:
 	import control_mapping
@@ -23,38 +29,68 @@ try:
 except ImportError:
 	module_host = mod.module_host
 
-class ControlInfo(BaseDataObject):
-	def __init__(
-			self,
-			name,
-			fullname,
-			ctrltype=None,
-			inputcc=None,
-			outputcc=None,
-			**otherattrs):
-		super().__init__(**otherattrs)
-		self.name = name
-		self.fullname = fullname
-		self.ctrltype = ctrltype
-		self.inputcc = inputcc
-		self.outputcc = outputcc
 
-	tablekeys = [
-		'name',
-		'fullname',
-		'ctrltype',
-		'inputcc',
-		'outputcc',
-	]
+class DeviceManager(common.ExtensionBase, common.ActionsExt):
+	def __init__(self, ownerComp):
+		common.ExtensionBase.__init__(self, ownerComp)
+		common.ActionsExt.__init__(self, ownerComp, actions={
+			'Attachdevices': self.AttachDevices,
+			'Detachdevices': self.DetachDevices,
+		})
+		self._AutoInitActionParams()
+		self.devices = []  # type: List[MidiDevice]
+		self.devicesbyname = {}  # type: Dict[str, MidiDevice]
+		self.controls = []  # type: List[DeviceControlInfo]
+		self.controlsbyname = {}  # type: Dict[str, DeviceControlInfo]
 
-	def ToJsonDict(self):
-		return cleandict(mergedicts(self.otherattrs, {
-			'name': self.name,
-			'fullname': self.fullname,
-			'ctrltype': self.ctrltype,
-			'inputcc': self.inputcc,
-			'outputcc': self.outputcc,
-		}))
+	@loggedmethod
+	def AttachDevices(self):
+		self.DetachDevices()
+		for device in self.ownerComp.findChildren(tags=['vjz4device'], maxDepth=1):
+			self._AttachDevice(device)
+		self._BuildDeviceTable()
+		self._BuildControlTable()
+
+	@loggedmethod
+	def DetachDevices(self):
+		self.devices.clear()
+		self.devicesbyname.clear()
+		self.controls.clear()
+		self.controlsbyname.clear()
+		self._BuildDeviceTable()
+		self._BuildControlTable()
+
+	def _BuildDeviceTable(self):
+		dat = self.ownerComp.op('set_devices')
+		dat.clear()
+		dat.appendRow(['name', 'active', 'devid', 'path'])
+		if not self.devices:
+			return
+		for device in self.devices:
+			dat.appendRow([
+				device.DeviceName,
+				int(device.par.Active),
+				device.par.Deviceid,
+				device.path,
+			])
+
+	def _BuildControlTable(self):
+		dat = self.ownerComp.op('set_controls')
+		dat.clear()
+		dat.appendRow(DeviceControlInfo.tablekeys)
+		if not self.controls:
+			return
+		for control in self.controls:
+			control.AddToTable(dat)
+
+	@loggedmethod
+	def _AttachDevice(self, device: 'MidiDevice'):
+		devname = device.DeviceName
+		self.devices.append(device)
+		self.devicesbyname[devname] = device
+		for control in device.Controls:
+			self.controls.append(control)
+			self.controlsbyname[control.fullname] = control
 
 class MidiDevice(common.ExtensionBase, common.ActionsExt):
 	def __init__(self, ownerComp):
@@ -62,13 +98,13 @@ class MidiDevice(common.ExtensionBase, common.ActionsExt):
 		common.ActionsExt.__init__(self, ownerComp, actions={
 		})
 		self._AutoInitActionParams()
-		self.Controls = []  # type: List[ControlInfo]
+		self.Controls = []  # type: List[DeviceControlInfo]
 
 	@property
 	def DeviceName(self):
 		return self.ownerComp.par.Name.eval() or self.ownerComp.name
 
-	def _InitializeControls(self, controls: List[ControlInfo]):
+	def _InitializeControls(self, controls: List[DeviceControlInfo]):
 		self.Controls = controls or []
 		self._FillControlTable()
 		self._BuildControlMarkers()
@@ -76,7 +112,7 @@ class MidiDevice(common.ExtensionBase, common.ActionsExt):
 	def _FillControlTable(self):
 		outdat = self.ownerComp.op('set_controls')
 		outdat.clear()
-		outdat.appendRow(ControlInfo.tablekeys + ['inchan', 'outchan'])
+		outdat.appendRow(DeviceControlInfo.tablekeys + ['inchan', 'outchan'])
 		for control in self.Controls:
 			control.AddToTable(
 				outdat,
@@ -120,16 +156,18 @@ class BcrMidiDevice(MidiDevice):
 	def __init__(self, ownerComp):
 		super().__init__(ownerComp)
 
-		controls = []  # type: List[ControlInfo]
-		devprefix = self.DeviceName + '.'
+		controls = []  # type: List[DeviceControlInfo]
+		devname = self.DeviceName
+		devprefix = devname + '.'
 
 		def _addrow(prefix, startctrl, ctrltype, startcc):
 			for i in range(8):
 				name = '{}{}'.format(prefix, startctrl + i)
 				cc = startcc + i
-				controls.append(ControlInfo(
+				controls.append(DeviceControlInfo(
 					name=name,
 					fullname=devprefix + name,
+					devname=devname,
 					ctrltype=ctrltype,
 					inputcc=cc,
 					outputcc=cc,

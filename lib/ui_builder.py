@@ -419,7 +419,7 @@ class UiBuilder:
 			self,
 			dest,
 			name,
-			control,  # type: devices.ControlInfo
+			control,  # type: devices.DeviceControlInfo
 			panelparent=None, order=None, nodepos=None, parvals=None, parexprs=None):
 		return CreateFromTemplate(
 			template=self.ownerComp.op('control_marker'),

@@ -18,6 +18,11 @@ Future = common.Future
 loggedmethod = common.loggedmethod
 
 try:
+	import devices
+except ImportError:
+	devices = mod.devices
+
+try:
 	import module_host
 except ImportError:
 	module_host = mod.module_host

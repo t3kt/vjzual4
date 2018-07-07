@@ -713,3 +713,73 @@ class ClientInfo(BaseDataObject):
 			'secondaryvidrecv': self.secondaryvidrecv,
 		}))
 
+class DeviceControlInfo(BaseDataObject):
+	def __init__(
+			self,
+			name,
+			fullname,
+			devname,
+			ctrltype=None,
+			inputcc=None,
+			outputcc=None,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.name = name
+		self.fullname = fullname
+		self.devname = devname
+		self.ctrltype = ctrltype
+		self.inputcc = inputcc
+		self.outputcc = outputcc
+
+	tablekeys = [
+		'name',
+		'fullname',
+		'devname',
+		'ctrltype',
+		'inputcc',
+		'outputcc',
+	]
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'name': self.name,
+			'fullname': self.fullname,
+			'devname': self.devname,
+			'ctrltype': self.ctrltype,
+			'inputcc': self.inputcc,
+			'outputcc': self.outputcc,
+		}))
+
+class ControlMapping(BaseDataObject):
+	def __init__(
+			self,
+			path,
+			param,
+			enable=True,
+			rangelow=0,
+			rangehigh=1,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.path = path
+		self.param = param
+		self.enable = enable
+		self.rangelow = rangelow
+		self.rangehigh = rangehigh
+
+	tablekeys = [
+		'path',
+		'param',
+		'enable',
+		'rangelow',
+		'rangehigh',
+	]
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'path': self.path,
+			'param': self.param,
+			'enable': self.enable,
+			'rangelow': self.rangelow,
+			'rangehigh': self.rangehigh,
+		}))
+
