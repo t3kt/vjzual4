@@ -23,6 +23,11 @@ except ImportError:
 	control_devices = mod.control_devices
 
 try:
+	import control_mapping
+except ImportError:
+	control_mapping = mod.control_mapping
+
+try:
 	import module_host
 except ImportError:
 	module_host = mod.module_host
@@ -76,6 +81,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 				[
 					lambda: self._BuildNodeMarkers(),
 					lambda: self._RegisterNodeMarkers(),
+					lambda: self._InitializeMappings(),
 				],
 				autostart=True))
 
@@ -94,6 +100,14 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def OnTDPreSave(self):
 		for o in self.ownerComp.ops('modules_panel/mod__*'):
 			o.destroy()
+
+	@loggedmethod
+	def _InitializeMappings(self):
+		if not self.AppSchema:
+			return
+		mapper = self._ControlMapper
+		for modschema in self.AppSchema.modules:
+			mapper.AddEmptyMissingMappingsForModule(modschema)
 
 	@property
 	def _ModuleHostTemplate(self):
@@ -349,6 +363,14 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	@property
 	def _AllModuleHosts(self):
 		return self.ownerComp.op('modules_panel').findChildren(tags=['vjz4modhost'], maxDepth=None)
+
+	@property
+	def _DeviceManager(self) -> 'control_devices.DeviceManager':
+		return self.ownerComp.op('devices')
+
+	@property
+	def _ControlMapper(self) -> 'control_mapping.ControlMapper':
+		return self.ownerComp.op('mappings')
 
 def _ParseAddress(text: str, defaulthost='localhost', defaultport=9500) -> Tuple[str, int]:
 	text = text and text.strip()
