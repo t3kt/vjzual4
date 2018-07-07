@@ -11,6 +11,7 @@ try:
 except ImportError:
 	common = mod.common
 cleandict, excludekeys, mergedicts = common.cleandict, common.excludekeys, common.mergedicts
+trygetdictval = common.trygetdictval
 BaseDataObject = common.BaseDataObject
 
 
@@ -138,6 +139,7 @@ class RawModuleInfo(BaseDataObject):
 			partuplets=None,
 			parattrs=None,
 			nodes=None,
+			primarynode=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.path = path
@@ -148,7 +150,7 @@ class RawModuleInfo(BaseDataObject):
 		self.partuplets = partuplets or []  # type: List[Tuple[RawParamInfo]]
 		self.parattrs = parattrs or {}  # type: Dict[Dict[str, str]]
 		self.nodes = nodes or []  # type: List[DataNodeInfo]
-		# TODO: data nodes
+		self.primarynode = primarynode  # type: str
 
 	@classmethod
 	def FromJsonDict(cls, obj):
@@ -169,6 +171,7 @@ class RawModuleInfo(BaseDataObject):
 		'name',
 		'label',
 		'parentpath',
+		'primarynode',
 	]
 
 	def ToJsonDict(self):
@@ -184,12 +187,14 @@ class RawModuleInfo(BaseDataObject):
 			],
 			'parattrs': self.parattrs,
 			'nodes': BaseDataObject.ToJsonDicts(self.nodes),
+			'primarynode': self.primarynode,
 		}))
 
 class ParamPartSchema(BaseDataObject):
 	def __init__(
 			self,
 			name,
+			label=None,
 			default=None,
 			minnorm=0,
 			maxnorm=1,
@@ -197,50 +202,67 @@ class ParamPartSchema(BaseDataObject):
 			maxlimit=None,
 			menunames=None,
 			menulabels=None,
+			helptext=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.name = name
+		self.label = label
 		self.default = default
 		self.minnorm = minnorm
 		self.maxnorm = maxnorm
 		self.minlimit = minlimit
 		self.maxlimit = maxlimit
+		self.helptext = helptext
 		self.menunames = menunames
 		self.menulabels = menulabels
 
 	tablekeys = [
 		'name',
+		'label',
 		'minlimit',
 		'maxlimit',
 		'minnorm',
 		'maxnorm',
 		'default',
-		'menunames',
-		'menulabels',
+		'helptext',
 	]
 
 	def ToJsonDict(self):
 		return cleandict(mergedicts(self.otherattrs, {
 			'name': self.name,
+			'label': self.label,
 			'minlimit': self.minlimit,
 			'maxlimit': self.maxlimit,
 			'minnorm': self.minnorm,
 			'maxnorm': self.maxnorm,
 			'default': self.default,
+			'helptext': self.helptext,
 			'menunames': self.menunames,
 			'menulabels': self.menulabels,
 		}))
 
 	@classmethod
-	def FromRawParamInfo(cls, part: RawParamInfo):
+	def FromRawParamInfo(cls, part: RawParamInfo, attrs: Dict[str, str] = None):
 		ismenu = part.style in ('Menu', 'StrMenu')
+		valueparser = None
+		if part.style in ('Float', 'Int', 'UV', 'UVW', 'XY', 'XYZ', 'RGB', 'RGBA', 'Toggle'):
+			valueparser = float
+		suffix = str(part.vecindex + 1) if part.name != part.tupletname else ''
+
+		def getpartattr(*keys: str, parse=None, default=None):
+			if suffix:
+				keys = [k + suffix for k in keys]
+			return trygetdictval(attrs, *keys, default=default, parse=parse)
+
 		return cls(
 			name=part.name,
-			default=part.default,
-			minnorm=part.minnorm,
-			maxnorm=part.maxnorm,
-			minlimit=part.minlimit,
-			maxlimit=part.maxlimit,
+			label=getpartattr('label', default=part.label),
+			default=getpartattr('default', parse=valueparser, default=part.default),
+			minnorm=getpartattr('minnorm', 'normmin', 'normMin', parse=float, default=part.minnorm),
+			maxnorm=getpartattr('maxnorm', 'normmax', 'normMax', parse=float, default=part.maxnorm),
+			minlimit=getpartattr('minlimit', 'min', parse=float, default=part.minlimit),
+			maxlimit=getpartattr('maxlimit', 'max', parse=float, default=part.maxlimit),
+			helptext=getpartattr('helptext', 'help', parse=str),
 			menunames=part.menunames if ismenu else None,
 			menulabels=part.menulabels if ismenu else None,
 		)
@@ -269,6 +291,7 @@ class ParamSchema(BaseDataObject):
 			advanced=False,
 			specialtype=None,
 			mappable=True,
+			helptext=None,
 			parts=None,  # type: List[ParamPartSchema]
 			**otherattrs):
 		super().__init__(**otherattrs)
@@ -284,6 +307,7 @@ class ParamSchema(BaseDataObject):
 		self.specialtype = specialtype or ''
 		self.isnode = specialtype and specialtype.startswith('node')
 		self.mappable = mappable and not self.isnode
+		self.helptext = helptext
 
 	tablekeys = [
 		'name',
@@ -297,6 +321,7 @@ class ParamSchema(BaseDataObject):
 		'specialtype',
 		'isnode',
 		'mappable',
+		'helptext',
 	]
 
 	def ToJsonDict(self):
@@ -312,6 +337,7 @@ class ParamSchema(BaseDataObject):
 			'specialtype': self.specialtype,
 			'isnode': self.isnode,
 			'mappable': self.mappable,
+			'helptext': self.helptext,
 			'parts': BaseDataObject.ToJsonDicts(self.parts),
 		}))
 
@@ -348,6 +374,8 @@ class ParamSchema(BaseDataObject):
 				specialtype = 'node'
 			elif name == 'Bypass':
 				return 'switch.bypass'
+			elif name == 'Source' and style == 'Str':
+				return 'node'
 		return specialtype
 
 	@staticmethod
@@ -405,6 +433,7 @@ class ParamSchema(BaseDataObject):
 			advanced=advanced,
 			specialtype=specialtype,
 			mappable=mappable,
+			helptext=trygetdictval(attrs, 'helptext', 'help', parse=str),
 			parts=[ParamPartSchema.FromRawParamInfo(part) for part in partuplet],
 		)
 
@@ -417,6 +446,7 @@ class DataNodeInfo(BaseDataObject):
 			video=None,
 			audio=None,
 			texbuf=None,
+			parentpath=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.name = name
@@ -425,6 +455,7 @@ class DataNodeInfo(BaseDataObject):
 		self.video = video
 		self.audio = audio
 		self.texbuf = texbuf
+		self.parentpath = parentpath
 
 	tablekeys = [
 		'path',
@@ -433,6 +464,7 @@ class DataNodeInfo(BaseDataObject):
 		'video',
 		'audio',
 		'texbuf',
+		'parentpath',
 	]
 
 	def ToJsonDict(self):
@@ -443,6 +475,7 @@ class DataNodeInfo(BaseDataObject):
 			'video': self.video,
 			'audio': self.audio,
 			'texbuf': self.texbuf,
+			'parentpath': self.parentpath,
 		}))
 
 class ModuleSchema(BaseDataObject):
@@ -455,6 +488,7 @@ class ModuleSchema(BaseDataObject):
 			childmodpaths=None,
 			params=None,  # type: List[ParamSchema]
 			nodes=None,  # type: List[DataNodeInfo]
+			primarynode=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.name = name
@@ -470,11 +504,21 @@ class ModuleSchema(BaseDataObject):
 		self.nodes = nodes or []
 		self.hasbypass = False
 		self.hasadvanced = False
+		self.primarynodepath = primarynode
+		self.primarynode = None  # type: Optional[DataNodeInfo]
+		if self.primarynodepath:
+			for node in self.nodes:
+				if node.path == self.primarynodepath:
+					self.primarynode = node
+					break
 		for par in self.params:
 			if par.advanced:
 				self.hasadvanced = True
 			if par.specialtype == 'switch.bypass':
 				self.hasbypass = True
+
+	def __str__(self):
+		return '{}({})'.format(self.__class__.__name__, self.path)
 
 	@property
 	def parampartnames(self):
@@ -496,6 +540,7 @@ class ModuleSchema(BaseDataObject):
 		'parentpath',
 		'hasbypass',
 		'hasadvanced',
+		'primarynode',
 	]
 
 	def ToJsonDict(self):
@@ -509,6 +554,7 @@ class ModuleSchema(BaseDataObject):
 			'hasadvanced': self.hasadvanced,
 			'params': BaseDataObject.ToJsonDicts(self.params),
 			'nodes': BaseDataObject.ToJsonDicts(self.nodes),
+			'primarynode': self.primarynodepath,
 		}))
 
 	@classmethod
@@ -521,6 +567,13 @@ class ModuleSchema(BaseDataObject):
 				if parschema:
 					params.append(parschema)
 			params.sort(key=attrgetter('pageindex', 'order'))
+		nodes = []
+		if modinfo.nodes:
+			for node in modinfo.nodes:
+				node = DataNodeInfo.FromJsonDict(node.ToJsonDict())
+				if not node.parentpath:
+					node.parentpath = modinfo.path
+				nodes.append(node)
 		return cls(
 			name=modinfo.name,
 			label=modinfo.label,
@@ -528,7 +581,8 @@ class ModuleSchema(BaseDataObject):
 			parentpath=modinfo.parentpath,
 			childmodpaths=list(modinfo.childmodpaths) if modinfo.childmodpaths else None,
 			params=params,
-			nodes=list(modinfo.nodes) if modinfo.nodes else None,
+			nodes=nodes,
+			primarynode=modinfo.primarynode,
 		)
 
 class AppSchema(BaseDataObject):
@@ -550,9 +604,12 @@ class AppSchema(BaseDataObject):
 			for modschema in self.modules
 		}
 		self.nodes = []  # type: List[DataNodeInfo]
+		self.modulepathsbyprimarynodepath = {}
 		for modschema in self.modules:
 			if modschema.nodes:
 				self.nodes += modschema.nodes
+				if modschema.primarynode:
+					self.modulepathsbyprimarynodepath[modschema.primarynode.path] = modschema.path
 		self.nodesbypath = {
 			nodeinfo.path: nodeinfo
 			for nodeinfo in self.nodes
@@ -562,6 +619,13 @@ class AppSchema(BaseDataObject):
 			self.modulesbypath[modpath]
 			for modpath in self.childmodpaths
 		]
+
+	def __repr__(self):
+		return '{}({})'.format(self.__class__.__name__, {
+			'name': self.name,
+			'label': self.label,
+			'path': self.path,
+		})
 
 	tablekeys = [
 		'name',
