@@ -534,3 +534,17 @@ class BaseDataObject:
 				val = 1 if val else 0
 			vals.append(val)
 		dat.appendRow(vals)
+
+	def UpdateInTable(self, rowid, dat, attrs=None):
+		rowcells = dat.row(rowid)
+		if not rowcells:
+			self.AddToTable(dat, attrs)
+		else:
+			obj = self.ToJsonDict()
+			attrs = mergedicts(obj, attrs)
+			for cell in rowcells:
+				col = dat[cell.row, 0]
+				val = attrs.get(col.val, '')
+				if isinstance(val, bool):
+					val = 1 if val else 0
+				cell.val = val
