@@ -17,11 +17,6 @@ try:
 except ImportError:
 	schema = mod.schema
 
-try:
-	import devices
-except ImportError:
-	devices = mod.devices
-
 class UiBuilder:
 	def __init__(self, ownerComp):
 		self.ownerComp = ownerComp
@@ -419,7 +414,7 @@ class UiBuilder:
 			self,
 			dest,
 			name,
-			control,  # type: devices.DeviceControlInfo
+			control,  # type: schema.DeviceControlInfo
 			panelparent=None, order=None, nodepos=None, parvals=None, parexprs=None):
 		return CreateFromTemplate(
 			template=self.ownerComp.op('control_marker'),

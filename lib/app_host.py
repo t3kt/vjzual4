@@ -18,9 +18,9 @@ Future = common.Future
 loggedmethod = common.loggedmethod
 
 try:
-	import devices
+	import control_devices
 except ImportError:
-	devices = mod.devices
+	control_devices = mod.control_devices
 
 try:
 	import module_host

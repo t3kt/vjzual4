@@ -1,6 +1,6 @@
 from typing import Dict, List
 
-print('vjz4/devices.py loading')
+print('vjz4/control_devices.py loading')
 
 if False:
 	from _stubs import *
