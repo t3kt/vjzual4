@@ -81,7 +81,8 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 				[
 					lambda: self._BuildNodeMarkers(),
 					lambda: self._RegisterNodeMarkers(),
-					lambda: self._InitializeMappings(),
+					# temporarily disabling the mapping editors
+					# lambda: self._InitializeMappings(),
 				],
 				autostart=True))
 
