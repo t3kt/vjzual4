@@ -209,18 +209,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 					callback=lambda: self._RemoteClient.openParameters()),
 			]
 		elif name == 'view_menu':
-			def _uimodeItem(text, par, mode):
-				return menu.Item(
-					text,
-					checked=par == mode,
-					callback=lambda: setattr(par, 'val', mode))
-			sidemodepar = self.ownerComp.par.Sidepanelmode
-			items = [
-				_uimodeItem(label, sidemodepar, name)
-				for name, label in zip(
-					sidemodepar.menuNames,
-					sidemodepar.menuLabels)
-			]
+			items = self._GetSidePanelModeMenuItems()
 		elif name == 'debug_menu':
 			def _viewItem(text, oppath):
 				return menu.Item(
@@ -243,6 +232,26 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			]
 		else:
 			return
+		menu.fromButton(button, h='Left', v='Bottom').Show(
+			items=items,
+			autoClose=True)
+
+	def _GetSidePanelModeMenuItems(self):
+		def _uimodeItem(text, par, mode):
+			return menu.Item(
+				text,
+				checked=par == mode,
+				callback=lambda: setattr(par, 'val', mode))
+		sidemodepar = self.ownerComp.par.Sidepanelmode
+		return [
+			_uimodeItem(label, sidemodepar, name)
+			for name, label in zip(
+				sidemodepar.menuNames,
+				sidemodepar.menuLabels)
+		]
+
+	def OnSidePanelHeaderClick(self, button):
+		items = self._GetSidePanelModeMenuItems()
 		menu.fromButton(button, h='Left', v='Bottom').Show(
 			items=items,
 			autoClose=True)
