@@ -47,6 +47,12 @@ try:
 except ImportError:
 	menu = mod.menu
 
+try:
+	import app_state
+except ImportError:
+	app_state = mod.app_state
+AppState = app_state.AppState
+
 class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, common.TaskQueueExt):
 	def __init__(self, ownerComp):
 		common.ExtensionBase.__init__(self, ownerComp)
@@ -54,12 +60,15 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		common.ActionsExt.__init__(self, ownerComp, actions={
 			'Showconnect': self.ShowConnectDialog,
 			'Showappschema': self.ShowAppSchema,
+			'Savestate': lambda: self.SaveStateFile(),
+			'Savestateas': lambda: self.SaveStateFile(prompt=True),
 		})
 		self._AutoInitActionParams()
 		self.AppSchema = None  # type: schema.AppSchema
 		self._ShowSchemaJson(None)
 		self.nodeMarkersByPath = {}  # type: Dict[str, List[str]]
 		self.previewMarkers = []  # type: List[op]
+		self.statefilename = None
 		self.OnDetach()
 
 	@property
@@ -138,7 +147,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		hostconnectorpairs = []
 		for i, modschema in enumerate(self.AppSchema.childmodules):
 			self._LogEvent('creating host for sub module {}'.format(modschema.path))
-			host = dest.copy(template, name='mod__' + modschema.name)  # type: module_host.ModuleChainHost
+			host = dest.copy(template, name='mod__' + modschema.name)  # type: module_host.ModuleHost
 			host.par.Uibuilder.expr = 'parent.AppHost.par.Uibuilder or ""'
 			host.par.Modulehosttemplate = 'op({!r})'.format(template.path)
 			host.par.Autoheight = False
@@ -207,7 +216,17 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 					callback=lambda: self._Disconnect()),
 				menu.Item(
 					'Connection Properties',
-					callback=lambda: self._RemoteClient.openParameters()),
+					callback=lambda: self._RemoteClient.openParameters(),
+					dividerafter=True),
+				menu.Item(
+					'Load State',
+					callback=lambda: self.LoadStateFile(prompt=True)),
+				menu.Item(
+					'Save State',
+					callback=lambda: self.SaveStateFile()),
+				menu.Item(
+					'Save State As',
+					callback=lambda: self.SaveStateFile(prompt=True))
 			]
 		elif name == 'view_menu':
 			items = self._GetSidePanelModeMenuItems()
@@ -227,6 +246,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 				_viewItem('Params', 'params'),
 				_viewItem('Param Parts', 'param_parts'),
 				_viewItem('Data Nodes', 'data_nodes'),
+				menu.Item(
+					'App State',
+					callback=lambda: self._ShowSchemaJson(self.BuildState()),
+					dividerafter=True),
 				menu.Item(
 					'Reload code',
 					callback=lambda: op.Vjz4.op('RELOAD_CODE').run())
@@ -263,7 +286,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 				'View Schema',
 				disabled=not modhost.ModuleConnector,
 				callback=lambda: self._ShowSchemaJson(modhost.ModuleConnector.modschema)
-			)
+			),
+			menu.Item(
+				'View State',
+				callback=lambda: self._ShowSchemaJson(modhost.BuildState()))
 		]
 
 	@loggedmethod
@@ -383,6 +409,58 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	@property
 	def ControlMapper(self) -> 'control_mapping.ControlMapper':
 		return self.ownerComp.op('mappings')
+
+	def BuildState(self):
+		modstates = {}
+		if self.AppSchema:
+			for modhost in self._AllModuleHosts:
+				if modhost.ModuleConnector:
+					modstates[modhost.ModuleConnector.modpath] = modhost.BuildState()
+		return AppState(
+			client=self._RemoteClient.BuildClientInfo(),
+			modstates=modstates
+		)
+
+	@loggedmethod
+	def SaveStateFile(self, filename=None, prompt=False):
+		filename = filename or self.statefilename
+		if prompt or not filename:
+			filename = ui.chooseFile(
+				load=False,
+				start=filename or project.folder,
+				fileTypes=['json'],
+				title='Save App State')
+		if not filename:
+			return
+		self.statefilename = filename
+		state = self.BuildState()
+		state.WriteJsonTo(filename)
+		ui.status = 'Saved state to {}'.format(filename)
+
+	@loggedmethod
+	def LoadState(self, state: AppState):
+		state = state or AppState()
+
+		if state.client:
+			self._LogEvent('Ignoring client info in app state (for now...)')
+
+		for modhost in self._AllModuleHosts:
+			modstate = state.GetModuleState(modhost.ModuleConnector.modpath, create=False) if modhost.ModuleConnector else None
+			modhost.LoadState(modstate)
+
+	@loggedmethod
+	def LoadStateFile(self, filename=None, prompt=False):
+		if prompt or not filename:
+			filename = ui.chooseFile(
+				load=True,
+				start=filename or project.folder,
+				fileTypes=['json'],
+				title='Load App State')
+		if not filename:
+			return
+		self.statefilename = filename
+		state = AppState.ReadJsonFrom(filename)
+		self.LoadState(state)
 
 def _ParseAddress(text: str, defaulthost='localhost', defaultport=9500) -> Tuple[str, int]:
 	text = text and text.strip()

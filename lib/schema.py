@@ -677,6 +677,7 @@ class ClientInfo(BaseDataObject):
 			self,
 			version=None,
 			address=None,
+			cmdsend=None,
 			cmdrecv=None,
 			oscsend=None,
 			oscrecv=None,
@@ -688,6 +689,7 @@ class ClientInfo(BaseDataObject):
 		super().__init__(**otherattrs)
 		self.version = version
 		self.address = address
+		self.cmdsend = cmdsend
 		self.cmdrecv = cmdrecv
 		self.oscsend = oscsend
 		self.oscrecv = oscrecv
@@ -704,6 +706,7 @@ class ClientInfo(BaseDataObject):
 		return cleandict(mergedicts(self.otherattrs, {
 			'version': self.version,
 			'address': self.address,
+			'cmdsend': self.cmdsend,
 			'cmdrecv': self.cmdrecv,
 			'oscsend': self.oscsend,
 			'oscrecv': self.oscrecv,

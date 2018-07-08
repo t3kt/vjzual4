@@ -1,4 +1,5 @@
 import datetime
+import json
 from typing import Callable, Dict, List, Iterable
 
 print('vjz4/common.py loading')
@@ -539,8 +540,41 @@ class BaseDataObject:
 		return [cls.FromJsonDict(obj) for obj in objs] if objs else []
 
 	@classmethod
+	def FromOptionalJsonDict(cls, obj, default=None):
+		return cls.FromJsonDict(obj) if obj else default
+
+	@classmethod
+	def FromJsonDictMap(cls, objs: Dict[str, Dict]):
+		if not objs:
+			return {}
+		results = {}
+		for key, obj in objs.items():
+			val = cls.FromOptionalJsonDict(obj)
+			if val:
+				results[key] = val
+		return results
+
+	@classmethod
 	def ToJsonDicts(cls, nodes: 'Iterable[BaseDataObject]'):
 		return [n.ToJsonDict() for n in nodes] if nodes else []
+
+	@classmethod
+	def ToJsonDictMap(cls, nodes: 'Dict[str, BaseDataObject]'):
+		return {
+			path: node.ToJsonDict()
+			for path, node in nodes.items()
+		} if nodes else {}
+
+	def WriteJsonTo(self, filepath):
+		obj = self.ToJsonDict()
+		with open(filepath, mode='w') as outfile:
+			json.dump(obj, outfile, indent='  ')
+
+	@classmethod
+	def ReadJsonFrom(cls, filepath):
+		with open(filepath, mode='r') as infile:
+			obj = json.load(infile)
+		return cls.FromJsonDict(obj)
 
 	def AddToTable(self, dat, attrs=None):
 		obj = self.ToJsonDict()

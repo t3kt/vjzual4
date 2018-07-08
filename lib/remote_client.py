@@ -11,6 +11,8 @@ except ImportError:
 	common = mod.common
 mergedicts = common.mergedicts
 BaseDataObject = common.BaseDataObject
+loggedmethod = common.loggedmethod
+Future = common.Future
 
 try:
 	import remote
@@ -115,10 +117,19 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 		self._LogBegin('Connect({}, {})'.format(host, port))
 		try:
 			self.Detach()
-			connpar = self.Connection.par
-			info = schema.ClientInfo(
+			info = self.BuildClientInfo()
+			return self.Connection.SendRequest('connect', info.ToJsonDict()).then(
+				success=self._OnConfirmConnect,
+				failure=self._OnConnectFailure)
+		finally:
+			self._LogEnd()
+
+	def BuildClientInfo(self):
+		connpar = self.Connection.par
+		return schema.ClientInfo(
 				version=1,
 				address=self.ownerComp.par.Localaddress.eval() or self.ownerComp.par.Localaddress.default,
+				cmdsend=self.ownerComp.par.Commandsendport.eval(),
 				cmdrecv=self.ownerComp.par.Commandreceiveport.eval(),
 				oscsend=connpar.Oscsendport.eval(),
 				oscrecv=connpar.Oscreceiveport.eval(),
@@ -127,11 +138,27 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 				primaryvidrecv=self.ownerComp.par.Primaryvideoreceivename.eval() or None,
 				secondaryvidrecv=self.ownerComp.par.Secondaryvideoreceivename.eval() or None
 			)
-			self.Connection.SendRequest('connect', info.ToJsonDict()).then(
-				success=self._OnConfirmConnect,
-				failure=self._OnConnectFailure)
-		finally:
-			self._LogEnd()
+
+	@loggedmethod
+	def SetClientInfo(self, info: schema.ClientInfo):
+		if not info:
+			return Future.immediate()
+		if not info.address and not info.cmdsend:
+			self.Detach()
+		connpar = self.Connection.par
+		_ApplyParVal(self.ownerComp.par.Localaddress, info.address)
+		_ApplyParVal(self.ownerComp.par.Commandsendport, info.cmdsend)
+		_ApplyParVal(self.ownerComp.par.Commandreceiveport, info.cmdrecv)
+		_ApplyParVal(connpar.Oscendport, info.oscsend)
+		_ApplyParVal(connpar.Oscreceiveport, info.oscrecv)
+		_ApplyParVal(connpar.Osceventsendport, info.osceventsend)
+		_ApplyParVal(connpar.Osceventreceiveport, info.osceventrecv)
+		_ApplyParVal(self.ownerComp.par.Primaryvideoreceivename, info.primaryvidrecv)
+		_ApplyParVal(self.ownerComp.par.Secondaryvideoreceivename, info.secondaryvidrecv)
+		if info.address or info.cmdsend:
+			return self.Connect(host=info.address, port=info.cmdsend)
+		else:
+			return Future.immediate()
 
 	def _OnConfirmConnect(self, _):
 		self.Connected.val = True
@@ -369,3 +396,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 		self._LogEvent('HandleOscEvent({!r}, {!r})'.format(address, args))
 		modpath, name = address.split(':', maxsplit=1)
 		self.ProxyManager.SetParamValue(modpath, name, args[0])
+
+def _ApplyParVal(par, val):
+	if val is not None:
+		par.val = val

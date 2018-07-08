@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Dict, List, Optional
 from operator import attrgetter
 
 print('vjz4/module_host.py loading')
@@ -27,6 +27,12 @@ try:
 	import schema
 except ImportError:
 	schema = mod.schema
+
+try:
+	import app_state
+except ImportError:
+	app_state = mod.app_state
+ModuleState = app_state.ModuleState
 
 try:
 	import common
@@ -176,6 +182,25 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			self.ownerComp.par.Uimode = uistate['Uimode']
 		for m in self._SubModuleHosts:
 			m.LoadUIState()
+
+	def BuildState(self):
+		return ModuleState(
+			collapsed=self.ownerComp.par.Collapsed.eval(),
+			uimode=self.ownerComp.par.Uimode.eval(),
+			params=self.ModuleConnector and self.ModuleConnector.GetParVals()
+		)
+
+	@loggedmethod
+	def LoadState(self, modstate: app_state.ModuleState):
+		if not modstate:
+			return
+		if modstate.collapsed is not None:
+			self.ownerComp.par.Collapsed = modstate.collapsed
+		if modstate.uimode and modstate.uimode in self.ownerComp.par.Uimode.menuNames:
+			self.ownerComp.par.Uimode = modstate.uimode
+		if not self.ModuleConnector:
+			return
+		self.ModuleConnector.SetParVals(modstate.params)
 
 	@property
 	def ParentHost(self) -> 'ModuleHost':
@@ -601,6 +626,12 @@ class ModuleHostConnector:
 		if par is None:
 			return None
 		return 'op({!r}).par.{}'.format(par.owner.path, par.name)
+
+	def GetParVals(self) -> Optional[Dict]:
+		return None
+
+	def SetParVals(self, parvals: Dict=None):
+		pass
 
 	@property
 	def CanEditModule(self): return False
