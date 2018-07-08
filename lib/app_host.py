@@ -81,7 +81,8 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 				[
 					lambda: self._BuildNodeMarkers(),
 					lambda: self._RegisterNodeMarkers(),
-					lambda: self._InitializeMappings(),
+					# temporarily disabling the mapping editors
+					# lambda: self._InitializeMappings(),
 				],
 				autostart=True))
 
@@ -105,7 +106,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def _InitializeMappings(self):
 		if not self.AppSchema:
 			return
-		mapper = self._ControlMapper
+		mapper = self.ControlMapper
 		for modschema in self.AppSchema.modules:
 			mapper.AddEmptyMissingMappingsForModule(modschema)
 
@@ -209,18 +210,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 					callback=lambda: self._RemoteClient.openParameters()),
 			]
 		elif name == 'view_menu':
-			def _uimodeItem(text, par, mode):
-				return menu.Item(
-					text,
-					checked=par == mode,
-					callback=lambda: setattr(par, 'val', mode))
-			sidemodepar = self.ownerComp.par.Sidepanelmode
-			items = [
-				_uimodeItem(label, sidemodepar, name)
-				for name, label in zip(
-					sidemodepar.menuNames,
-					sidemodepar.menuLabels)
-			]
+			items = self._GetSidePanelModeMenuItems()
 		elif name == 'debug_menu':
 			def _viewItem(text, oppath):
 				return menu.Item(
@@ -243,6 +233,26 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			]
 		else:
 			return
+		menu.fromButton(button, h='Left', v='Bottom').Show(
+			items=items,
+			autoClose=True)
+
+	def _GetSidePanelModeMenuItems(self):
+		def _uimodeItem(text, par, mode):
+			return menu.Item(
+				text,
+				checked=par == mode,
+				callback=lambda: setattr(par, 'val', mode))
+		sidemodepar = self.ownerComp.par.Sidepanelmode
+		return [
+			_uimodeItem(label, sidemodepar, name)
+			for name, label in zip(
+				sidemodepar.menuNames,
+				sidemodepar.menuLabels)
+		]
+
+	def OnSidePanelHeaderClick(self, button):
+		items = self._GetSidePanelModeMenuItems()
 		menu.fromButton(button, h='Left', v='Bottom').Show(
 			items=items,
 			autoClose=True)
@@ -327,14 +337,16 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			command='setSecondaryVideoSrc')
 		self.ownerComp.op('nodes/preview_panel').par.display = hassource
 		for marker in self.previewMarkers:
-			marker.par.Previewactive = False
+			if hasattr(marker.par, 'Previewactive'):
+				marker.par.Previewactive = False
 		self.previewMarkers.clear()
 		if hassource and path in self.nodeMarkersByPath:
 			# TODO: clean this up
 			modpath = self.AppSchema.modulepathsbyprimarynodepath.get(path)
 			self.previewMarkers += self.nodeMarkersByPath[path]
 			for marker in self.previewMarkers:
-				marker.par.Previewactive = True
+				if hasattr(marker.par, 'Previewactive'):
+					marker.par.Previewactive = True
 		else:
 			modpath = None
 		for host in self._AllModuleHosts:
@@ -369,7 +381,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		return self.ownerComp.op('devices')
 
 	@property
-	def _ControlMapper(self) -> 'control_mapping.ControlMapper':
+	def ControlMapper(self) -> 'control_mapping.ControlMapper':
 		return self.ownerComp.op('mappings')
 
 def _ParseAddress(text: str, defaulthost='localhost', defaultport=9500) -> Tuple[str, int]:

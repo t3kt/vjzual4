@@ -407,29 +407,71 @@ def GetOrAddCell(dat, row, col):
 			dat.appendCol([col])
 	return dat[row, col]
 
+
+class opattrs:
+	def __init__(
+			self,
+			order=None,
+			nodepos=None,
+			tags=None,
+			panelparent=None,
+			parvals=None,
+			parexprs=None):
+		self.order = order
+		self.nodepos = nodepos
+		self.tags = tags
+		self.panelparent = panelparent
+		self.parvals = parvals
+		self.parexprs = parexprs
+
+	def override(self, other: 'opattrs'):
+		if not other:
+			return self
+		if other.order is not None:
+			self.order = other.order
+		self.nodepos = other.nodepos or self.nodepos
+		if other.tags:
+			if self.tags:
+				self.tags.update(other.tags)
+			else:
+				self.tags = set(other.tags)
+		self.panelparent = other.panelparent or self.panelparent
+		self.parvals = mergedicts(self.parvals, other.parvals)
+		self.parexprs = mergedicts(self.parexprs, other.parexprs)
+		return self
+
+	def applyto(self, comp):
+		if self.order is not None:
+			comp.par.alignorder = self.order
+		if self.parvals:
+			for key, val in self.parvals.items():
+				setattr(comp.par, key, val)
+		if self.parexprs:
+			for key, expr in self.parexprs.items():
+				getattr(comp.par, key).expr = expr
+		if self.nodepos:
+			comp.nodeCenterX = self.nodepos[0]
+			comp.nodeCenterY = self.nodepos[1]
+		if self.tags:
+			comp.tags.update(self.tags)
+		if self.panelparent:
+			self.panelparent.outputCOMPConnectors[0].connect(comp)
+		return comp
+
+	@classmethod
+	def merged(cls, *attrs, **kwargs):
+		result = cls()
+		for a in attrs:
+			result.override(a)
+		if kwargs:
+			result.override(cls(**kwargs))
+		return result
+
 def UpdateOP(
 		comp,
-		order=None,
-		nodepos=None,
-		tags=None,
-		panelparent=None,
-		parvals=None,
-		parexprs=None):
-	if parvals:
-		for key, val in parvals.items():
-			setattr(comp.par, key, val)
-	if parexprs:
-		for key, expr in parexprs.items():
-			getattr(comp.par, key).expr = expr
-	if order is not None:
-		comp.par.alignorder = order
-	if nodepos:
-		comp.nodeCenterX = nodepos[0]
-		comp.nodeCenterY = nodepos[1]
-	if tags:
-		comp.tags.update(tags)
-	if panelparent:
-		panelparent.outputCOMPConnectors[0].connect(comp)
+		attrs: opattrs=None, **kwargs):
+	opattrs.merged(attrs, **kwargs).applyto(comp)
+	return comp
 
 def _ResolveDest(dest):
 	deststr = str(dest)
@@ -440,56 +482,32 @@ def _ResolveDest(dest):
 
 def CreateFromTemplate(
 		template,
-		dest,
-		name,
-		order=None,
-		nodepos=None,
-		tags=None,
-		panelparent=None,
-		parvals=None,
-		parexprs=None):
+		dest, name,
+		attrs: opattrs=None, **kwargs):
 	dest = _ResolveDest(dest)
 	comp = dest.copy(template, name=name)
-	UpdateOP(
-		comp=comp, order=order, nodepos=nodepos, panelparent=panelparent,
-		tags=tags, parvals=parvals, parexprs=parexprs)
+	opattrs.merged(attrs, **kwargs).applyto(comp)
 	return comp
 
 def CreateOP(
-		optype,
-		dest,
-		name,
-		order=None,
-		nodepos=None,
-		tags=None,
-		panelparent=None,
-		parvals=None,
-		parexprs=None):
+		optype, dest, name,
+		attrs: opattrs=None, **kwargs):
 	dest = _ResolveDest(dest)
 	comp = dest.create(optype, name)
-	UpdateOP(
-		comp=comp, order=order, nodepos=nodepos, panelparent=panelparent,
-		tags=tags, parvals=parvals, parexprs=parexprs)
+	opattrs.merged(attrs, **kwargs).applyto(comp)
 	return comp
 
 def GetOrCreateOP(
-		optype,
-		dest,
-		name,
-		nodepos=None,
-		tags=None,
-		parvals=None,
-		parexprs=None):
+		optype, dest, name,
+		attrs: opattrs=None, **kwargs):
 	comp = dest.op(name)
 	if not comp:
 		comp = CreateOP(
 			optype,
 			dest=dest,
 			name=name,
-			nodepos=nodepos,
-			tags=tags,
-			parvals=parvals,
-			parexprs=parexprs)
+			attrs=attrs,
+			**kwargs)
 	return comp
 
 def AddOrUpdatePar(appendmethod, name, label, value=None, expr=None, readonly=None):
