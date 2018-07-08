@@ -334,7 +334,7 @@ def cleandict(d):
 	return {
 		key: val
 		for key, val in d.items()
-		if not (val is None or (isinstance(val, (list, dict, tuple)) and len(val) == 0))
+		if not (val is None or (isinstance(val, (str, list, dict, tuple)) and len(val) == 0))
 	}
 
 def mergedicts(*parts):
@@ -600,3 +600,17 @@ class BaseDataObject:
 				if isinstance(val, bool):
 					val = 1 if val else 0
 				cell.val = val
+
+class AttrBasedIdentity:
+	def _IdentityAttrs(self):
+		raise NotImplementedError()
+
+	def __eq__(self, other):
+		if other is self:
+			return True
+		if not isinstance(other, self.__class__):
+			return False
+		return self._IdentityAttrs() == other._IdentityAttrs()
+
+	def __hash__(self):
+		return hash(self._IdentityAttrs())

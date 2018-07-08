@@ -1,4 +1,6 @@
 from operator import attrgetter
+import re
+from typing import Optional
 
 print('vjz4/remote_server.py loading')
 
@@ -202,12 +204,13 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 		finally:
 			self._LogEnd()
 
-	def _BuildModuleInfo(self, modpath) -> schema.RawModuleInfo:
+	def _BuildModuleInfo(self, modpath) -> Optional[schema.RawModuleInfo]:
 		self._LogBegin('_BuildModuleInfo({!r})'.format(modpath))
 		try:
 			module = self.ownerComp.op(modpath)
 			if not module:
-				raise Exception('Module not found: {}'.format(modpath))
+				self._LogEvent('Module not found: {}'.format(modpath))
+				return None
 			settings = module_settings.ExtractSettings(module)
 			modulecore = module.op('core')
 			# TODO: support having the core specify the sub-modules
@@ -222,6 +225,7 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 				parentpath=module.parent().path,
 				name=module.name,
 				label=str(getattr(module.par, 'Uilabel', None) or getattr(module.par, 'Label', None) or '') or None,
+				masterpath=_GetModuleMasterPath(module),
 				childmodpaths=[c.path for c in submods],
 				partuplets=[
 					[self._BuildParamInfo(p) for p in t]
@@ -277,7 +281,7 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 		self._LogBegin('SendModuleInfo({!r})'.format(modpath))
 		try:
 			modinfo = self._BuildModuleInfo(modpath)
-			self.Connection.SendResponse(request.cmd, request.cmdid, modinfo.ToJsonDict())
+			self.Connection.SendResponse(request.cmd, request.cmdid, modinfo.ToJsonDict() if modinfo else None)
 		finally:
 			self._LogEnd()
 
@@ -350,3 +354,24 @@ def _GetParJsonValue(par):
 		val = par.eval()
 		return val.path if val else None
 	return par.eval()
+
+def _GetModuleMasterPath(module):
+	if not module:
+		return None
+	clonepar = module.par.clone
+	master = clonepar.eval()
+	if isinstance(master, str):
+		return master
+	if master:
+		return master.path
+	if clonepar.mode == ParMode.CONSTANT:
+		return clonepar.val or ''
+	elif clonepar.mode == ParMode.EXPRESSION and clonepar.expr:
+		expr = clonepar.expr
+		match = re.search(r'^op\("([a-zA-Z0-9_/]+)"\)$', expr)
+		if not match:
+			match = re.search(r"^op\('([a-zA-Z0-9_/]+)'\)$", expr)
+		if match:
+			path = match.group(1)
+			return path
+	return None
