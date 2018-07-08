@@ -336,14 +336,16 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			command='setSecondaryVideoSrc')
 		self.ownerComp.op('nodes/preview_panel').par.display = hassource
 		for marker in self.previewMarkers:
-			marker.par.Previewactive = False
+			if hasattr(marker.par, 'Previewactive'):
+				marker.par.Previewactive = False
 		self.previewMarkers.clear()
 		if hassource and path in self.nodeMarkersByPath:
 			# TODO: clean this up
 			modpath = self.AppSchema.modulepathsbyprimarynodepath.get(path)
 			self.previewMarkers += self.nodeMarkersByPath[path]
 			for marker in self.previewMarkers:
-				marker.par.Previewactive = True
+				if hasattr(marker.par, 'Previewactive'):
+					marker.par.Previewactive = True
 		else:
 			modpath = None
 		for host in self._AllModuleHosts:

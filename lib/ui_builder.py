@@ -6,11 +6,11 @@ if False:
 
 try:
 	import common
-	from common import cleandict, mergedicts, UpdateOP, CreateFromTemplate
 except ImportError:
 	common = mod.common
-	cleandict, mergedicts = common.cleandict, common.mergedicts
-	UpdateOP, CreateFromTemplate = common.UpdateOP, common.CreateFromTemplate
+cleandict, mergedicts = common.cleandict, common.mergedicts
+UpdateOP, CreateFromTemplate = common.UpdateOP, common.CreateFromTemplate
+opattrs = common.opattrs
 
 try:
 	import schema
@@ -29,35 +29,36 @@ class UiBuilder:
 			value=None, valueexpr=None,
 			defval=None,
 			valrange=None, clamp=None,
-			order=None, nodepos=None,
-			parvals=None,
-			parexprs=None):
+			attrs: opattrs=None,
+			**kwargs):
+		attrs = attrs or opattrs(**kwargs)
 		return CreateFromTemplate(
 			template=self.ownerComp.op('sliderL'),
-			dest=dest, name=name, order=order, nodepos=nodepos,
-			parvals=mergedicts(
-				label and {'Label': label},
-				helptext and {'Help': helptext},
-				defval is not None and {'Default1': defval},
-				valrange and {'Rangelow1': valrange[0], 'Rangehigh1': valrange[1]},
-				value is not None and {'Value1': value},
-				clamp and {'Clamplow1': clamp[0], 'Clamphigh1': clamp[1]},
-				{'Integer': isint},
-				valueexpr and {'Push1': True},
-				parvals),
-			parexprs=mergedicts(
-				valueexpr and {'Value1': valueexpr},
-				parexprs))
+			dest=dest, name=name,
+			attrs=opattrs.merged(
+				opattrs(
+					parvals=mergedicts(
+						label and {'Label': label},
+						helptext and {'Help': helptext},
+						defval is not None and {'Default1': defval},
+						valrange and {'Rangelow1': valrange[0], 'Rangehigh1': valrange[1]},
+						value is not None and {'Value1': value},
+						clamp and {'Clamplow1': clamp[0], 'Clamphigh1': clamp[1]},
+						{'Integer': isint},
+						valueexpr and {'Push1': True})),
+				attrs,
+				parexprs=mergedicts(
+					valueexpr and {'Value1': valueexpr}),
+				**kwargs))
 
 	def CreateParSlider(
 			self, dest, name,
 			parinfo,  # type: schema.ParamSchema
-			order=None, nodepos=None,
-			parvals=None,
-			parexprs=None,
-			modhostconnector=None):
+			modhostconnector=None,
+			attrs: opattrs=None, **kwargs):
 		return self.CreateSlider(
-			dest=dest, name=name, order=order, nodepos=nodepos,
+			dest=dest, name=name,
+			attrs=opattrs.merged(attrs, **kwargs),
 			label=parinfo.label,
 			isint=parinfo.style == 'Int',
 			valueexpr=modhostconnector.GetParExpr(parinfo.parts[0].name) if modhostconnector else None,
@@ -69,23 +70,18 @@ class UiBuilder:
 			valrange=[
 				parinfo.parts[0].minnorm if parinfo.parts[0].minlimit is None else parinfo.parts[0].minlimit,
 				parinfo.parts[0].maxnorm if parinfo.parts[0].maxlimit is None else parinfo.parts[0].maxlimit,
-			],
-			parvals=parvals,
-			parexprs=parexprs)
+			])
 
 	def CreateParMultiSlider(
 			self, dest, name,
 			parinfo,  # type: schema.ParamSchema
-			order=None, nodepos=None,
-			parvals=None,
-			parexprs=None,
-			modhostconnector=None):
+			modhostconnector=None,
+			attrs: opattrs=None, **kwargs):
 		n = len(parinfo.parts)
 		ctrl = CreateFromTemplate(
 			template=self.ownerComp.op('multi_slider'),
-			dest=dest, name=name, order=order, nodepos=nodepos,
-			parvals=parvals,
-			parexprs=parexprs)
+			dest=dest, name=name,
+			attrs=opattrs.merged(attrs, **kwargs))
 		isint = parinfo.style == 'Int'
 		if parinfo.style in ('Int', 'Float'):
 			suffixes = list(range(1, n + 1))
@@ -147,60 +143,54 @@ class UiBuilder:
 			value=None, valueexpr=None,
 			runofftoon=None,
 			defval=None,
-			order=None, nodepos=None,
-			parvals=None,
-			parexprs=None):
+			attrs: opattrs=None, **kwargs):
 		return CreateFromTemplate(
 			template=self.ownerComp.op('binaryC'),
-			dest=dest, name=name, order=order, nodepos=nodepos,
-			parvals=mergedicts(
-				label and {
-					'Texton': label,
-					'Textoff': label,
-				},
-				helptext and {
-					'Textonroll': helptext + ' (on)',
-					'Textoffroll': helptext + ' (off)',
-				},
-				runofftoon and {'Runofftoon': runofftoon},
-				defval is not None and {'Default1': defval},
-				value is not None and {'Value1': value},
-				behavior and {'Behavior': behavior},
-				valueexpr and {'Push1': True},
-				parvals),
-			parexprs=mergedicts(
-				valueexpr and {'Value1': valueexpr},
-				parexprs))
+			dest=dest, name=name,
+			attrs=opattrs.merged(
+				opattrs(
+					parvals=mergedicts(
+						label and {
+							'Texton': label,
+							'Textoff': label,
+						},
+						helptext and {
+							'Textonroll': helptext + ' (on)',
+							'Textoffroll': helptext + ' (off)',
+						},
+						runofftoon and {'Runofftoon': runofftoon},
+						defval is not None and {'Default1': defval},
+						value is not None and {'Value1': value},
+						behavior and {'Behavior': behavior},
+						valueexpr and {'Push1': True}),
+					parexprs=mergedicts(
+						valueexpr and {'Value1': valueexpr})),
+				attrs,
+				**kwargs))
 
 	def CreateParToggle(
 			self, dest, name,
 			parinfo,  # type: schema.ParamSchema
-			order=None, nodepos=None,
-			parvals=None,
-			parexprs=None,
-			modhostconnector=None):
+			modhostconnector=None,
+			attrs: opattrs=None, **kwargs):
 		return self.CreateButton(
-			dest=dest, name=name, order=order, nodepos=nodepos,
+			dest=dest, name=name,
+			attrs=opattrs.merged(attrs, **kwargs),
 			label=parinfo.label,
 			behavior='toggledown',
 			valueexpr=modhostconnector.GetParExpr(name) if modhostconnector else None,
-			defval=parinfo.parts[0].default,
-			parvals=parvals,
-			parexprs=parexprs)
+			defval=parinfo.parts[0].default)
 
 	def CreateParTrigger(
 			self, dest, name,
 			parinfo,  # type: schema.ParamSchema
-			order=None, nodepos=None,
-			parvals=None,
-			parexprs=None):
+			attrs: opattrs=None, **kwargs):
+		# TODO: off to on action
 		return self.CreateButton(
-			dest=dest, name=name, order=order, nodepos=nodepos,
+			dest=dest, name=name,
+			attrs=opattrs.merged(attrs, **kwargs),
 			label=parinfo.label,
-			behavior='pulse',
-			# TODO: off to on action
-			parvals=parvals,
-			parexprs=parexprs)
+			behavior='pulse')
 
 	def CreateTextField(
 			self, dest, name,
@@ -209,45 +199,36 @@ class UiBuilder:
 			fieldtype=None,
 			value=None, valueexpr=None,
 			defval=None,
-			order=None, nodepos=None,
-			parvals=None,
-			parexprs=None):
+			attrs: opattrs=None, **kwargs):
 		return CreateFromTemplate(
 			template=self.ownerComp.op('string'),
-			dest=dest, name=name, order=order, nodepos=nodepos,
-			parvals=mergedicts(
-				label and {'Label': label},
-				helptext and {'Help': helptext},
-				defval is not None and {'Default1': defval},
-				value is not None and {'Value1': value},
-				{'Type': fieldtype or 'string'},
-				valueexpr and {'Push1': True},
-				parvals),
-			parexprs=mergedicts(
-				valueexpr and {'Value1': valueexpr},
-				parexprs))
+			dest=dest, name=name,
+			attrs=opattrs.merged(
+				opattrs(
+					parvals=mergedicts(
+						label and {'Label': label},
+						helptext and {'Help': helptext},
+						defval is not None and {'Default1': defval},
+						value is not None and {'Value1': value},
+						{'Type': fieldtype or 'string'},
+						valueexpr and {'Push1': True}),
+					parexprs=mergedicts(
+						valueexpr and {'Value1': valueexpr})),
+				attrs,
+				**kwargs))
 
 	def CreateParTextField(
-			self,
-			dest,
-			name,
+			self, dest, name,
 			parinfo,  # type: schema.ParamSchema
-			order=None,
-			nodepos=None,
-			parvals=None,
-			parexprs=None,
-			modhostconnector=None):
+			modhostconnector=None,
+			attrs: opattrs=None, **kwargs):
 		ctrl = self.CreateTextField(
-			dest=dest,
-			name=name,
+			dest=dest, name=name,
 			label=parinfo.label,
 			fieldtype='string',
 			valueexpr=modhostconnector.GetParExpr(parinfo.name) if modhostconnector else None,
 			defval=parinfo.parts[0].default,
-			order=order,
-			nodepos=nodepos,
-			parvals=parvals,
-			parexprs=parexprs)
+			attrs=opattrs.merged(attrs, **kwargs))
 		celldat = ctrl.par.Celldat.eval()
 		# TODO: workaround for bug with initial value not being loaded
 		par = modhostconnector.GetPar(name) if modhostconnector else None
@@ -258,10 +239,8 @@ class UiBuilder:
 	def CreateParNodeSelector(
 			self, dest, name,
 			parinfo,  # type: schema.ParamSchema
-			order=None, nodepos=None,
-			parvals=None, parexprs=None,
 			modhostconnector=None,  # type: ModuleHostConnector
-	):
+			attrs: opattrs=None, **kwargs):
 		if parinfo.specialtype in ['node', 'node.v', 'node.a', 'node.t']:
 			nodetype = parinfo.specialtype
 		else:
@@ -269,55 +248,49 @@ class UiBuilder:
 		valueexpr = modhostconnector.GetParExpr(parinfo.name) if modhostconnector else None
 		return CreateFromTemplate(
 			template=self.ownerComp.op('node_selector'),
-			dest=dest, name=name, order=order, nodepos=nodepos,
-			parvals=mergedicts(
-				{
-					'Label': parinfo.label,
-					'Nodetype': nodetype,
-				},
-				parvals),
-			parexprs=mergedicts(
-				{
-					'Targetpar': valueexpr,
-				},
-				parexprs))
+			dest=dest, name=name,
+			attrs=opattrs.merged(
+				opattrs(
+					parvals={
+						'Label': parinfo.label,
+						'Nodetype': nodetype,
+					},
+					parexprs={
+						'Targetpar': valueexpr,
+					}),
+				attrs,
+				**kwargs))
 
 	def CreateParMenuField(
 			self, dest, name,
 			parinfo,  # type: schema.ParamSchema
-			order=None, nodepos=None,
-			parvals=None,
-			parexprs=None,
 			modhostconnector=None,  # type: ModuleHostConnector
-	):
+			attrs: opattrs=None, **kwargs):
 		valueexpr = modhostconnector.GetParExpr(parinfo.name) if modhostconnector else None
 		return CreateFromTemplate(
 			template=self.ownerComp.op('menu_field'),
-			dest=dest, name=name, order=order, nodepos=nodepos,
-			parvals=mergedicts(
-				parinfo.label and {'Label': parinfo.label},
-				parinfo.helptext and {'Help': parinfo.helptext},
-				parvals),
-			parexprs=mergedicts(
-				{
-					'Menunames': repr(parinfo.parts[0].menunames or []),
-					'Menulabels': repr(parinfo.parts[0].menulabels or []),
-					'Targetpar': valueexpr,
-				},
-				parexprs))
+			dest=dest, name=name,
+			attrs=opattrs.merged(
+				opattrs(
+					parvals=mergedicts(
+						parinfo.label and {'Label': parinfo.label},
+						parinfo.helptext and {'Help': parinfo.helptext}),
+					parexprs={
+						'Menunames': repr(parinfo.parts[0].menunames or []),
+						'Menulabels': repr(parinfo.parts[0].menulabels or []),
+						'Targetpar': valueexpr,
+					}),
+				attrs,
+				**kwargs))
 
 	def CreateParControl(
-			self,
-			dest,
-			name,
+			self, dest, name,
 			parinfo,  # type: schema.ParamSchema
-			order=None,
-			nodepos=None,
-			parvals=None,
-			parexprs=None,
 			addtocontrolmap=None,
-			modhostconnector=None  # type: ModuleHostConnector
-	):
+			modhostconnector=None,  # type: ModuleHostConnector
+			attrs: opattrs=None, **kwargs):
+
+		attrs = opattrs.merged(attrs, **kwargs)
 
 		def _register(ctrlop):
 			if addtocontrolmap is not None:
@@ -338,13 +311,9 @@ class UiBuilder:
 		if parinfo.style in ('Float', 'Int') and len(parinfo.parts) == 1:
 			# print('creating slider control for {}'.format(parinfo))
 			ctrl = self.CreateParSlider(
-				dest=dest,
-				name=name,
+				dest=dest, name=name,
 				parinfo=parinfo,
-				order=order,
-				nodepos=nodepos,
-				parvals=parvals,
-				parexprs=parexprs,
+				attrs=attrs,
 				modhostconnector=modhostconnector)
 		elif parinfo.style in [
 			'Float', 'Int',
@@ -353,67 +322,43 @@ class UiBuilder:
 		]:
 			# print('creating multi slider control for {}'.format(parinfo))
 			sliders = self.CreateParMultiSlider(
-				dest=dest,
-				name=name,
+				dest=dest, name=name,
 				parinfo=parinfo,
-				order=order,
-				nodepos=nodepos,
-				parvals=parvals,
-				parexprs=parexprs,
+				attrs=attrs,
 				modhostconnector=modhostconnector)
 			_registerparts(sliders)
 			ctrl = sliders[0].parent()
 		elif parinfo.style == 'Toggle':
 			# print('creating toggle control for {}'.format(parinfo))
 			ctrl = self.CreateParToggle(
-				dest=dest,
-				name=name,
+				dest=dest, name=name,
 				parinfo=parinfo,
-				order=order,
-				nodepos=nodepos,
-				parvals=parvals,
-				parexprs=parexprs,
+				attrs=attrs,
 				modhostconnector=modhostconnector)
 		elif parinfo.style == 'Pulse':
 			# print('creating trigger control for {}'.format(parinfo))
 			ctrl = self.CreateParTrigger(
-				dest=dest,
-				name=name,
+				dest=dest, name=name,
 				parinfo=parinfo,
-				order=order,
-				nodepos=nodepos,
-				parvals=parvals,
-				parexprs=parexprs)
+				attrs=attrs)
 		elif parinfo.style == 'Str' and not parinfo.isnode:
 			# print('creating text field control for plain string {}'.format(parinfo))
 			ctrl = self.CreateParTextField(
-				dest=dest,
-				name=name,
+				dest=dest, name=name,
 				parinfo=parinfo,
-				order=order,
-				nodepos=nodepos,
-				parvals=parvals,
-				parexprs=parexprs,
+				attrs=attrs,
 				modhostconnector=modhostconnector)
 		elif parinfo.isnode:
 			ctrl = self.CreateParNodeSelector(
-				dest=dest,
-				name=name,
+				dest=dest, name=name,
 				parinfo=parinfo,
-				order=order,
-				nodepos=nodepos,
-				parvals=parvals,
-				parexprs=parexprs,
+				attrs=attrs,
 				modhostconnector=modhostconnector)
 		elif parinfo.style == 'Menu':
 			ctrl = self.CreateParMenuField(
-				dest=dest,
-				name=name,
+				dest=dest, name=name,
 				parinfo=parinfo,
-				order=order,
-				nodepos=nodepos,
-				parvals=parvals,
-				parexprs=parexprs,
+				attrs=attrs,
 				modhostconnector=modhostconnector)
 		else:
 			print('Unsupported par style: {!r})'.format(parinfo))
@@ -421,75 +366,62 @@ class UiBuilder:
 		return _register(ctrl)
 
 	def CreateMappingEditor(
-			self,
-			dest,
-			name,
+			self, dest, name,
 			paramname,
 			ctrltype='slider',
-			order=None,
-			nodepos=None,
-			parvals=None,
-			parexprs=None):
+			attrs: opattrs=None, **kwargs):
 		return CreateFromTemplate(
 			template=self.ownerComp.op('mapping_editor'),
-			dest=dest,
-			name=name,
-			order=order,
-			nodepos=nodepos,
-			parvals=mergedicts(
-				{
-					'Param': paramname,
-					'Controltype': ctrltype,
-				},
-				parvals),
-			parexprs=parexprs)
+			dest=dest, name=name,
+			attrs=opattrs.merged(
+				opattrs(
+					parvals={
+						'Param': paramname,
+						'Controltype': ctrltype,
+					}),
+				attrs,
+				**kwargs))
 
 	def CreateControlMarker(
-			self,
-			dest,
-			name,
+			self, dest, name,
 			control,  # type: schema.DeviceControlInfo
-			panelparent=None, order=None, nodepos=None, parvals=None, parexprs=None):
+			attrs: opattrs=None, **kwargs):
 		return CreateFromTemplate(
 			template=self.ownerComp.op('control_marker'),
-			dest=dest,
-			name=name,
-			order=order, nodepos=nodepos, panelparent=panelparent,
-			parvals=mergedicts(
-				{
-					'Name': control.name,
-					'Fullname': control.fullname,
-					'Ctrltype': control.ctrltype or 'slider',
-					'Inputcc': control.inputcc if control.inputcc is not None else -1,
-					'Outputcc': control.outputcc if control.outputcc is not None else -1,
-				},
-				parvals),
-			parexprs=parexprs)
+			dest=dest, name=name,
+			attrs=opattrs.merged(
+				opattrs(
+					parvals={
+						'Name': control.name,
+						'Fullname': control.fullname,
+						'Ctrltype': control.ctrltype or 'slider',
+						'Inputcc': control.inputcc if control.inputcc is not None else -1,
+						'Outputcc': control.outputcc if control.outputcc is not None else -1,
+					}),
+				attrs,
+				**kwargs))
 
 	def CreateNodeMarker(
-			self,
-			dest,
-			name,
+			self, dest, name,
 			nodeinfo,  # type: schema.DataNodeInfo
 			previewbutton=False,
-			panelparent=None, order=None, nodepos=None, parvals=None, parexprs=None):
+			attrs: opattrs=None, **kwargs):
 		return CreateFromTemplate(
 			template=self.ownerComp.op('node_marker'),
-			dest=dest,
-			name=name,
-			order=order, nodepos=nodepos, panelparent=panelparent,
-			tags=['vjz4nodemarker'],
-			parvals=mergedicts(
-				{
-					'Name': nodeinfo.name,
-					'Label': nodeinfo.label,
-					'Path': nodeinfo.path,
-					'Video': nodeinfo.video,
-					'Audio': nodeinfo.audio,
-					'Texbuf': nodeinfo.texbuf,
-					'Showpreviewbutton': previewbutton,
-					'Previewactive': False,
-					'h': 30,
-				},
-				parvals),
-			parexprs=parexprs)
+			dest=dest, name=name,
+			attrs=opattrs.merged(
+				opattrs(
+					parvals={
+						'Name': nodeinfo.name,
+						'Label': nodeinfo.label,
+						'Path': nodeinfo.path,
+						'Video': nodeinfo.video,
+						'Audio': nodeinfo.audio,
+						'Texbuf': nodeinfo.texbuf,
+						'Showpreviewbutton': previewbutton,
+						'Previewactive': False,
+						'h': 30,
+					},
+					tags=['vjz4nodemarker']),
+				attrs,
+				**kwargs))
