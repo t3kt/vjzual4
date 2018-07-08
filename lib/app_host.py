@@ -105,7 +105,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def _InitializeMappings(self):
 		if not self.AppSchema:
 			return
-		mapper = self._ControlMapper
+		mapper = self.ControlMapper
 		for modschema in self.AppSchema.modules:
 			mapper.AddEmptyMissingMappingsForModule(modschema)
 
@@ -380,7 +380,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		return self.ownerComp.op('devices')
 
 	@property
-	def _ControlMapper(self) -> 'control_mapping.ControlMapper':
+	def ControlMapper(self) -> 'control_mapping.ControlMapper':
 		return self.ownerComp.op('mappings')
 
 def _ParseAddress(text: str, defaulthost='localhost', defaultport=9500) -> Tuple[str, int]:

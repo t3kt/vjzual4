@@ -469,11 +469,8 @@ class opattrs:
 
 def UpdateOP(
 		comp,
-		attrs: opattrs=None,
-		**kwargs):
-
-	attrs = attrs or opattrs(**kwargs)
-	attrs.applyto(comp)
+		attrs: opattrs=None, **kwargs):
+	opattrs.merged(attrs, **kwargs).applyto(comp)
 	return comp
 
 def _ResolveDest(dest):
@@ -485,32 +482,24 @@ def _ResolveDest(dest):
 
 def CreateFromTemplate(
 		template,
-		dest,
-		name,
-		attrs: opattrs=None,
-		**kwargs):
+		dest, name,
+		attrs: opattrs=None, **kwargs):
 	dest = _ResolveDest(dest)
 	comp = dest.copy(template, name=name)
 	opattrs.merged(attrs, **kwargs).applyto(comp)
 	return comp
 
 def CreateOP(
-		optype,
-		dest,
-		name,
-		attrs: opattrs=None,
-		**kwargs):
+		optype, dest, name,
+		attrs: opattrs=None, **kwargs):
 	dest = _ResolveDest(dest)
 	comp = dest.create(optype, name)
 	opattrs.merged(attrs, **kwargs).applyto(comp)
 	return comp
 
 def GetOrCreateOP(
-		optype,
-		dest,
-		name,
-		attrs: opattrs=None,
-		**kwargs):
+		optype, dest, name,
+		attrs: opattrs=None, **kwargs):
 	comp = dest.op(name)
 	if not comp:
 		comp = CreateOP(

@@ -753,11 +753,11 @@ class DeviceControlInfo(BaseDataObject):
 class ControlMapping(BaseDataObject):
 	def __init__(
 			self,
-			path,
-			param,
+			path=None,
+			param=None,
 			enable=True,
-			rangelow=0,
-			rangehigh=1,
+			rangelow=None,
+			rangehigh=None,
 			control=None,
 			mapid=None,
 			**otherattrs):
@@ -765,8 +765,8 @@ class ControlMapping(BaseDataObject):
 		self.path = path
 		self.param = param
 		self.enable = enable
-		self.rangelow = rangelow
-		self.rangehigh = rangehigh
+		self.rangelow = rangelow if rangelow is not None else 0
+		self.rangehigh = rangehigh if rangehigh is not None else 1
 		self.control = control
 		self.mapid = mapid
 

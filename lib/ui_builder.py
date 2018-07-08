@@ -3,6 +3,7 @@ print('vjz4/ui_builder.py loading')
 if False:
 	from _stubs import *
 	from module_host import ModuleHostConnector
+	from control_mapping import MappingEditor
 
 try:
 	import common
@@ -367,8 +368,7 @@ class UiBuilder:
 
 	def CreateMappingEditor(
 			self, dest, name,
-			paramname,
-			ctrltype='slider',
+			mapping: schema.ControlMapping,
 			attrs: opattrs=None, **kwargs):
 		return CreateFromTemplate(
 			template=self.ownerComp.op('mapping_editor'),
@@ -376,8 +376,13 @@ class UiBuilder:
 			attrs=opattrs.merged(
 				opattrs(
 					parvals={
-						'Param': paramname,
-						'Controltype': ctrltype,
+						'Mapid': mapping.mapid or '',
+						'Modpath': mapping.path or '',
+						'Param': mapping.param or '',
+						'Control': mapping.control or '',
+						'Enabled': mapping.enable,
+						'Rangelow': mapping.rangelow,
+						'Rangehigh': mapping.rangehigh,
 					}),
 				attrs,
 				**kwargs))
@@ -386,7 +391,7 @@ class UiBuilder:
 			self, dest, name,
 			control,  # type: schema.DeviceControlInfo
 			attrs: opattrs=None, **kwargs):
-		return CreateFromTemplate(
+		ctrl = CreateFromTemplate(
 			template=self.ownerComp.op('control_marker'),
 			dest=dest, name=name,
 			attrs=opattrs.merged(
@@ -399,7 +404,9 @@ class UiBuilder:
 						'Outputcc': control.outputcc if control.outputcc is not None else -1,
 					}),
 				attrs,
-				**kwargs))
+				**kwargs)
+		)
+		return ctrl  # type: MappingEditor
 
 	def CreateNodeMarker(
 			self, dest, name,
