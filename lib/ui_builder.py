@@ -282,6 +282,30 @@ class UiBuilder:
 				},
 				parexprs))
 
+	def CreateParMenuField(
+			self, dest, name,
+			parinfo,  # type: schema.ParamSchema
+			order=None, nodepos=None,
+			parvals=None,
+			parexprs=None,
+			modhostconnector=None,  # type: ModuleHostConnector
+	):
+		valueexpr = modhostconnector.GetParExpr(parinfo.name) if modhostconnector else None
+		return CreateFromTemplate(
+			template=self.ownerComp.op('menu_field'),
+			dest=dest, name=name, order=order, nodepos=nodepos,
+			parvals=mergedicts(
+				parinfo.label and {'Label': parinfo.label},
+				parinfo.helptext and {'Help': parinfo.helptext},
+				parvals),
+			parexprs=mergedicts(
+				{
+					'Menunames': repr(parinfo.parts[0].menunames or []),
+					'Menulabels': repr(parinfo.parts[0].menulabels or []),
+					'Targetpar': valueexpr,
+				},
+				parexprs))
+
 	def CreateParControl(
 			self,
 			dest,
@@ -373,6 +397,16 @@ class UiBuilder:
 				modhostconnector=modhostconnector)
 		elif parinfo.isnode:
 			ctrl = self.CreateParNodeSelector(
+				dest=dest,
+				name=name,
+				parinfo=parinfo,
+				order=order,
+				nodepos=nodepos,
+				parvals=parvals,
+				parexprs=parexprs,
+				modhostconnector=modhostconnector)
+		elif parinfo.style == 'Menu':
+			ctrl = self.CreateParMenuField(
 				dest=dest,
 				name=name,
 				parinfo=parinfo,
