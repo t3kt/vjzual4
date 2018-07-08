@@ -107,10 +107,12 @@ class DAT(OP):
 
 COMP = OP
 CHOP = OP
+SOP = OP
 
 baseCOMP = panelCOMP = COMP
 evaluateDAT = mergeDAT = nullDAT = parameterexecuteDAT = tableDAT = textDAT = scriptDAT = DAT
 parameterCHOP = nullCHOP = selectCHOP = CHOP
+scriptSOP = SOP
 
 class app:
 	name = ''
