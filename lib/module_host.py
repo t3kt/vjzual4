@@ -611,6 +611,35 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			return
 		apphost.SetPreviewSource(self.ModuleConnector.modschema.primarynode.path, toggle=True)
 
+	@loggedmethod
+	def HandleHeaderDrop(self, dropName, baseName):
+		if not self.ModuleConnector:
+			return
+		sourceparent = op(baseName)
+		if not sourceparent:
+			return
+		sourceop = sourceparent.op(dropName)
+		if not sourceop:
+			return
+		if 'vjz4presetmarker' in sourceop.tags:
+			self._HandlePresetDrop(sourceop)
+		else:
+			self._LogEvent('Unsupported drop source: {}'.format(sourceop))
+
+	@loggedmethod
+	def _HandlePresetDrop(self, presetmarker):
+		typepath = presetmarker.par.Typepath.eval()
+		params = presetmarker.par.Params.eval()
+		partial = presetmarker.par.Partial.eval() or self.ModuleConnector.modschema.masterispartialmatch
+		if typepath != self.ModuleConnector.modschema.masterpath:
+			self._LogEvent('Unsupported preset type: {!r} (should be {!r})'.format(
+				typepath, self.ModuleConnector.modschema.masterpath))
+			return
+		self._LogEvent('Applying preset {}'.format(presetmarker.par.Name))
+		self.ModuleConnector.SetParVals(
+			parvals=params,
+			resetmissing=not partial)
+
 
 class ModuleHostConnector:
 	def __init__(
@@ -630,7 +659,7 @@ class ModuleHostConnector:
 	def GetParVals(self) -> Optional[Dict]:
 		return None
 
-	def SetParVals(self, parvals: Dict=None):
+	def SetParVals(self, parvals: Dict=None, resetmissing=False):
 		pass
 
 	@property
