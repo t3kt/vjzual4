@@ -1,6 +1,6 @@
 import datetime
 import json
-from typing import Callable, Dict, List, Iterable
+from typing import Callable, Dict, List, Iterable, Union
 
 print('vjz4/common.py loading')
 
@@ -73,9 +73,29 @@ class ExtensionBase:
 		if self.enablelogging:
 			_logger.LogEnd(self.ownerComp.path, self._GetLogId(), event)
 
-def loggedmethod(func: Callable):
+def _defaultformatargs(args, kwargs):
+	if not args:
+		return kwargs or ''
+	if not kwargs:
+		return args
+	return '{} {}'.format(args, kwargs)
+
+def loggedmethod(
+		func: Callable,
+		omitargs: Union[bool, List[str]]=None):
+	if not omitargs:
+		formatargs = _defaultformatargs
+	elif omitargs is True:
+		def formatargs(*_):
+			return ''
+	elif not isinstance(omitargs, (list, tuple, set)):
+		raise Exception('Invalid "omitargs" specifier for loggedmethod: {!r}'.format(omitargs))
+	else:
+		def formatargs(args, kwargs):
+			return _defaultformatargs(args, excludekeys(kwargs, omitargs))
+
 	def wrapper(self: ExtensionBase, *args, **kwargs):
-		self._LogBegin('{}({}{}{})'.format(func.__name__, args or '', ', ' if (args and kwargs) else '', kwargs or ''))
+		self._LogBegin('{}({})'.format(func.__name__, formatargs(args, kwargs)))
 		try:
 			return func(self, *args, **kwargs)
 		finally:
