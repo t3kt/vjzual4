@@ -80,8 +80,19 @@ def _defaultformatargs(args, kwargs):
 		return args
 	return '{} {}'.format(args, kwargs)
 
-def loggedmethod(
-		func: Callable,
+def _decoratewithlogging(func, formatargs):
+	def wrapper(self: ExtensionBase, *args, **kwargs):
+		self._LogBegin('{}({})'.format(func.__name__, formatargs(args, kwargs)))
+		try:
+			return func(self, *args, **kwargs)
+		finally:
+			self._LogEnd()
+	return wrapper
+
+def loggedmethod(func):
+	return _decoratewithlogging(func, _defaultformatargs)
+
+def customloggedmethod(
 		omitargs: Union[bool, List[str]]=None):
 	if not omitargs:
 		formatargs = _defaultformatargs
@@ -94,13 +105,7 @@ def loggedmethod(
 		def formatargs(args, kwargs):
 			return _defaultformatargs(args, excludekeys(kwargs, omitargs))
 
-	def wrapper(self: ExtensionBase, *args, **kwargs):
-		self._LogBegin('{}({})'.format(func.__name__, formatargs(args, kwargs)))
-		try:
-			return func(self, *args, **kwargs)
-		finally:
-			self._LogEnd()
-	return wrapper
+	return lambda func: _decoratewithlogging(func, formatargs)
 
 class ActionsExt:
 	def __init__(self, ownerComp, actions=None, autoinitparexec=True):
