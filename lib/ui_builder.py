@@ -7,6 +7,7 @@ if False:
 	from _stubs.PopDialogExt import PopDialogExt
 	from module_host import ModuleHostConnector
 	from control_mapping import MappingEditor
+	from app_state import ModulePreset
 
 try:
 	import common
@@ -433,6 +434,29 @@ class UiBuilder:
 						'h': 30,
 					},
 					tags=['vjz4nodemarker']),
+				attrs,
+				**kwargs))
+
+	def CreatePresetMarker(
+			self, dest, name,
+			preset,  # type: ModulePreset
+			attrs: opattrs=None, **kwargs):
+		return CreateFromTemplate(
+			template=self.ownerComp.op('module_preset_marker'),
+			dest=dest, name=name,
+			attrs=opattrs.merged(
+				opattrs(
+					parvals={
+						'Name': preset.name,
+						'Typepath': preset.typepath,
+						'Partial': preset.ispartial,
+						'h': 30,
+						'hmode': 'fill'
+					},
+					parexprs={
+						'Params': repr(preset.params),
+					},
+					tags=['vjz4presetmarker']),
 				attrs,
 				**kwargs))
 

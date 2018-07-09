@@ -1,4 +1,5 @@
 import copy
+from operator import attrgetter
 from typing import Dict, List, Optional
 
 print('vjz4/app_state.py')
@@ -18,6 +19,7 @@ cleandict, excludekeys, mergedicts = common.cleandict, common.excludekeys, commo
 BaseDataObject = common.BaseDataObject
 loggedmethod = common.loggedmethod
 customloggedmethod, simpleloggedmethod = common.customloggedmethod, common.simpleloggedmethod
+opattrs = common.opattrs
 
 try:
 	import schema
@@ -104,7 +106,7 @@ class ModulePreset(BaseDataObject):
 		self.name = name
 		self.typepath = typepath
 		self.params = params or {}
-		self.ispartial = ispartial
+		self.ispartial = bool(ispartial)
 
 	tablekeys = [
 		'name',
@@ -119,7 +121,7 @@ class ModulePreset(BaseDataObject):
 				'name': self.name,
 				'typepath': self.typepath,
 				'params': dict(self.params) if self.params else None,
-				'ispartial': self.ispartial or None,
+				'ispartial': self.ispartial,
 			}))
 
 
@@ -132,11 +134,21 @@ class PresetManager(common.ExtensionBase, common.ActionsExt):
 		self._AutoInitActionParams()
 		self.presets = []  # type: List[ModulePreset]
 		self._BuildPresetTable()
+		self._BuildPresetMarkers()
 
 	@property
 	def AppHost(self):
 		apphost = getattr(self.ownerComp.parent, 'AppHost', None)  # type: AppHost
 		return apphost
+
+	@property
+	def UiBuilder(self):
+		apphost = self.AppHost
+		uibuilder = apphost.UiBuilder if apphost else None  # type: ui_builder.UiBuilder
+		if uibuilder:
+			return uibuilder
+		if hasattr(op, 'UiBuilder'):
+			return op.UiBuilder
 
 	def GetPresets(self) -> List[ModulePreset]:
 		return copy.deepcopy(self.presets)
@@ -147,6 +159,7 @@ class PresetManager(common.ExtensionBase, common.ActionsExt):
 		for preset in presets:
 			self.presets.append(preset)
 			preset.AddToTable(dat)
+		self._BuildPresetMarkers()
 
 	@loggedmethod
 	def ClearPresets(self):
@@ -203,6 +216,8 @@ class PresetManager(common.ExtensionBase, common.ActionsExt):
 			ispartial=ispartial)
 		self.presets.append(preset)
 		preset.AddToTable(self._PresetsTable)
+		# TODO: improve efficiency here by not rebuilding everything
+		self._BuildPresetMarkers()
 		return preset
 
 	@loggedmethod
@@ -237,3 +252,21 @@ class PresetManager(common.ExtensionBase, common.ActionsExt):
 			text='Preset name',
 			oktext='Save', canceltext='Cancel',
 			ok=lambda name: self._SavePresetFromModule(name, modhost.ModuleConnector))
+
+	@loggedmethod
+	def _BuildPresetMarkers(self):
+		dest = self.ownerComp.op('presets_panel')
+		for o in dest.ops('pset__*'):
+			o.destroy()
+
+		uibuilder = self.UiBuilder
+		if not uibuilder:
+			return
+		for i, preset in enumerate(sorted(self.presets, key=attrgetter('typepath', 'name'))):
+			uibuilder.CreatePresetMarker(
+				dest=dest,
+				name='pset__{}'.format(i + 1),
+				preset=preset,
+				attrs=opattrs(
+					order=i,
+					nodepos=[200, -400 + (i * 150)]))
