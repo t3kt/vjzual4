@@ -16,6 +16,7 @@ except ImportError:
 parseint = common.parseint
 Future = common.Future
 loggedmethod = common.loggedmethod
+customloggedmethod, simpleloggedmethod = common.customloggedmethod, common.simpleloggedmethod
 
 try:
 	import control_devices
@@ -410,6 +411,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def ControlMapper(self) -> 'control_mapping.ControlMapper':
 		return self.ownerComp.op('mappings')
 
+	@property
+	def PresetManager(self) -> 'app_state.PresetManager':
+		return self.ownerComp.op('presets')
+
 	def BuildState(self):
 		modstates = {}
 		if self.AppSchema:
@@ -418,8 +423,8 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 					modstates[modhost.ModuleConnector.modpath] = modhost.BuildState()
 		return AppState(
 			client=self._RemoteClient.BuildClientInfo(),
-			modstates=modstates
-		)
+			modstates=modstates,
+			presets=self.PresetManager.GetPresets())
 
 	@loggedmethod
 	def SaveStateFile(self, filename=None, prompt=False):
@@ -437,7 +442,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		state.WriteJsonTo(filename)
 		ui.status = 'Saved state to {}'.format(filename)
 
-	@loggedmethod
+	@simpleloggedmethod
 	def LoadState(self, state: AppState):
 		state = state or AppState()
 
@@ -447,6 +452,9 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		for modhost in self._AllModuleHosts:
 			modstate = state.GetModuleState(modhost.ModuleConnector.modpath, create=False) if modhost.ModuleConnector else None
 			modhost.LoadState(modstate)
+		if state.presets:
+			self.PresetManager.ClearPresets()
+			self.PresetManager.AddPresets(state.presets)
 
 	@loggedmethod
 	def LoadStateFile(self, filename=None, prompt=False):
@@ -459,6 +467,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		if not filename:
 			return
 		self.statefilename = filename
+		self._LogEvent('Loading app state from {}'.format(filename))
 		state = AppState.ReadJsonFrom(filename)
 		self.LoadState(state)
 

@@ -1,4 +1,4 @@
-from collections import defaultdict, OrderedDict
+from collections import OrderedDict
 import copy
 from operator import attrgetter
 from typing import List, Dict, Optional, Tuple
@@ -638,6 +638,7 @@ class ModuleSchema(BaseModuleSchema):
 			childmodpaths=None,
 			masterpath=None,
 			masterisimplicit=None,
+			masterispartialmatch=None,
 			params=None,  # type: List[ParamSchema]
 			nodes=None,  # type: List[DataNodeInfo]
 			primarynode=None,
@@ -652,6 +653,7 @@ class ModuleSchema(BaseModuleSchema):
 		self.childmodpaths = childmodpaths or []
 		self.masterpath = masterpath
 		self.masterisimplicit = masterisimplicit
+		self.masterispartialmatch = masterispartialmatch
 		self.nodes = nodes or []
 		self.primarynodepath = primarynode
 		self.primarynode = None  # type: Optional[DataNodeInfo]
@@ -678,6 +680,7 @@ class ModuleSchema(BaseModuleSchema):
 		'parentpath',
 		'masterpath',
 		'masterisimplicit',
+		'masterispartialmatch',
 		'hasbypass',
 		'hasadvanced',
 		'primarynode',
@@ -688,7 +691,8 @@ class ModuleSchema(BaseModuleSchema):
 			'parentpath': self.parentpath,
 			'childmodpaths': self.childmodpaths,
 			'masterpath': self.masterpath,
-			'masterisimplicit': self.masterisimplicit,
+			'masterisimplicit': self.masterisimplicit or None,
+			'masterispartialmatch': self.masterispartialmatch or None,
 			'nodes': BaseDataObject.ToJsonDicts(self.nodes),
 			'primarynode': self.primarynodepath,
 		}))
@@ -861,6 +865,7 @@ class _AppSchemaBuilder:
 				self.moduletypes[modtype.path] = modtype
 			modschema.masterpath = modtype.path
 			modschema.masterisimplicit = True
+			modschema.masterispartialmatch = len(modschema.params) != len(modtype.params)
 
 	def _StripUnusedModuleTypes(self):
 		pathstoremove = set(self.moduletypes.keys())

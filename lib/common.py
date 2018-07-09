@@ -92,6 +92,9 @@ def _decoratewithlogging(func, formatargs):
 def loggedmethod(func):
 	return _decoratewithlogging(func, _defaultformatargs)
 
+def simpleloggedmethod(func):
+	return customloggedmethod(omitargs=True)(func)
+
 def customloggedmethod(
 		omitargs: Union[bool, List[str]]=None):
 	if not omitargs:
