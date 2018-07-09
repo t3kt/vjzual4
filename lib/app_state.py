@@ -6,6 +6,8 @@ print('vjz4/app_state.py')
 
 if False:
 	from _stubs import *
+	from app_host import AppHost
+	import module_host
 
 try:
 	import common
@@ -22,6 +24,10 @@ try:
 except ImportError:
 	schema = mod.schema
 
+try:
+	import ui_builder
+except ImportError:
+	ui_builder = mod.ui_builder
 
 class AppState(BaseDataObject):
 	def __init__(
@@ -127,6 +133,11 @@ class PresetManager(common.ExtensionBase, common.ActionsExt):
 		self.presets = []  # type: List[ModulePreset]
 		self._BuildPresetTable()
 
+	@property
+	def AppHost(self):
+		apphost = getattr(self.ownerComp.parent, 'AppHost', None)  # type: AppHost
+		return apphost
+
 	def GetPresets(self) -> List[ModulePreset]:
 		return copy.deepcopy(self.presets)
 
@@ -193,3 +204,36 @@ class PresetManager(common.ExtensionBase, common.ActionsExt):
 		self.presets.append(preset)
 		preset.AddToTable(self._PresetsTable)
 		return preset
+
+	@loggedmethod
+	def _SavePresetFromModule(self, name, modconnector: 'module_host.ModuleHostConnector'):
+		if not name:
+			return
+		modschema = modconnector.modschema
+		params = modconnector.GetParVals()
+		ispartial = False
+		if modschema.masterispartialmatch:
+			modtype = self.AppHost.GetModuleTypeSchema(modschema.masterpath)
+			if modtype:
+				params = {
+					key: val
+					for key, val in params.items()
+					if key in modtype.parampartnames
+				}
+				ispartial = True
+		self.CreatePreset(
+			name=name,
+			typepath=modschema.masterpath,
+			params=params,
+			ispartial=ispartial)
+
+	@loggedmethod
+	def SavePresetFromModule(self, modhost: 'module_host.ModuleHost'):
+		if not modhost or not modhost.ModuleConnector or not modhost.ModuleConnector.modschema.masterpath:
+			return
+
+		ui_builder.ShowPromptDialog(
+			title='Save preset',
+			text='Preset name',
+			oktext='Save', canceltext='Cancel',
+			ok=lambda name: self._SavePresetFromModule(name, modhost.ModuleConnector))

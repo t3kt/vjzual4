@@ -6,8 +6,12 @@ print('vjz4/app_host.py loading')
 
 if False:
 	from _stubs import *
-	from _stubs.PopDialogExt import PopDialogExt
-	from ui_builder import UiBuilder
+
+try:
+	import ui_builder
+except ImportError:
+	ui_builder = mod.ui_builder
+UiBuilder = ui_builder.UiBuilder
 
 try:
 	import common
@@ -290,7 +294,11 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			),
 			menu.Item(
 				'View State',
-				callback=lambda: self._ShowSchemaJson(modhost.BuildState()))
+				callback=lambda: self._ShowSchemaJson(modhost.BuildState())),
+			menu.Item(
+				'Save Preset',
+				disabled=not modhost.ModuleConnector or not modhost.ModuleConnector.modschema.masterpath,
+				callback=lambda: self.PresetManager.SavePresetFromModule(modhost))
 		]
 
 	@loggedmethod
@@ -345,7 +353,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			host, port = _ParseAddress(text)
 			self._ConnectTo(host, port)
 		client = self._RemoteClient
-		_ShowPromptDialog(
+		ui_builder.ShowPromptDialog(
 			title='Connect to app',
 			text='host:port',
 			oktext='Connect',
@@ -414,6 +422,9 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	@property
 	def PresetManager(self) -> 'app_state.PresetManager':
 		return self.ownerComp.op('presets')
+
+	def GetModuleTypeSchema(self, typepath) -> 'schema.ModuleTypeSchema':
+		return self.AppSchema.moduletypesbypath.get(typepath) if self.AppSchema else None
 
 	def BuildState(self):
 		modstates = {}
@@ -484,32 +495,3 @@ def _ParseAddress(text: str, defaulthost='localhost', defaultport=9500) -> Tuple
 	host, porttext = text.rsplit(':', maxsplit=1)
 	port = parseint(porttext)
 	return (host or defaulthost), (port or defaultport)
-
-# TODO: move dialog stuff elsewhere
-
-def _getPopDialog():
-	dialog = op.TDResources.op('popDialog')  # type: PopDialogExt
-	return dialog
-
-def _ShowPromptDialog(
-		title=None,
-		text=None,
-		default='',
-		oktext='OK',
-		canceltext='Cancel',
-		ok: Callable=None,
-		cancel: Callable=None):
-	def _callback(info):
-		if info['buttonNum'] == 1:
-			if ok:
-				ok(info['enteredText'])
-		elif info['buttonNum'] == 2:
-			if cancel:
-				cancel()
-	_getPopDialog().Open(
-		title=title,
-		text=text,
-		textEntry=default,
-		buttons=[oktext, canceltext],
-		enterButton=1, escButton=2, escOnClickAway=True,
-		callback=_callback)

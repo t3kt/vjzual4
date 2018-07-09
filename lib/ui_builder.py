@@ -1,7 +1,10 @@
+from typing import Callable
+
 print('vjz4/ui_builder.py loading')
 
 if False:
 	from _stubs import *
+	from _stubs.PopDialogExt import PopDialogExt
 	from module_host import ModuleHostConnector
 	from control_mapping import MappingEditor
 
@@ -432,3 +435,34 @@ class UiBuilder:
 					tags=['vjz4nodemarker']),
 				attrs,
 				**kwargs))
+
+
+# TODO: move dialog stuff elsewhere
+
+def _getPopDialog():
+	dialog = op.TDResources.op('popDialog')  # type: PopDialogExt
+	return dialog
+
+def ShowPromptDialog(
+		title=None,
+		text=None,
+		default='',
+		oktext='OK',
+		canceltext='Cancel',
+		ok: Callable=None,
+		cancel: Callable=None):
+	def _callback(info):
+		if info['buttonNum'] == 1:
+			if ok:
+				ok(info['enteredText'])
+		elif info['buttonNum'] == 2:
+			if cancel:
+				cancel()
+	_getPopDialog().Open(
+		title=title,
+		text=text,
+		textEntry=default,
+		buttons=[oktext, canceltext],
+		enterButton=1, escButton=2, escOnClickAway=True,
+		callback=_callback)
+
