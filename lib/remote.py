@@ -138,7 +138,7 @@ class RemoteConnection(common.ExtensionBase):
 			del self._responsefutures[cmdid]
 
 	def _SendCommandMessage(self, cmdmesg: CommandMessage):
-		self._LogEvent('_SendCommandMessage({})'.format(cmdmesg))
+		self._LogEvent('_SendCommandMessage({})'.format(cmdmesg.ToBriefStr()))
 		self.SendRawCommandMessages(json.dumps(cmdmesg.ToJsonDict()))
 		if cmdmesg.isRequest:
 			responsefuture = Future(
@@ -174,6 +174,13 @@ class RemoteConnection(common.ExtensionBase):
 					self._LogEvent('RouteCommandMessage() - no response handler waiting for {}'.format(cmdmesg.ToBriefStr()))
 					return
 				resp = self._responsefutures[cmdmesg.cmdid]
+				if resp.isresolved:
+					self._LogEvent(
+						'ERROR: Already have a response for command id {}:\nprevious response: {}\nnew response: {}'.format(
+							cmdmesg.cmdid, resp.result, cmdmesg.arg))
+					return
+				# else:
+				# 	self._LogEvent('OMG response future is not resolved so this should be ok: {}'.format(resp))
 				if cmdmesg.isError:
 					resp.fail(cmdmesg.arg)
 				else:

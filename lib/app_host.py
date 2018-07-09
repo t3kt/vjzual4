@@ -1,13 +1,17 @@
 import json
 from operator import itemgetter
-from typing import Callable, Dict, List, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 print('vjz4/app_host.py loading')
 
 if False:
 	from _stubs import *
-	from _stubs.PopDialogExt import PopDialogExt
-	from ui_builder import UiBuilder
+
+try:
+	import ui_builder
+except ImportError:
+	ui_builder = mod.ui_builder
+UiBuilder = ui_builder.UiBuilder
 
 try:
 	import common
@@ -16,6 +20,17 @@ except ImportError:
 parseint = common.parseint
 Future = common.Future
 loggedmethod = common.loggedmethod
+customloggedmethod, simpleloggedmethod = common.customloggedmethod, common.simpleloggedmethod
+
+try:
+	import control_devices
+except ImportError:
+	control_devices = mod.control_devices
+
+try:
+	import control_mapping
+except ImportError:
+	control_mapping = mod.control_mapping
 
 try:
 	import module_host
@@ -37,6 +52,12 @@ try:
 except ImportError:
 	menu = mod.menu
 
+try:
+	import app_state
+except ImportError:
+	app_state = mod.app_state
+AppState = app_state.AppState
+
 class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, common.TaskQueueExt):
 	def __init__(self, ownerComp):
 		common.ExtensionBase.__init__(self, ownerComp)
@@ -44,12 +65,15 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		common.ActionsExt.__init__(self, ownerComp, actions={
 			'Showconnect': self.ShowConnectDialog,
 			'Showappschema': self.ShowAppSchema,
+			'Savestate': lambda: self.SaveStateFile(),
+			'Savestateas': lambda: self.SaveStateFile(prompt=True),
 		})
 		self._AutoInitActionParams()
 		self.AppSchema = None  # type: schema.AppSchema
-		self.ownerComp.op('schema_json').clear()
+		self._ShowSchemaJson(None)
 		self.nodeMarkersByPath = {}  # type: Dict[str, List[str]]
 		self.previewMarkers = []  # type: List[op]
+		self.statefilename = None
 		self.OnDetach()
 
 	@property
@@ -65,19 +89,22 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	@loggedmethod
 	def OnAppSchemaLoaded(self, appschema: schema.AppSchema):
 		self.AppSchema = appschema
-		self.ownerComp.op('schema_json').clear()
+		self._ShowSchemaJson(None)
 		self._BuildSubModuleHosts().then(
 			success=lambda _: self.AddTaskBatch(
 				[
 					lambda: self._BuildNodeMarkers(),
 					lambda: self._RegisterNodeMarkers(),
+					# temporarily disabling the mapping editors
+					# lambda: self._InitializeMappings(),
 				],
 				autostart=True))
 
 	@loggedmethod
 	def OnDetach(self):
-		for o in self.ownerComp.ops('schema_json', 'app_info', 'modules', 'params', 'param_parts', 'data_nodes'):
+		for o in self.ownerComp.ops('app_info', 'modules', 'params', 'param_parts', 'data_nodes'):
 			o.closeViewer()
+		self._ShowSchemaJson(None)
 		for o in self.ownerComp.ops('nodes/node__*'):
 			o.destroy()
 		self.AppSchema = None
@@ -89,11 +116,19 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		for o in self.ownerComp.ops('modules_panel/mod__*'):
 			o.destroy()
 
+	@loggedmethod
+	def _InitializeMappings(self):
+		if not self.AppSchema:
+			return
+		mapper = self.ControlMapper
+		for modschema in self.AppSchema.modules:
+			mapper.AddEmptyMissingMappingsForModule(modschema)
+
 	@property
 	def _ModuleHostTemplate(self):
 		template = self.ownerComp.par.Modulehosttemplate.eval()
 		if not template and hasattr(op, 'Vjz4'):
-			template = op.Vjz4.op('./module_host')
+			template = op.Vjz4.op('./module_chain_host')
 		return template
 
 	@property
@@ -117,9 +152,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		hostconnectorpairs = []
 		for i, modschema in enumerate(self.AppSchema.childmodules):
 			self._LogEvent('creating host for sub module {}'.format(modschema.path))
-			host = dest.copy(template, name='mod__' + modschema.name)  # type: module_host.ModuleChainHost
+			host = dest.copy(template, name='mod__' + modschema.name)  # type: module_host.ModuleHost
 			host.par.Uibuilder.expr = 'parent.AppHost.par.Uibuilder or ""'
-			host.par.Modulehosttemplate.expr = 'op.Vjz4.op("module_host")'
+			host.par.Modulehosttemplate = 'op({!r})'.format(template.path)
+			host.par.Autoheight = False
 			host.par.hmode = 'fixed'
 			host.par.vmode = 'fill'
 			host.par.w = 250
@@ -147,7 +183,11 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 
 	@loggedmethod
 	def _OnSubModuleHostsConnected(self):
-		pass
+		self.UpdateModuleWidths()
+
+	def UpdateModuleWidths(self):
+		for m in self.ownerComp.ops('modules_panel/mod__*'):
+			m.par.w = 100 if m.par.Collapsed else 250
 
 	@loggedmethod
 	def _BuildNodeMarkers(self):
@@ -181,21 +221,20 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 					callback=lambda: self._Disconnect()),
 				menu.Item(
 					'Connection Properties',
-					callback=lambda: self._RemoteClient.openParameters()),
+					callback=lambda: self._RemoteClient.openParameters(),
+					dividerafter=True),
+				menu.Item(
+					'Load State',
+					callback=lambda: self.LoadStateFile(prompt=True)),
+				menu.Item(
+					'Save State',
+					callback=lambda: self.SaveStateFile()),
+				menu.Item(
+					'Save State As',
+					callback=lambda: self.SaveStateFile(prompt=True))
 			]
 		elif name == 'view_menu':
-			def _uimodeItem(text, par, mode):
-				return menu.Item(
-					text,
-					checked=par == mode,
-					callback=lambda: setattr(par, 'val', mode))
-			sidemodepar = self.ownerComp.par.Sidepanelmode
-			items = [
-				_uimodeItem(label, sidemodepar, name)
-				for name, label in zip(
-					sidemodepar.menuNames,
-					sidemodepar.menuLabels)
-			]
+			items = self._GetSidePanelModeMenuItems()
 		elif name == 'debug_menu':
 			def _viewItem(text, oppath):
 				return menu.Item(
@@ -213,6 +252,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 				_viewItem('Param Parts', 'param_parts'),
 				_viewItem('Data Nodes', 'data_nodes'),
 				menu.Item(
+					'App State',
+					callback=lambda: self._ShowSchemaJson(self.BuildState()),
+					dividerafter=True),
+				menu.Item(
 					'Reload code',
 					callback=lambda: op.Vjz4.op('RELOAD_CODE').run())
 			]
@@ -222,15 +265,49 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			items=items,
 			autoClose=True)
 
+	def _GetSidePanelModeMenuItems(self):
+		def _uimodeItem(text, par, mode):
+			return menu.Item(
+				text,
+				checked=par == mode,
+				callback=lambda: setattr(par, 'val', mode))
+		sidemodepar = self.ownerComp.par.Sidepanelmode
+		return [
+			_uimodeItem(label, sidemodepar, name)
+			for name, label in zip(
+				sidemodepar.menuNames,
+				sidemodepar.menuLabels)
+		]
+
+	def OnSidePanelHeaderClick(self, button):
+		items = self._GetSidePanelModeMenuItems()
+		menu.fromButton(button, h='Left', v='Bottom').Show(
+			items=items,
+			autoClose=True)
+
+	def GetModuleAdditionalMenuItems(self, modhost: module_host.ModuleHost):
+		return [
+			menu.Item(
+				'View Schema',
+				disabled=not modhost.ModuleConnector,
+				callback=lambda: self._ShowSchemaJson(modhost.ModuleConnector.modschema)
+			),
+			menu.Item(
+				'View State',
+				callback=lambda: self._ShowSchemaJson(modhost.BuildState())),
+			menu.Item(
+				'Save Preset',
+				disabled=not modhost.ModuleConnector or not modhost.ModuleConnector.modschema.masterpath,
+				callback=lambda: self.PresetManager.SavePresetFromModule(modhost))
+		]
+
 	@loggedmethod
 	def _RegisterNodeMarkers(self):
 		self.nodeMarkersByPath.clear()
 		for panel in self.ownerComp.ops('nodes', 'modules_panel'):
 			for marker in panel.findChildren(tags=['vjz4nodemarker']):
-				self._LogEvent('registering marker {}'.format(marker.path))
 				for par in marker.pars('Path', 'Video', 'Audio', 'Texbuf'):
 					path = par.eval()
-					self._LogEvent('  registering par {} value: {}'.format(par.name, path))
 					if not path:
 						continue
 					if path in self.nodeMarkersByPath:
@@ -246,13 +323,15 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			dat.appendRow([path] + sorted([marker.path for marker in markers]))
 
 	def ShowAppSchema(self):
+		self._ShowSchemaJson(self.AppSchema)
+
+	def _ShowSchemaJson(self, info: 'Optional[common.BaseDataObject]'):
 		dat = self.ownerComp.op('schema_json')
-		if not self.AppSchema:
+		if not info:
 			dat.text = ''
+			dat.closeViewer()
 		else:
-			dat.text = json.dumps(
-				self.AppSchema.ToJsonDict(),
-				indent='  ')
+			dat.text = json.dumps(info.ToJsonDict(), indent='  ')
 			dat.openViewer(unique=True)
 
 	@loggedmethod
@@ -264,7 +343,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def _Disconnect(self):
 		self._RemoteClient.Detach()
 		self._RemoteClient.par.Active = False
-		self.ownerComp.op('schema_json').clear()
+		self._ShowSchemaJson(None)
 		dest = self.ownerComp.op('modules_panel')
 		for m in dest.ops('mod__*'):
 			m.destroy()
@@ -274,7 +353,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			host, port = _ParseAddress(text)
 			self._ConnectTo(host, port)
 		client = self._RemoteClient
-		_ShowPromptDialog(
+		ui_builder.ShowPromptDialog(
 			title='Connect to app',
 			text='host:port',
 			oktext='Connect',
@@ -293,12 +372,24 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			command='setSecondaryVideoSrc')
 		self.ownerComp.op('nodes/preview_panel').par.display = hassource
 		for marker in self.previewMarkers:
-			marker.par.Previewactive = False
+			if hasattr(marker.par, 'Previewactive'):
+				marker.par.Previewactive = False
 		self.previewMarkers.clear()
 		if hassource and path in self.nodeMarkersByPath:
+			# TODO: clean this up
+			modpath = self.AppSchema.modulepathsbyprimarynodepath.get(path)
 			self.previewMarkers += self.nodeMarkersByPath[path]
 			for marker in self.previewMarkers:
-				marker.par.Previewactive = True
+				if hasattr(marker.par, 'Previewactive'):
+					marker.par.Previewactive = True
+		else:
+			modpath = None
+		for host in self._AllModuleHosts:
+			header = host.op('module_header')
+			if host.ModuleConnector and modpath and host.ModuleConnector.modpath == modpath:
+				header.par.Previewactive = True
+			else:
+				header.par.Previewactive = False
 
 	def _GetNodeVideoPath(self, path):
 		if not self.AppSchema:
@@ -316,6 +407,81 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		activepar.val = bool(vidpath)
 		return bool(vidpath)
 
+	@property
+	def _AllModuleHosts(self):
+		return self.ownerComp.op('modules_panel').findChildren(tags=['vjz4modhost'], maxDepth=None)
+
+	@property
+	def _DeviceManager(self) -> 'control_devices.DeviceManager':
+		return self.ownerComp.op('devices')
+
+	@property
+	def ControlMapper(self) -> 'control_mapping.ControlMapper':
+		return self.ownerComp.op('mappings')
+
+	@property
+	def PresetManager(self) -> 'app_state.PresetManager':
+		return self.ownerComp.op('presets')
+
+	def GetModuleTypeSchema(self, typepath) -> 'schema.ModuleTypeSchema':
+		return self.AppSchema.moduletypesbypath.get(typepath) if self.AppSchema else None
+
+	def BuildState(self):
+		modstates = {}
+		if self.AppSchema:
+			for modhost in self._AllModuleHosts:
+				if modhost.ModuleConnector:
+					modstates[modhost.ModuleConnector.modpath] = modhost.BuildState()
+		return AppState(
+			client=self._RemoteClient.BuildClientInfo(),
+			modstates=modstates,
+			presets=self.PresetManager.GetPresets())
+
+	@loggedmethod
+	def SaveStateFile(self, filename=None, prompt=False):
+		filename = filename or self.statefilename
+		if prompt or not filename:
+			filename = ui.chooseFile(
+				load=False,
+				start=filename or project.folder,
+				fileTypes=['json'],
+				title='Save App State')
+		if not filename:
+			return
+		self.statefilename = filename
+		state = self.BuildState()
+		state.WriteJsonTo(filename)
+		ui.status = 'Saved state to {}'.format(filename)
+
+	@simpleloggedmethod
+	def LoadState(self, state: AppState):
+		state = state or AppState()
+
+		if state.client:
+			self._LogEvent('Ignoring client info in app state (for now...)')
+
+		for modhost in self._AllModuleHosts:
+			modstate = state.GetModuleState(modhost.ModuleConnector.modpath, create=False) if modhost.ModuleConnector else None
+			modhost.LoadState(modstate)
+		if state.presets:
+			self.PresetManager.ClearPresets()
+			self.PresetManager.AddPresets(state.presets)
+
+	@loggedmethod
+	def LoadStateFile(self, filename=None, prompt=False):
+		if prompt or not filename:
+			filename = ui.chooseFile(
+				load=True,
+				start=filename or project.folder,
+				fileTypes=['json'],
+				title='Load App State')
+		if not filename:
+			return
+		self.statefilename = filename
+		self._LogEvent('Loading app state from {}'.format(filename))
+		state = AppState.ReadJsonFrom(filename)
+		self.LoadState(state)
+
 def _ParseAddress(text: str, defaulthost='localhost', defaultport=9500) -> Tuple[str, int]:
 	text = text and text.strip()
 	if not text:
@@ -329,32 +495,3 @@ def _ParseAddress(text: str, defaulthost='localhost', defaultport=9500) -> Tuple
 	host, porttext = text.rsplit(':', maxsplit=1)
 	port = parseint(porttext)
 	return (host or defaulthost), (port or defaultport)
-
-# TODO: move dialog stuff elsewhere
-
-def _getPopDialog():
-	dialog = op.TDResources.op('popDialog')  # type: PopDialogExt
-	return dialog
-
-def _ShowPromptDialog(
-		title=None,
-		text=None,
-		default='',
-		oktext='OK',
-		canceltext='Cancel',
-		ok: Callable=None,
-		cancel: Callable=None):
-	def _callback(info):
-		if info['buttonNum'] == 1:
-			if ok:
-				ok(info['enteredText'])
-		elif info['buttonNum'] == 2:
-			if cancel:
-				cancel()
-	_getPopDialog().Open(
-		title=title,
-		text=text,
-		textEntry=default,
-		buttons=[oktext, canceltext],
-		enterButton=1, escButton=2, escOnClickAway=True,
-		callback=_callback)

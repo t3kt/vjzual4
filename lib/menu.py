@@ -1,3 +1,4 @@
+from itertools import zip_longest
 from typing import List
 
 print('vjz4/menu.py loading')
@@ -101,3 +102,36 @@ def fromButton(buttonComp, h='Left', v='Bottom', matchWidth=False, offset=(0, 0)
 			buttonComp=buttonComp,
 			hAttach=h, vAttach=v, matchWidth=matchWidth, alignOffset=offset)
 	return _MenuOpener(_applyPosition)
+
+
+def HandleMenuFieldClick(field):
+	ctrl = field.parent()
+	targetpar = ctrl.par.Targetpar.eval()
+	if targetpar is None:
+		return
+	rawnames = ctrl.par.Menunames.eval()
+	rawlabels = ctrl.par.Menulabels.eval()
+	names = _preparelist(rawnames) or targetpar.menuNames
+	labels = _preparelist(rawlabels) or targetpar.menuLabels
+	if not names and not labels:
+		return
+
+	def _valueitem(name, label):
+		def _callback():
+			targetpar.val = name or label
+		return Item(
+			text=label or name,
+			callback=_callback)
+
+	items = [
+		_valueitem(name, label)
+		for name, label in zip_longest(names, labels, fillvalue=None)
+	]
+	fromButton(buttonComp=field).Show(items=items)
+
+def _preparelist(rawval) -> List[str]:
+	if not rawval:
+		return []
+	if isinstance(rawval, str):
+		return [rawval]
+	return rawval
