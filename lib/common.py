@@ -1,5 +1,6 @@
 import datetime
-from typing import Callable, Dict, List, Iterable
+import json
+from typing import Callable, Dict, List, Iterable, Union
 
 print('vjz4/common.py loading')
 
@@ -72,14 +73,42 @@ class ExtensionBase:
 		if self.enablelogging:
 			_logger.LogEnd(self.ownerComp.path, self._GetLogId(), event)
 
-def loggedmethod(func: Callable):
+def _defaultformatargs(args, kwargs):
+	if not args:
+		return kwargs or ''
+	if not kwargs:
+		return args
+	return '{} {}'.format(args, kwargs)
+
+def _decoratewithlogging(func, formatargs):
 	def wrapper(self: ExtensionBase, *args, **kwargs):
-		self._LogBegin('{}({}{}{})'.format(func.__name__, args or '', ', ' if (args and kwargs) else '', kwargs or ''))
+		self._LogBegin('{}({})'.format(func.__name__, formatargs(args, kwargs)))
 		try:
 			return func(self, *args, **kwargs)
 		finally:
 			self._LogEnd()
 	return wrapper
+
+def loggedmethod(func):
+	return _decoratewithlogging(func, _defaultformatargs)
+
+def simpleloggedmethod(func):
+	return customloggedmethod(omitargs=True)(func)
+
+def customloggedmethod(
+		omitargs: Union[bool, List[str]]=None):
+	if not omitargs:
+		formatargs = _defaultformatargs
+	elif omitargs is True:
+		def formatargs(*_):
+			return ''
+	elif not isinstance(omitargs, (list, tuple, set)):
+		raise Exception('Invalid "omitargs" specifier for loggedmethod: {!r}'.format(omitargs))
+	else:
+		def formatargs(args, kwargs):
+			return _defaultformatargs(args, excludekeys(kwargs, omitargs))
+
+	return lambda func: _decoratewithlogging(func, formatargs)
 
 class ActionsExt:
 	def __init__(self, ownerComp, actions=None, autoinitparexec=True):
@@ -333,7 +362,7 @@ def cleandict(d):
 	return {
 		key: val
 		for key, val in d.items()
-		if not (val is None or (isinstance(val, (list, dict, tuple)) and len(val) == 0))
+		if not (val is None or (isinstance(val, (str, list, dict, tuple)) and len(val) == 0))
 	}
 
 def mergedicts(*parts):
@@ -539,8 +568,41 @@ class BaseDataObject:
 		return [cls.FromJsonDict(obj) for obj in objs] if objs else []
 
 	@classmethod
+	def FromOptionalJsonDict(cls, obj, default=None):
+		return cls.FromJsonDict(obj) if obj else default
+
+	@classmethod
+	def FromJsonDictMap(cls, objs: Dict[str, Dict]):
+		if not objs:
+			return {}
+		results = {}
+		for key, obj in objs.items():
+			val = cls.FromOptionalJsonDict(obj)
+			if val:
+				results[key] = val
+		return results
+
+	@classmethod
 	def ToJsonDicts(cls, nodes: 'Iterable[BaseDataObject]'):
 		return [n.ToJsonDict() for n in nodes] if nodes else []
+
+	@classmethod
+	def ToJsonDictMap(cls, nodes: 'Dict[str, BaseDataObject]'):
+		return {
+			path: node.ToJsonDict()
+			for path, node in nodes.items()
+		} if nodes else {}
+
+	def WriteJsonTo(self, filepath):
+		obj = self.ToJsonDict()
+		with open(filepath, mode='w') as outfile:
+			json.dump(obj, outfile, indent='  ')
+
+	@classmethod
+	def ReadJsonFrom(cls, filepath):
+		with open(filepath, mode='r') as infile:
+			obj = json.load(infile)
+		return cls.FromJsonDict(obj)
 
 	def AddToTable(self, dat, attrs=None):
 		obj = self.ToJsonDict()
@@ -566,3 +628,17 @@ class BaseDataObject:
 				if isinstance(val, bool):
 					val = 1 if val else 0
 				cell.val = val
+
+class AttrBasedIdentity:
+	def _IdentityAttrs(self):
+		raise NotImplementedError()
+
+	def __eq__(self, other):
+		if other is self:
+			return True
+		if not isinstance(other, self.__class__):
+			return False
+		return self._IdentityAttrs() == other._IdentityAttrs()
+
+	def __hash__(self):
+		return hash(self._IdentityAttrs())
