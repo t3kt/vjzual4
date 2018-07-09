@@ -1,4 +1,5 @@
-from collections import OrderedDict
+from collections import defaultdict, OrderedDict
+import copy
 from operator import attrgetter
 from typing import List, Dict, Optional, Tuple
 
@@ -560,6 +561,18 @@ class BaseModuleSchema(BaseDataObject):
 			'params': BaseDataObject.ToJsonDicts(self.params),
 		}))
 
+	def MatchesModuleType(self, modtypeschema: 'BaseModuleSchema', exact=False):
+		if not modtypeschema or not self.params or not modtypeschema.params:
+			return False
+		if exact:
+			if len(self.params) != len(modtypeschema.params):
+				return False
+		for parinfo in self.params:
+			typeparinfo = modtypeschema.paramsbyname.get(parinfo.name)
+			if typeparinfo != parinfo:
+				return False
+		return True
+
 class ModuleTypeSchema(BaseModuleSchema):
 	def __init__(
 			self,
@@ -567,6 +580,7 @@ class ModuleTypeSchema(BaseModuleSchema):
 			label=None,
 			path=None,
 			params=None,  # type: List[ParamSchema]
+			derivedfrompath=None,
 			**otherattrs):
 		super().__init__(
 			name=name,
@@ -574,6 +588,13 @@ class ModuleTypeSchema(BaseModuleSchema):
 			path=path,
 			params=params,
 			**otherattrs)
+		self.derivedfrompath = derivedfrompath
+
+	@property
+	def isexplicit(self): return not self.derivedfrompath
+
+	@property
+	def paramcount(self): return len(self.params)
 
 	def __str__(self):
 		return '{}({})'.format(self.__class__.__name__, self.name, self.path)
@@ -590,7 +611,13 @@ class ModuleTypeSchema(BaseModuleSchema):
 		'label',
 		'hasbypass',
 		'hasadvanced',
+		'derivedfrompath',
 	]
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(super().ToJsonDict(), {
+			'derivedfrompath': self.derivedfrompath,
+		}))
 
 	@classmethod
 	def FromRawModuleInfo(cls, modinfo: RawModuleInfo):
@@ -610,6 +637,7 @@ class ModuleSchema(BaseModuleSchema):
 			parentpath=None,
 			childmodpaths=None,
 			masterpath=None,
+			masterisimplicit=None,
 			params=None,  # type: List[ParamSchema]
 			nodes=None,  # type: List[DataNodeInfo]
 			primarynode=None,
@@ -623,6 +651,7 @@ class ModuleSchema(BaseModuleSchema):
 		self.parentpath = parentpath
 		self.childmodpaths = childmodpaths or []
 		self.masterpath = masterpath
+		self.masterisimplicit = masterisimplicit
 		self.nodes = nodes or []
 		self.primarynodepath = primarynode
 		self.primarynode = None  # type: Optional[DataNodeInfo]
@@ -648,6 +677,7 @@ class ModuleSchema(BaseModuleSchema):
 		'label',
 		'parentpath',
 		'masterpath',
+		'masterisimplicit',
 		'hasbypass',
 		'hasadvanced',
 		'primarynode',
@@ -658,6 +688,7 @@ class ModuleSchema(BaseModuleSchema):
 			'parentpath': self.parentpath,
 			'childmodpaths': self.childmodpaths,
 			'masterpath': self.masterpath,
+			'masterisimplicit': self.masterisimplicit,
 			'nodes': BaseDataObject.ToJsonDicts(self.nodes),
 			'primarynode': self.primarynodepath,
 		}))
@@ -675,6 +706,23 @@ class ModuleSchema(BaseModuleSchema):
 			nodes=DataNodeInfo.NodesFromRawModuleInfo(modinfo),
 			primarynode=modinfo.primarynode,
 		)
+
+	def AsModuleType(self, implicit=False):
+		if implicit:
+			name = '({})'.format(self.masterpath or self.name)
+			label = '({})'.format(self.masterpath) if self.masterpath else None
+			path = self.masterpath or self.path
+		else:
+			name, label, path = self.name, self.label, self.path
+		return ModuleTypeSchema(
+			name=name,
+			label=label,
+			path=path,
+			derivedfrompath=self.path if implicit else None,
+			params=[
+				copy.deepcopy(parinfo)
+				for parinfo in self.params
+			])
 
 class AppSchema(BaseDataObject):
 	def __init__(
@@ -737,7 +785,6 @@ class AppSchema(BaseDataObject):
 			'path': self.path,
 			'modules': BaseDataObject.ToJsonDicts(self.modules),
 			'moduletypes': BaseDataObject.ToJsonDicts(self.moduletypes),
-			'nodes': BaseDataObject.ToJsonDicts(self.nodes),
 			'childmodpaths': self.childmodpaths,
 		}))
 
@@ -754,23 +801,93 @@ class AppSchema(BaseDataObject):
 			appinfo: RawAppInfo,
 			modules: List[RawModuleInfo],
 			moduletypes: List[RawModuleInfo]):
-		return cls(
-			name=appinfo.name,
-			label=appinfo.label,
-			path=appinfo.path,
-			modules=[
-				ModuleSchema.FromRawModuleInfo(modinfo)
-				for modinfo in modules
-			] if modules else None,
-			moduletypes=[
-				ModuleTypeSchema.FromRawModuleInfo(modinfo)
-				for modinfo in moduletypes
-			] if moduletypes else None,
+		return _AppSchemaBuilder(
+			appinfo=appinfo,
+			modules=modules,
+			moduletypes=moduletypes).Build()
+
+class _AppSchemaBuilder:
+	def __init__(
+			self,
+			appinfo: RawAppInfo,
+			modules: List[RawModuleInfo],
+			moduletypes: List[RawModuleInfo]):
+		self.appinfo = appinfo
+		self.modules = OrderedDict()  # type: Dict[str, ModuleSchema]
+		if modules:
+			for modinfo in modules:
+				self.modules[modinfo.path] = ModuleSchema.FromRawModuleInfo(modinfo)
+		self.moduletypes = OrderedDict()  # type: Dict[str, ModuleTypeSchema]
+		if moduletypes:
+			for modinfo in moduletypes:
+				self.moduletypes[modinfo.path] = ModuleTypeSchema.FromRawModuleInfo(modinfo)
+		self.implicitmoduletypes = OrderedDict()  # type: Dict[str, ModuleTypeSchema]
+
+	def Build(self):
+		self._DeriveImplicitModuleTypes()
+		self._StripUnusedModuleTypes()
+		return AppSchema(
+			name=self.appinfo.name,
+			label=self.appinfo.label,
+			path=self.appinfo.path,
+			modules=self.modules.values(),
+			moduletypes=list(self.moduletypes.values()) + list(self.implicitmoduletypes.values()),
 			childmodpaths=[
-				modinfo.path
-				for modinfo in modules
-				if modinfo.parentpath == appinfo.path
-			] if modules else None)
+				modschema.path
+				for modschema in self.modules.values()
+				if modschema.parentpath == self.appinfo.path
+			])
+
+	def _GetMatchingModuleType(self, modschema: ModuleSchema) -> Optional[ModuleTypeSchema]:
+		modtypes = []
+		for modtype in self.moduletypes.values():
+			if modschema.MatchesModuleType(modtype, exact=False):
+				modtypes.append(modtype)
+
+		modtypes = list(sorted(modtypes, key=attrgetter('isexplicit', 'paramcount'), reverse=True))
+		return modtypes[0] if modtypes else None
+
+	def _DeriveImplicitModuleTypes(self):
+
+		for modschema in self.modules.values():
+			masterpath = modschema.masterpath
+			if masterpath and masterpath in self.moduletypes:
+				continue
+			modtype = self._GetMatchingModuleType(modschema)
+			if not modtype:
+				if not self._IsElligibleForImplicitModuleType(modschema):
+					continue
+				modtype = modschema.AsModuleType(implicit=True)
+				self.moduletypes[modtype.path] = modtype
+			modschema.masterpath = modtype.path
+			modschema.masterisimplicit = True
+
+	def _StripUnusedModuleTypes(self):
+		pathstoremove = set(self.moduletypes.keys())
+		for modschema in self.modules.values():
+			if modschema.masterpath and modschema.masterpath in pathstoremove:
+				pathstoremove.remove(modschema.masterpath)
+		for path in pathstoremove:
+			del self.moduletypes[path]
+
+	@staticmethod
+	def _IsElligibleForImplicitModuleType(modschema: ModuleSchema):
+		if not modschema.params:
+			return False
+		if modschema.hasbypass:
+			nonbypasspars = [
+				par for par in modschema.params if par.specialtype != 'switch.bypass'
+			]
+		else:
+			nonbypasspars = modschema.params
+		if not nonbypasspars:
+			return False
+		# special case for modules that only have a single node parameter which are generally
+		# either non-configurable or are just containers for other modules
+		if len(nonbypasspars) == 1 and nonbypasspars[0].isnode:
+			return False
+		return True
+
 
 class SchemaProvider:
 	def GetAppSchema(self) -> AppSchema:
