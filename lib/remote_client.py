@@ -10,7 +10,6 @@ try:
 except ImportError:
 	common = mod.common
 mergedicts = common.mergedicts
-BaseDataObject = common.BaseDataObject
 loggedmethod = common.loggedmethod
 Future = common.Future
 
@@ -52,6 +51,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 		self._AutoInitActionParams()
 		self.rawAppInfo = None  # type: schema.RawAppInfo
 		self.rawModuleInfos = []  # type: List[schema.RawModuleInfo]
+		self.rawModuleTypeInfos = []  # type: List[schema.RawModuleInfo]
 		self.AppSchema = None  # type: schema.AppSchema
 
 	@property
@@ -192,7 +192,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 			self.ProxyManager.par.Rootpath = appinfo.path
 
 			def _makeQueryModTask(modpath):
-				return lambda: self.QueryModule(modpath)
+				return lambda: self.QueryModule(modpath, ismoduletype=False)
 
 			self.AddTaskBatch(
 				[
@@ -265,59 +265,84 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 				dat,
 				attrs={'modpath': modpath})
 
-	def QueryModule(self, modpath):
-		self._LogBegin('QueryModule({})'.format(modpath))
-		try:
-			if not self.Connected:
-				return
-			return self.Connection.SendRequest('queryMod', modpath).then(
-				success=self._OnReceiveModuleInfo,
-				failure=self._OnQueryModuleFailure)
-		finally:
-			self._LogEnd()
+	@loggedmethod
+	def QueryModule(self, modpath, ismoduletype=False):
+		if not self.Connected:
+			return
+		return self.Connection.SendRequest('queryMod', modpath).then(
+			success=lambda cmdmesg: self._OnReceiveModuleInfo(cmdmesg, modpath, ismoduletype=ismoduletype),
+			failure=self._OnQueryModuleFailure)
 
-	def _OnReceiveModuleInfo(self, cmdmesg: remote.CommandMessage):
-		arg = cmdmesg.arg
-		self._LogBegin('_OnReceiveModuleInfo({})'.format((arg.get('path') if arg else None) or ''))
+	def _OnReceiveModuleInfo(self, cmdmesg: remote.CommandMessage, path, ismoduletype=False):
+		self._LogBegin('_OnReceiveModuleInfo({})'.format(path or ''))
 		try:
 			arg = cmdmesg.arg
 			if not arg:
-				raise Exception('No app info!')
+				self._LogEvent('no info for module: {}'.format(path))
+				return
 			modinfo = schema.RawModuleInfo.FromJsonDict(arg)
-			self.rawModuleInfos.append(modinfo)
+			if ismoduletype:
+				self.rawModuleTypeInfos.append(modinfo)
+			else:
+				self.rawModuleInfos.append(modinfo)
 		finally:
 			self._LogEnd()
 
 	def _OnQueryModuleFailure(self, cmdmesg: remote.CommandMessage):
 		self._LogEvent('_OnQueryModuleFailure({})'.format(cmdmesg))
 
+	@loggedmethod
 	def _OnAllModulesReceived(self):
-		self._LogBegin('_OnAllModulesReceived()')
-		try:
-			self.AppSchema = schema.AppSchema.FromRawAppAndModuleInfo(
-				appinfo=self.rawAppInfo,
-				modules=self.rawModuleInfos)
-			moduletable = self._ModuleTable
-			for modschema in self.AppSchema.modules:
-				modschema.AddToTable(moduletable)
-				self._AddParamsToTable(modschema.path, modschema.params)
-				self._AddToDataNodesTable(modschema.path, modschema.nodes)
+		modpaths = []
+		masterpaths = set()
+		for modinfo in self.rawModuleInfos:
+			modpaths.append(modinfo.path)
+			if modinfo.masterpath:
+				masterpaths.add(modinfo.masterpath)
+		if not masterpaths:
+			return self._OnAllModuleTypesReceived()
 
-			def _makeQueryStateTask(modpath):
-				return lambda: self.QueryModuleState(modpath)
+		return self._QueryModuleTypes(masterpaths)
 
-			self.AddTaskBatch(
-				[
-					lambda: self.BuildModuleProxies(),
-				] + [
-					_makeQueryStateTask(m.path)
-					for m in self.AppSchema.modules
-				] + [
-					lambda: self.NotifyAppSchemaLoaded(),
-				],
-				autostart=True)
-		finally:
-			self._LogEnd()
+	@loggedmethod
+	def _QueryModuleTypes(self, masterpaths):
+		def _makeQueryStateTask(modpath):
+			return lambda: self.QueryModule(modpath, ismoduletype=True)
+
+		return self.AddTaskBatch(
+			[
+				_makeQueryStateTask(modpath)
+				for modpath in masterpaths
+			] + [
+				lambda: self._OnAllModuleTypesReceived(),
+			],
+			autostart=True)
+
+	@loggedmethod
+	def _OnAllModuleTypesReceived(self):
+		self.AppSchema = schema.AppSchema.FromRawAppAndModuleInfo(
+			appinfo=self.rawAppInfo,
+			modules=self.rawModuleInfos,
+			moduletypes=self.rawModuleTypeInfos)
+		moduletable = self._ModuleTable
+		for modschema in self.AppSchema.modules:
+			modschema.AddToTable(moduletable)
+			self._AddParamsToTable(modschema.path, modschema.params)
+			self._AddToDataNodesTable(modschema.path, modschema.nodes)
+
+		def _makeQueryStateTask(modpath):
+			return lambda: self.QueryModuleState(modpath)
+
+		self.AddTaskBatch(
+			[
+				lambda: self.BuildModuleProxies(),
+			] + [
+				_makeQueryStateTask(m.path)
+				for m in self.AppSchema.modules
+			] + [
+				lambda: self.NotifyAppSchemaLoaded(),
+			],
+			autostart=True)
 
 	def BuildModuleProxies(self):
 		self._LogBegin('BuildModuleProxies()')
