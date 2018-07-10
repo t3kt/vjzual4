@@ -18,6 +18,10 @@ BaseDataObject = common.BaseDataObject
 
 
 class RawAppInfo(BaseDataObject):
+	"""
+	Raw, unprocessed information about an app, provided by the server to the client, which uses it,
+	along with other data, to construct an AppSchema.
+	"""
 	def __init__(
 			self,
 			name=None,
@@ -50,6 +54,12 @@ class RawAppInfo(BaseDataObject):
 		}))
 
 class RawParamInfo(BaseDataObject):
+	"""
+	Raw, unprocessed information about a parameter. This is basically just a mirror of the relevant
+	parts of the built-in td.Par class. This refers to a single TD parameter (and not to a group of
+	parameters like ParamSchema). The server provides these raw info objects to the client, which uses
+	them, along with other data, to construct ParamSchema objects.
+	"""
 	def __init__(
 			self,
 			name=None,
@@ -131,6 +141,14 @@ class RawParamInfo(BaseDataObject):
 		}))
 
 class RawModuleInfo(BaseDataObject):
+	"""
+	Raw, unprocessed information about a module (component). This is essentially just a mirror of the
+	relevant attributes of the built-in td.COMP class, and its parameters.
+	This information is provided by the server to the client, which uses it, along with other data,
+	to construct a ModuleSchema.
+	The server can include additional information in the parattrs to override the attributes of
+	the parameters of the module.
+	"""
 	def __init__(
 			self,
 			path=None,
@@ -197,6 +215,11 @@ class RawModuleInfo(BaseDataObject):
 		}))
 
 class ParamPartSchema(BaseDataObject):
+	"""
+	Processed information about a single part of a compound parameter.
+	This corresponds to a single "parameter" in the standard TD sense of the term.
+	This schema is constructed on the client side based on a RawParamInfo provided by the server.
+	"""
 	def __init__(
 			self,
 			name,
@@ -285,6 +308,12 @@ class ParamPartSchema(BaseDataObject):
 # with ':'.
 
 class ParamSchema(BaseDataObject, common.AttrBasedIdentity):
+	"""
+	Processed information about a parameter composed of one or more ParamPartSchema objects.
+	These are constructed on the client side based on tuplets of RawParamInfo provided by the server.
+	This class contains the extended attributes used by the app host and client to display controls,
+	handle mapping, etc.
+	"""
 	def __init__(
 			self,
 			name=None,
@@ -522,6 +551,9 @@ class DataNodeInfo(BaseDataObject):
 		return nodes
 
 class BaseModuleSchema(BaseDataObject):
+	"""
+	Base class for schema objects that describe a module (or type of module) and its parameters.
+	"""
 	def __init__(
 			self,
 			name=None,
@@ -574,6 +606,10 @@ class BaseModuleSchema(BaseDataObject):
 		return True
 
 class ModuleTypeSchema(BaseModuleSchema):
+	"""
+	Specification for a kind of module and its parameters.
+	This is distinct from ModuleSchema, which represents a specific module instance.
+	"""
 	def __init__(
 			self,
 			name=None,
