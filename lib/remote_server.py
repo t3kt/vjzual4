@@ -1,4 +1,6 @@
 from operator import attrgetter
+import re
+from typing import Optional
 
 print('vjz4/remote_server.py loading')
 
@@ -202,12 +204,13 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 		finally:
 			self._LogEnd()
 
-	def _BuildModuleInfo(self, modpath) -> schema.RawModuleInfo:
+	def _BuildModuleInfo(self, modpath) -> Optional[schema.RawModuleInfo]:
 		self._LogBegin('_BuildModuleInfo({!r})'.format(modpath))
 		try:
 			module = self.ownerComp.op(modpath)
 			if not module:
-				raise Exception('Module not found: {}'.format(modpath))
+				self._LogEvent('Module not found: {}'.format(modpath))
+				return None
 			settings = module_settings.ExtractSettings(module)
 			modulecore = module.op('core')
 			# TODO: support having the core specify the sub-modules
@@ -216,18 +219,21 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 			coreparattrsdat = trygetpar(modulecore, 'Parameters')
 			if coreparattrsdat and not settings.parattrs:
 				settings.parattrs = common.ParseAttrTable(coreparattrsdat)
+			nodes = [self._GetNodeInfo(n) for n in nodeops]
 			modinfo = schema.RawModuleInfo(
 				path=modpath,
 				parentpath=module.parent().path,
 				name=module.name,
 				label=str(getattr(module.par, 'Uilabel', None) or getattr(module.par, 'Label', None) or '') or None,
+				masterpath=_GetModuleMasterPath(module),
 				childmodpaths=[c.path for c in submods],
 				partuplets=[
 					[self._BuildParamInfo(p) for p in t]
 					for t in module.customTuplets
 				],
-				nodes=[self._GetNodeInfo(n) for n in nodeops],
 				parattrs=settings.parattrs,
+				nodes=nodes,
+				primarynode=nodes[0].path if nodes else None,
 			)
 			return modinfo
 		finally:
@@ -236,13 +242,17 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 	@staticmethod
 	def _FindDataNodes(module, modulecore):
 		nodespar = modulecore and getattr(modulecore.par, 'Nodes', None)
-		nodesval = nodespar.eval() if nodespar else None
-		if nodesval:
-			if isinstance(nodesval, (list, tuple)):
-				return module.ops(*nodesval)
+		nodes = nodespar.eval() if nodespar else None
+		if nodes:
+			if isinstance(nodes, (list, tuple)):
+				return module.ops(*nodes)
 			else:
-				return module.ops(nodesval)
-		return module.findChildren(tags=['vjznode', 'tdatanode'], maxDepth=1)
+				return module.ops(nodes)
+		nodes = module.findChildren(tags=['vjznode', 'tdatanode'], maxDepth=1)
+		if not nodes:
+			for n in module.ops('out_node', 'out1', 'video_out'):
+				return [n]
+		return nodes
 
 	def _GetNodeInfo(self, nodeop):
 		if nodeop.isTOP:
@@ -271,7 +281,7 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 		self._LogBegin('SendModuleInfo({!r})'.format(modpath))
 		try:
 			modinfo = self._BuildModuleInfo(modpath)
-			self.Connection.SendResponse(request.cmd, request.cmdid, modinfo.ToJsonDict())
+			self.Connection.SendResponse(request.cmd, request.cmdid, modinfo.ToJsonDict() if modinfo else None)
 		finally:
 			self._LogEnd()
 
@@ -344,3 +354,24 @@ def _GetParJsonValue(par):
 		val = par.eval()
 		return val.path if val else None
 	return par.eval()
+
+def _GetModuleMasterPath(module):
+	if not module:
+		return None
+	clonepar = module.par.clone
+	master = clonepar.eval()
+	if isinstance(master, str):
+		return master
+	if master:
+		return master.path
+	if clonepar.mode == ParMode.CONSTANT:
+		return clonepar.val or ''
+	elif clonepar.mode == ParMode.EXPRESSION and clonepar.expr:
+		expr = clonepar.expr
+		match = re.search(r'^op\("([a-zA-Z0-9_/]+)"\)$', expr)
+		if not match:
+			match = re.search(r"^op\('([a-zA-Z0-9_/]+)'\)$", expr)
+		if match:
+			path = match.group(1)
+			return path
+	return None

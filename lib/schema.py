@@ -1,3 +1,5 @@
+from collections import OrderedDict
+import copy
 from operator import attrgetter
 from typing import List, Dict, Optional, Tuple
 
@@ -135,21 +137,24 @@ class RawModuleInfo(BaseDataObject):
 			parentpath=None,
 			name=None,
 			label=None,
+			masterpath=None,
 			childmodpaths=None,
 			partuplets=None,
 			parattrs=None,
 			nodes=None,
+			primarynode=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.path = path
 		self.name = name
 		self.label = label
 		self.parentpath = parentpath
+		self.masterpath = masterpath
 		self.childmodpaths = childmodpaths  # type: List[str]
 		self.partuplets = partuplets or []  # type: List[Tuple[RawParamInfo]]
 		self.parattrs = parattrs or {}  # type: Dict[Dict[str, str]]
 		self.nodes = nodes or []  # type: List[DataNodeInfo]
-		# TODO: data nodes
+		self.primarynode = primarynode  # type: str
 
 	@classmethod
 	def FromJsonDict(cls, obj):
@@ -170,6 +175,8 @@ class RawModuleInfo(BaseDataObject):
 		'name',
 		'label',
 		'parentpath',
+		'masterpath',
+		'primarynode',
 	]
 
 	def ToJsonDict(self):
@@ -178,6 +185,7 @@ class RawModuleInfo(BaseDataObject):
 			'name': self.name,
 			'label': self.label,
 			'parentpath': self.parentpath,
+			'masterpath': self.masterpath,
 			'childmodpaths': self.childmodpaths,
 			'partuplets': self.partuplets and [
 				BaseDataObject.ToJsonDicts(t)
@@ -185,6 +193,7 @@ class RawModuleInfo(BaseDataObject):
 			],
 			'parattrs': self.parattrs,
 			'nodes': BaseDataObject.ToJsonDicts(self.nodes),
+			'primarynode': self.primarynode,
 		}))
 
 class ParamPartSchema(BaseDataObject):
@@ -275,7 +284,7 @@ class ParamPartSchema(BaseDataObject):
 # and are not included in the param list, as are parameters with labels starting
 # with ':'.
 
-class ParamSchema(BaseDataObject):
+class ParamSchema(BaseDataObject, common.AttrBasedIdentity):
 	def __init__(
 			self,
 			name=None,
@@ -289,10 +298,10 @@ class ParamSchema(BaseDataObject):
 			specialtype=None,
 			mappable=True,
 			helptext=None,
-			parts=None,  # type: List[ParamPartSchema]
+			parts=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
-		self.parts = parts or []
+		self.parts = parts or []  # type: List[ParamPartSchema]
 		self.name = name
 		self.label = label
 		self.style = style
@@ -337,6 +346,20 @@ class ParamSchema(BaseDataObject):
 			'helptext': self.helptext,
 			'parts': BaseDataObject.ToJsonDicts(self.parts),
 		}))
+
+	def _IdentityAttrs(self):
+		attrs = [
+			self.name,
+			self.style,
+			self.specialtype,
+			len(self.parts),
+		]
+		if self.style in ['Menu', 'StrMenu']:
+			attrs += [
+				self.parts[0].menunames,
+				self.parts[0].menulabels,
+			]
+		return attrs
 
 	@classmethod
 	def FromJsonDict(cls, obj):
@@ -434,6 +457,18 @@ class ParamSchema(BaseDataObject):
 			parts=[ParamPartSchema.FromRawParamInfo(part) for part in partuplet],
 		)
 
+	@classmethod
+	def ParamsFromRawModuleInfo(cls, modinfo: RawModuleInfo):
+		parattrs = modinfo.parattrs or {}
+		params = []
+		if modinfo.partuplets:
+			for partuplet in modinfo.partuplets:
+				parschema = cls.FromRawParamInfoTuplet(partuplet, parattrs.get(partuplet[0].tupletname))
+				if parschema:
+					params.append(parschema)
+			params.sort(key=attrgetter('pageindex', 'order'))
+		return params
+
 class DataNodeInfo(BaseDataObject):
 	def __init__(
 			self,
@@ -475,29 +510,33 @@ class DataNodeInfo(BaseDataObject):
 			'parentpath': self.parentpath,
 		}))
 
-class ModuleSchema(BaseDataObject):
+	@classmethod
+	def NodesFromRawModuleInfo(cls, modinfo: RawModuleInfo):
+		nodes = []
+		if modinfo.nodes:
+			for node in modinfo.nodes:
+				node = DataNodeInfo.FromJsonDict(node.ToJsonDict())
+				if not node.parentpath:
+					node.parentpath = modinfo.path
+				nodes.append(node)
+		return nodes
+
+class BaseModuleSchema(BaseDataObject):
 	def __init__(
 			self,
 			name=None,
 			label=None,
 			path=None,
-			parentpath=None,
-			childmodpaths=None,
 			params=None,  # type: List[ParamSchema]
-			nodes=None,  # type: List[DataNodeInfo]
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.name = name
 		self.label = label or name
 		self.path = path
-		self.parentpath = parentpath
-		self.childmodpaths = childmodpaths or []
 		self.params = params or []
-		self.paramsbyname = {
-			p.name: p
-			for p in self.params
-		}  # type: Dict[str, ParamSchema]
-		self.nodes = nodes or []
+		self.paramsbyname = OrderedDict()  # type: Dict[str, ParamSchema]
+		for p in self.params:
+			self.paramsbyname[p.name] = p
 		self.hasbypass = False
 		self.hasadvanced = False
 		for par in self.params:
@@ -512,61 +551,182 @@ class ModuleSchema(BaseDataObject):
 			for part in param.parts:
 				yield part.name
 
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'name': self.name,
+			'label': self.label,
+			'path': self.path,
+			'hasbypass': self.hasbypass,
+			'hasadvanced': self.hasadvanced,
+			'params': BaseDataObject.ToJsonDicts(self.params),
+		}))
+
+	def MatchesModuleType(self, modtypeschema: 'BaseModuleSchema', exact=False):
+		if not modtypeschema or not self.params or not modtypeschema.params:
+			return False
+		if exact:
+			if len(self.params) != len(modtypeschema.params):
+				return False
+		for parinfo in self.params:
+			typeparinfo = modtypeschema.paramsbyname.get(parinfo.name)
+			if typeparinfo != parinfo:
+				return False
+		return True
+
+class ModuleTypeSchema(BaseModuleSchema):
+	def __init__(
+			self,
+			name=None,
+			label=None,
+			path=None,
+			params=None,  # type: List[ParamSchema]
+			derivedfrompath=None,
+			**otherattrs):
+		super().__init__(
+			name=name,
+			label=label,
+			path=path,
+			params=params,
+			**otherattrs)
+		self.derivedfrompath = derivedfrompath
+
+	@property
+	def isexplicit(self): return not self.derivedfrompath
+
+	@property
+	def paramcount(self): return len(self.params)
+
+	def __str__(self):
+		return '{}({})'.format(self.__class__.__name__, self.name, self.path)
+
+	@classmethod
+	def FromJsonDict(cls, obj):
+		return cls(
+			params=ParamSchema.FromJsonDicts(obj.get('params')),
+			**excludekeys(obj, ['params', 'hasbypass', 'hasadvanced']))
+
+	tablekeys = [
+		'path',
+		'name',
+		'label',
+		'hasbypass',
+		'hasadvanced',
+		'derivedfrompath',
+	]
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(super().ToJsonDict(), {
+			'derivedfrompath': self.derivedfrompath,
+		}))
+
+	@classmethod
+	def FromRawModuleInfo(cls, modinfo: RawModuleInfo):
+		return cls(
+			name=modinfo.name,
+			label=modinfo.label,
+			path=modinfo.path,
+			params=ParamSchema.ParamsFromRawModuleInfo(modinfo),
+		)
+
+class ModuleSchema(BaseModuleSchema):
+	def __init__(
+			self,
+			name=None,
+			label=None,
+			path=None,
+			parentpath=None,
+			childmodpaths=None,
+			masterpath=None,
+			masterisimplicit=None,
+			masterispartialmatch=None,
+			params=None,  # type: List[ParamSchema]
+			nodes=None,  # type: List[DataNodeInfo]
+			primarynode=None,
+			**otherattrs):
+		super().__init__(
+			name=name,
+			label=label,
+			path=path,
+			params=params,
+			**otherattrs)
+		self.parentpath = parentpath
+		self.childmodpaths = childmodpaths or []
+		self.masterpath = masterpath
+		self.masterisimplicit = masterisimplicit
+		self.masterispartialmatch = masterispartialmatch
+		self.nodes = nodes or []
+		self.primarynodepath = primarynode
+		self.primarynode = None  # type: Optional[DataNodeInfo]
+		if self.primarynodepath:
+			for node in self.nodes:
+				if node.path == self.primarynodepath:
+					self.primarynode = node
+					break
+
+	def __str__(self):
+		return '{}({})'.format(self.__class__.__name__, self.path)
+
 	@classmethod
 	def FromJsonDict(cls, obj):
 		return cls(
 			params=ParamSchema.FromJsonDicts(obj.get('params')),
 			nodes=DataNodeInfo.FromJsonDicts(obj.get('nodes')),
-			**excludekeys(obj, ['params', 'nodes']))
+			**excludekeys(obj, ['params', 'nodes', 'hasbypass', 'hasadvanced']))
 
 	tablekeys = [
 		'path',
 		'name',
 		'label',
 		'parentpath',
+		'masterpath',
+		'masterisimplicit',
+		'masterispartialmatch',
 		'hasbypass',
 		'hasadvanced',
+		'primarynode',
 	]
 
 	def ToJsonDict(self):
-		return cleandict(mergedicts(self.otherattrs, {
-			'name': self.name,
-			'label': self.label,
-			'path': self.path,
+		return cleandict(mergedicts(super().ToJsonDict(), {
 			'parentpath': self.parentpath,
 			'childmodpaths': self.childmodpaths,
-			'hasbypass': self.hasbypass,
-			'hasadvanced': self.hasadvanced,
-			'params': BaseDataObject.ToJsonDicts(self.params),
+			'masterpath': self.masterpath,
+			'masterisimplicit': self.masterisimplicit or None,
+			'masterispartialmatch': self.masterispartialmatch or None,
 			'nodes': BaseDataObject.ToJsonDicts(self.nodes),
+			'primarynode': self.primarynodepath,
 		}))
 
 	@classmethod
 	def FromRawModuleInfo(cls, modinfo: RawModuleInfo):
-		parattrs = modinfo.parattrs or {}
-		params = []
-		if modinfo.partuplets:
-			for partuplet in modinfo.partuplets:
-				parschema = ParamSchema.FromRawParamInfoTuplet(partuplet, parattrs.get(partuplet[0].tupletname))
-				if parschema:
-					params.append(parschema)
-			params.sort(key=attrgetter('pageindex', 'order'))
-		nodes = []
-		if modinfo.nodes:
-			for node in modinfo.nodes:
-				node = DataNodeInfo.FromJsonDict(node.ToJsonDict())
-				if not node.parentpath:
-					node.parentpath = modinfo.path
-				nodes.append(node)
 		return cls(
 			name=modinfo.name,
 			label=modinfo.label,
 			path=modinfo.path,
+			masterpath=modinfo.masterpath,
 			parentpath=modinfo.parentpath,
 			childmodpaths=list(modinfo.childmodpaths) if modinfo.childmodpaths else None,
-			params=params,
-			nodes=nodes,
+			params=ParamSchema.ParamsFromRawModuleInfo(modinfo),
+			nodes=DataNodeInfo.NodesFromRawModuleInfo(modinfo),
+			primarynode=modinfo.primarynode,
 		)
+
+	def AsModuleType(self, implicit=False):
+		if implicit:
+			name = '({})'.format(self.masterpath or self.name)
+			label = '({})'.format(self.masterpath) if self.masterpath else None
+			path = self.masterpath or self.path
+		else:
+			name, label, path = self.name, self.label, self.path
+		return ModuleTypeSchema(
+			name=name,
+			label=label,
+			path=path,
+			derivedfrompath=self.path if implicit else None,
+			params=[
+				copy.deepcopy(parinfo)
+				for parinfo in self.params
+			])
 
 class AppSchema(BaseDataObject):
 	def __init__(
@@ -575,6 +735,7 @@ class AppSchema(BaseDataObject):
 			label=None,
 			path=None,
 			modules=None,
+			moduletypes=None,
 			childmodpaths=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
@@ -586,10 +747,18 @@ class AppSchema(BaseDataObject):
 			modschema.path: modschema
 			for modschema in self.modules
 		}
+		self.moduletypes = moduletypes or []  # type: List[ModuleTypeSchema]
+		self.moduletypesbypath = {
+			modschema.path: modschema
+			for modschema in self.moduletypes
+		}
 		self.nodes = []  # type: List[DataNodeInfo]
+		self.modulepathsbyprimarynodepath = {}
 		for modschema in self.modules:
 			if modschema.nodes:
 				self.nodes += modschema.nodes
+				if modschema.primarynode:
+					self.modulepathsbyprimarynodepath[modschema.primarynode.path] = modschema.path
 		self.nodesbypath = {
 			nodeinfo.path: nodeinfo
 			for nodeinfo in self.nodes
@@ -599,6 +768,13 @@ class AppSchema(BaseDataObject):
 			self.modulesbypath[modpath]
 			for modpath in self.childmodpaths
 		]
+
+	def __repr__(self):
+		return '{}({})'.format(self.__class__.__name__, {
+			'name': self.name,
+			'label': self.label,
+			'path': self.path,
+		})
 
 	tablekeys = [
 		'name',
@@ -612,7 +788,7 @@ class AppSchema(BaseDataObject):
 			'label': self.label,
 			'path': self.path,
 			'modules': BaseDataObject.ToJsonDicts(self.modules),
-			'nodes': BaseDataObject.ToJsonDicts(self.nodes),
+			'moduletypes': BaseDataObject.ToJsonDicts(self.moduletypes),
 			'childmodpaths': self.childmodpaths,
 		}))
 
@@ -620,23 +796,103 @@ class AppSchema(BaseDataObject):
 	def FromJsonDict(cls, obj):
 		return cls(
 			modules=ModuleSchema.FromJsonDicts(obj.get('modules')),
-			**excludekeys(obj, ['modules']))
+			moduletypes=ModuleSchema.FromJsonDicts(obj.get('moduletypes')),
+			**excludekeys(obj, ['modules', 'moduletypes']))
 
 	@classmethod
-	def FromRawAppAndModuleInfo(cls, appinfo: RawAppInfo, modules: List[RawModuleInfo]):
-		return cls(
-			name=appinfo.name,
-			label=appinfo.label,
-			path=appinfo.path,
-			modules=[
-				ModuleSchema.FromRawModuleInfo(modinfo)
-				for modinfo in modules
-			] if modules else None,
+	def FromRawAppAndModuleInfo(
+			cls,
+			appinfo: RawAppInfo,
+			modules: List[RawModuleInfo],
+			moduletypes: List[RawModuleInfo]):
+		return _AppSchemaBuilder(
+			appinfo=appinfo,
+			modules=modules,
+			moduletypes=moduletypes).Build()
+
+class _AppSchemaBuilder:
+	def __init__(
+			self,
+			appinfo: RawAppInfo,
+			modules: List[RawModuleInfo],
+			moduletypes: List[RawModuleInfo]):
+		self.appinfo = appinfo
+		self.modules = OrderedDict()  # type: Dict[str, ModuleSchema]
+		if modules:
+			for modinfo in modules:
+				self.modules[modinfo.path] = ModuleSchema.FromRawModuleInfo(modinfo)
+		self.moduletypes = OrderedDict()  # type: Dict[str, ModuleTypeSchema]
+		if moduletypes:
+			for modinfo in moduletypes:
+				self.moduletypes[modinfo.path] = ModuleTypeSchema.FromRawModuleInfo(modinfo)
+		self.implicitmoduletypes = OrderedDict()  # type: Dict[str, ModuleTypeSchema]
+
+	def Build(self):
+		self._DeriveImplicitModuleTypes()
+		self._StripUnusedModuleTypes()
+		return AppSchema(
+			name=self.appinfo.name,
+			label=self.appinfo.label,
+			path=self.appinfo.path,
+			modules=self.modules.values(),
+			moduletypes=list(self.moduletypes.values()) + list(self.implicitmoduletypes.values()),
 			childmodpaths=[
-				modinfo.path
-				for modinfo in modules
-				if modinfo.parentpath == appinfo.path
-			] if modules else None)
+				modschema.path
+				for modschema in self.modules.values()
+				if modschema.parentpath == self.appinfo.path
+			])
+
+	def _GetMatchingModuleType(self, modschema: ModuleSchema) -> Optional[ModuleTypeSchema]:
+		modtypes = []
+		for modtype in self.moduletypes.values():
+			if modschema.MatchesModuleType(modtype, exact=False):
+				modtypes.append(modtype)
+
+		modtypes = list(sorted(modtypes, key=attrgetter('isexplicit', 'paramcount'), reverse=True))
+		return modtypes[0] if modtypes else None
+
+	def _DeriveImplicitModuleTypes(self):
+
+		for modschema in self.modules.values():
+			masterpath = modschema.masterpath
+			if masterpath and masterpath in self.moduletypes:
+				continue
+			modtype = self._GetMatchingModuleType(modschema)
+			if not modtype:
+				if not self._IsElligibleForImplicitModuleType(modschema):
+					continue
+				modtype = modschema.AsModuleType(implicit=True)
+				self.moduletypes[modtype.path] = modtype
+			modschema.masterpath = modtype.path
+			modschema.masterisimplicit = True
+			modschema.masterispartialmatch = len(modschema.params) != len(modtype.params)
+
+	def _StripUnusedModuleTypes(self):
+		pathstoremove = set(self.moduletypes.keys())
+		for modschema in self.modules.values():
+			if modschema.masterpath and modschema.masterpath in pathstoremove:
+				pathstoremove.remove(modschema.masterpath)
+		for path in pathstoremove:
+			del self.moduletypes[path]
+
+	@staticmethod
+	def _IsElligibleForImplicitModuleType(modschema: ModuleSchema):
+		if not modschema.params:
+			return False
+		if modschema.hasbypass:
+			nonbypasspars = [
+				par for par in modschema.params if par.specialtype != 'switch.bypass'
+			]
+		else:
+			nonbypasspars = modschema.params
+		if not nonbypasspars:
+			return False
+		# special case for modules that only have a single node parameter which are generally
+		# either non-configurable or are just containers for other modules
+		if len(nonbypasspars) == 1 and nonbypasspars[0].isnode:
+			return False
+		return True
+
 
 class SchemaProvider:
 	def GetAppSchema(self) -> AppSchema:
@@ -650,6 +906,7 @@ class ClientInfo(BaseDataObject):
 			self,
 			version=None,
 			address=None,
+			cmdsend=None,
 			cmdrecv=None,
 			oscsend=None,
 			oscrecv=None,
@@ -661,6 +918,7 @@ class ClientInfo(BaseDataObject):
 		super().__init__(**otherattrs)
 		self.version = version
 		self.address = address
+		self.cmdsend = cmdsend
 		self.cmdrecv = cmdrecv
 		self.oscsend = oscsend
 		self.oscrecv = oscrecv
@@ -677,6 +935,7 @@ class ClientInfo(BaseDataObject):
 		return cleandict(mergedicts(self.otherattrs, {
 			'version': self.version,
 			'address': self.address,
+			'cmdsend': self.cmdsend,
 			'cmdrecv': self.cmdrecv,
 			'oscsend': self.oscsend,
 			'oscrecv': self.oscrecv,
@@ -684,5 +943,83 @@ class ClientInfo(BaseDataObject):
 			'osceventrecv': self.osceventrecv,
 			'primaryvidrecv': self.primaryvidrecv,
 			'secondaryvidrecv': self.secondaryvidrecv,
+		}))
+
+class DeviceControlInfo(BaseDataObject):
+	def __init__(
+			self,
+			name,
+			fullname,
+			devname,
+			ctrltype=None,
+			inputcc=None,
+			outputcc=None,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.name = name
+		self.fullname = fullname
+		self.devname = devname
+		self.ctrltype = ctrltype
+		self.inputcc = inputcc
+		self.outputcc = outputcc
+
+	tablekeys = [
+		'name',
+		'fullname',
+		'devname',
+		'ctrltype',
+		'inputcc',
+		'outputcc',
+	]
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'name': self.name,
+			'fullname': self.fullname,
+			'devname': self.devname,
+			'ctrltype': self.ctrltype,
+			'inputcc': self.inputcc,
+			'outputcc': self.outputcc,
+		}))
+
+class ControlMapping(BaseDataObject):
+	def __init__(
+			self,
+			path=None,
+			param=None,
+			enable=True,
+			rangelow=None,
+			rangehigh=None,
+			control=None,
+			mapid=None,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.path = path
+		self.param = param
+		self.enable = enable
+		self.rangelow = rangelow if rangelow is not None else 0
+		self.rangehigh = rangehigh if rangehigh is not None else 1
+		self.control = control
+		self.mapid = mapid
+
+	tablekeys = [
+		'mapid',
+		'path',
+		'param',
+		'enable',
+		'rangelow',
+		'rangehigh',
+		'control',
+	]
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'mapid': self.mapid,
+			'path': self.path,
+			'param': self.param,
+			'enable': self.enable,
+			'rangelow': self.rangelow,
+			'rangehigh': self.rangehigh,
+			'control': self.control,
 		}))
 

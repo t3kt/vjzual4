@@ -1,5 +1,6 @@
 import datetime
-from typing import Callable, Dict, List, Iterable
+import json
+from typing import Callable, Dict, List, Iterable, Union
 
 print('vjz4/common.py loading')
 
@@ -37,9 +38,9 @@ class IndentedLogger:
 		if not path and not opid:
 			Log('%s%s' % (self._indentStr, event), file=self._outFile)
 		elif not opid:
-			Log('%s%s (%s)' % (self._indentStr, event, path or ''), file=self._outFile)
+			Log('%s%s %s' % (self._indentStr, path or '', event), file=self._outFile)
 		else:
-			Log('%s[%s] %s (%s)' % (self._indentStr, opid or '', event, path or ''), file=self._outFile)
+			Log('%s[%s] %s %s' % (self._indentStr, opid or '', path or '', event), file=self._outFile)
 
 	def LogBegin(self, path, opid, event):
 		self.LogEvent(path, opid, event)
@@ -71,6 +72,43 @@ class ExtensionBase:
 	def _LogEnd(self, event=None):
 		if self.enablelogging:
 			_logger.LogEnd(self.ownerComp.path, self._GetLogId(), event)
+
+def _defaultformatargs(args, kwargs):
+	if not args:
+		return kwargs or ''
+	if not kwargs:
+		return args
+	return '{} {}'.format(args, kwargs)
+
+def _decoratewithlogging(func, formatargs):
+	def wrapper(self: ExtensionBase, *args, **kwargs):
+		self._LogBegin('{}({})'.format(func.__name__, formatargs(args, kwargs)))
+		try:
+			return func(self, *args, **kwargs)
+		finally:
+			self._LogEnd()
+	return wrapper
+
+def loggedmethod(func):
+	return _decoratewithlogging(func, _defaultformatargs)
+
+def simpleloggedmethod(func):
+	return customloggedmethod(omitargs=True)(func)
+
+def customloggedmethod(
+		omitargs: Union[bool, List[str]]=None):
+	if not omitargs:
+		formatargs = _defaultformatargs
+	elif omitargs is True:
+		def formatargs(*_):
+			return ''
+	elif not isinstance(omitargs, (list, tuple, set)):
+		raise Exception('Invalid "omitargs" specifier for loggedmethod: {!r}'.format(omitargs))
+	else:
+		def formatargs(args, kwargs):
+			return _defaultformatargs(args, excludekeys(kwargs, omitargs))
+
+	return lambda func: _decoratewithlogging(func, formatargs)
 
 class ActionsExt:
 	def __init__(self, ownerComp, actions=None, autoinitparexec=True):
@@ -139,21 +177,30 @@ class TaskQueueExt:
 		td.run('op({!r}).RunNextTask()'.format(self.ownerComp.path), delayFrames=1)
 
 	def RunNextTask(self):
-		task = self._PopNextTask()
+		if not self._TaskBatches:
+			self._UpdateProgress()
+			return
+
+		task, batch = self._PopNextTask()
 		self._UpdateProgress()
 		if task is None:
 			return
 		result = task()
-		if isinstance(result, Future):
-			result.then(
-				success=lambda _: self._QueueRunNextTask(),
-				failure=lambda _: self._QueueRunNextTask())
-		else:
+
+		def _onfinish(*_):
+			if not batch.tasks:
+				if not batch.future.isresolved:
+					batch.future.resolve()
 			self._QueueRunNextTask()
 
+		if isinstance(result, Future):
+			result.then(
+				success=_onfinish,
+				failure=_onfinish)
+		else:
+			_onfinish()
+
 	def _PopNextTask(self):
-		if not self._TaskBatches:
-			return None
 		while self._TaskBatches:
 			batch = self._TaskBatches[0]
 			task = None
@@ -162,7 +209,8 @@ class TaskQueueExt:
 			if not batch.tasks:
 				self._TaskBatches.pop(0)
 			if task is not None:
-				return task
+				return task, batch
+		return None, None
 
 	def AddTaskBatch(self, tasks: List[Callable], autostart=True):
 		batch = _TaskBatch(tasks)
@@ -170,6 +218,7 @@ class TaskQueueExt:
 		self._UpdateProgress()
 		if autostart:
 			self._QueueRunNextTask()
+		return batch.future
 
 	def ClearTasks(self):
 		self._TaskBatches.clear()
@@ -179,6 +228,7 @@ class _TaskBatch:
 	def __init__(self, tasks: List[Callable]):
 		self.total = len(tasks)
 		self.tasks = tasks
+		self.future = Future()
 
 class Future:
 	def __init__(self, onlisten=None, oninvoke=None):
@@ -238,6 +288,14 @@ class Future:
 		if self._resolved:
 			raise Exception('Future has already been resolved')
 		self._canceled = True
+
+	@property
+	def isresolved(self):
+		return self._resolved
+
+	@property
+	def result(self):
+		return self._result
 
 	def __str__(self):
 		if self._canceled:
@@ -304,7 +362,7 @@ def cleandict(d):
 	return {
 		key: val
 		for key, val in d.items()
-		if not (val is None or (isinstance(val, (list, dict, tuple)) and len(val) == 0))
+		if not (val is None or (isinstance(val, (str, list, dict, tuple)) and len(val) == 0))
 	}
 
 def mergedicts(*parts):
@@ -378,29 +436,71 @@ def GetOrAddCell(dat, row, col):
 			dat.appendCol([col])
 	return dat[row, col]
 
+
+class opattrs:
+	def __init__(
+			self,
+			order=None,
+			nodepos=None,
+			tags=None,
+			panelparent=None,
+			parvals=None,
+			parexprs=None):
+		self.order = order
+		self.nodepos = nodepos
+		self.tags = tags
+		self.panelparent = panelparent
+		self.parvals = parvals
+		self.parexprs = parexprs
+
+	def override(self, other: 'opattrs'):
+		if not other:
+			return self
+		if other.order is not None:
+			self.order = other.order
+		self.nodepos = other.nodepos or self.nodepos
+		if other.tags:
+			if self.tags:
+				self.tags.update(other.tags)
+			else:
+				self.tags = set(other.tags)
+		self.panelparent = other.panelparent or self.panelparent
+		self.parvals = mergedicts(self.parvals, other.parvals)
+		self.parexprs = mergedicts(self.parexprs, other.parexprs)
+		return self
+
+	def applyto(self, comp):
+		if self.order is not None:
+			comp.par.alignorder = self.order
+		if self.parvals:
+			for key, val in self.parvals.items():
+				setattr(comp.par, key, val)
+		if self.parexprs:
+			for key, expr in self.parexprs.items():
+				getattr(comp.par, key).expr = expr
+		if self.nodepos:
+			comp.nodeCenterX = self.nodepos[0]
+			comp.nodeCenterY = self.nodepos[1]
+		if self.tags:
+			comp.tags.update(self.tags)
+		if self.panelparent:
+			self.panelparent.outputCOMPConnectors[0].connect(comp)
+		return comp
+
+	@classmethod
+	def merged(cls, *attrs, **kwargs):
+		result = cls()
+		for a in attrs:
+			result.override(a)
+		if kwargs:
+			result.override(cls(**kwargs))
+		return result
+
 def UpdateOP(
 		comp,
-		order=None,
-		nodepos=None,
-		tags=None,
-		panelparent=None,
-		parvals=None,
-		parexprs=None):
-	if parvals:
-		for key, val in parvals.items():
-			setattr(comp.par, key, val)
-	if parexprs:
-		for key, expr in parexprs.items():
-			getattr(comp.par, key).expr = expr
-	if order is not None:
-		comp.par.alignorder = order
-	if nodepos:
-		comp.nodeCenterX = nodepos[0]
-		comp.nodeCenterY = nodepos[1]
-	if tags:
-		comp.tags.update(tags)
-	if panelparent:
-		panelparent.outputCOMPConnectors[0].connect(comp)
+		attrs: opattrs=None, **kwargs):
+	opattrs.merged(attrs, **kwargs).applyto(comp)
+	return comp
 
 def _ResolveDest(dest):
 	deststr = str(dest)
@@ -411,56 +511,32 @@ def _ResolveDest(dest):
 
 def CreateFromTemplate(
 		template,
-		dest,
-		name,
-		order=None,
-		nodepos=None,
-		tags=None,
-		panelparent=None,
-		parvals=None,
-		parexprs=None):
+		dest, name,
+		attrs: opattrs=None, **kwargs):
 	dest = _ResolveDest(dest)
 	comp = dest.copy(template, name=name)
-	UpdateOP(
-		comp=comp, order=order, nodepos=nodepos, panelparent=panelparent,
-		tags=tags, parvals=parvals, parexprs=parexprs)
+	opattrs.merged(attrs, **kwargs).applyto(comp)
 	return comp
 
 def CreateOP(
-		optype,
-		dest,
-		name,
-		order=None,
-		nodepos=None,
-		tags=None,
-		panelparent=None,
-		parvals=None,
-		parexprs=None):
+		optype, dest, name,
+		attrs: opattrs=None, **kwargs):
 	dest = _ResolveDest(dest)
 	comp = dest.create(optype, name)
-	UpdateOP(
-		comp=comp, order=order, nodepos=nodepos, panelparent=panelparent,
-		tags=tags, parvals=parvals, parexprs=parexprs)
+	opattrs.merged(attrs, **kwargs).applyto(comp)
 	return comp
 
 def GetOrCreateOP(
-		optype,
-		dest,
-		name,
-		nodepos=None,
-		tags=None,
-		parvals=None,
-		parexprs=None):
+		optype, dest, name,
+		attrs: opattrs=None, **kwargs):
 	comp = dest.op(name)
 	if not comp:
 		comp = CreateOP(
 			optype,
 			dest=dest,
 			name=name,
-			nodepos=nodepos,
-			tags=tags,
-			parvals=parvals,
-			parexprs=parexprs)
+			attrs=attrs,
+			**kwargs)
 	return comp
 
 def AddOrUpdatePar(appendmethod, name, label, value=None, expr=None, readonly=None):
@@ -492,8 +568,41 @@ class BaseDataObject:
 		return [cls.FromJsonDict(obj) for obj in objs] if objs else []
 
 	@classmethod
+	def FromOptionalJsonDict(cls, obj, default=None):
+		return cls.FromJsonDict(obj) if obj else default
+
+	@classmethod
+	def FromJsonDictMap(cls, objs: Dict[str, Dict]):
+		if not objs:
+			return {}
+		results = {}
+		for key, obj in objs.items():
+			val = cls.FromOptionalJsonDict(obj)
+			if val:
+				results[key] = val
+		return results
+
+	@classmethod
 	def ToJsonDicts(cls, nodes: 'Iterable[BaseDataObject]'):
 		return [n.ToJsonDict() for n in nodes] if nodes else []
+
+	@classmethod
+	def ToJsonDictMap(cls, nodes: 'Dict[str, BaseDataObject]'):
+		return {
+			path: node.ToJsonDict()
+			for path, node in nodes.items()
+		} if nodes else {}
+
+	def WriteJsonTo(self, filepath):
+		obj = self.ToJsonDict()
+		with open(filepath, mode='w') as outfile:
+			json.dump(obj, outfile, indent='  ')
+
+	@classmethod
+	def ReadJsonFrom(cls, filepath):
+		with open(filepath, mode='r') as infile:
+			obj = json.load(infile)
+		return cls.FromJsonDict(obj)
 
 	def AddToTable(self, dat, attrs=None):
 		obj = self.ToJsonDict()
@@ -505,3 +614,31 @@ class BaseDataObject:
 				val = 1 if val else 0
 			vals.append(val)
 		dat.appendRow(vals)
+
+	def UpdateInTable(self, rowid, dat, attrs=None):
+		rowcells = dat.row(rowid)
+		if not rowcells:
+			self.AddToTable(dat, attrs)
+		else:
+			obj = self.ToJsonDict()
+			attrs = mergedicts(obj, attrs)
+			for cell in rowcells:
+				col = dat[cell.row, 0]
+				val = attrs.get(col.val, '')
+				if isinstance(val, bool):
+					val = 1 if val else 0
+				cell.val = val
+
+class AttrBasedIdentity:
+	def _IdentityAttrs(self):
+		raise NotImplementedError()
+
+	def __eq__(self, other):
+		if other is self:
+			return True
+		if not isinstance(other, self.__class__):
+			return False
+		return self._IdentityAttrs() == other._IdentityAttrs()
+
+	def __hash__(self):
+		return hash(self._IdentityAttrs())
