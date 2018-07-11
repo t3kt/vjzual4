@@ -88,55 +88,145 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 		finally:
 			self._LogEnd()
 
+	@loggedmethod
 	def AdaptVjz3Module(self, destructive=False):
 		module = self.Module
-		self._LogBegin('AdaptVjz3Module({}, destructive={})'.format(module, destructive))
-		try:
-			if not module:
-				return
-			settings = module_settings.ExtractSettings(module)
-			if destructive:
-				module.par.promoteextension1 = False
-				module.par.extname1 = ''
-				module.par.extension1 = ''
-				module.initializeExtensions()
-				module.par.clone.expr = 'op({!r}) or ""'.format(module.path)
-			self.UpdateModuleMetadata(
-				description=common.trygetpar(module, 'Compdescription', 'Uilabel'))
-			page = module.appendCustomPage('Module')
-			page.appendStr('Uilabel', label=':UI Label')
-			page.appendToggle('Bypass')
-			page.appendPulse('Resetstate', label=':Reset State')
-			if destructive:
-				for par in module.pars('Solo', 'Collapsed', 'Uimode', 'Showadvanced', 'Showviewers'):
-					par.destroy()
-				if 'tmod' in module.tags:
-					module.tags.remove('tmod')
-			module.tags.add('vjzmod4')
-			shell = module.op('shell')
-			parmetadat = shell.par.Parammetaoverrides.eval() if shell else None
-			if parmetadat:
-				settings.parattrs = common.ParseAttrTable(parmetadat)
-			ignorectrls = ('shell', 'body_panel', 'controls_panel')
-			extractor = _Vjz3ParAttrExtractor(self, settings)
-			destroyops = module.ops('shell', 'body_panel', 'controls_panel')
-			for ctrl in module.ops('*'):
-				if not ctrl.isPanel:
-					continue
-				if ctrl.name in ignorectrls:
-					continue
-				if extractor.ExtractFromControl(ctrl):
-					destroyops.append(ctrl)
+		if not module:
+			return
+		settings = module_settings.ExtractSettings(module)
+		if destructive:
+			module.par.promoteextension1 = False
+			module.par.extname1 = ''
+			module.par.extension1 = ''
+			module.initializeExtensions()
+			module.par.clone.expr = 'op({!r}) or ""'.format(module.path)
+		self.UpdateModuleMetadata(
+			description=common.trygetpar(module, 'Compdescription', 'Uilabel'))
+		page = module.appendCustomPage('Module')
+		page.appendStr('Uilabel', label=':UI Label')
+		page.appendToggle('Bypass')
+		page.appendPulse('Resetstate', label=':Reset State')
+		if destructive:
+			for par in module.pars('Solo', 'Collapsed', 'Uimode', 'Showadvanced', 'Showviewers'):
+				par.destroy()
+			if 'tmod' in module.tags:
+				module.tags.remove('tmod')
+		module.tags.add('vjzmod4')
+		shell = module.op('shell')
+		parmetadat = shell.par.Parammetaoverrides.eval() if shell else None
+		if parmetadat:
+			settings.parattrs = common.ParseAttrTable(parmetadat)
+		ignorectrls = ('shell', 'body_panel', 'controls_panel')
+		extractor = _Vjz3ParAttrExtractor(self, settings)
+		destroyops = module.ops('shell', 'body_panel', 'controls_panel')
+		for ctrl in module.ops('*'):
+			if not ctrl.isPanel:
+				continue
+			if ctrl.name in ignorectrls:
+				continue
+			if extractor.ExtractFromControl(ctrl):
+				destroyops.append(ctrl)
 
-			self._LogEvent('Applying settings: {}'.format(settings))
-			module_settings.ApplySettings(module, settings)
+		self._LogEvent('Applying settings: {}'.format(settings))
+		module_settings.ApplySettings(module, settings)
 
-			if destructive:
-				for o in destroyops:
-					o.destroy()
-		finally:
-			self._LogEnd()
+		if destructive:
+			for o in destroyops:
+				o.destroy()
 
+		self._UpdateVjz3CommonOPs()
+
+	@loggedmethod
+	def _UpdateVjz3CommonOPs(self):
+		module = self.Module
+		if not module:
+			return
+		self._AdaptVjz3DryWetSwitch()
+		self._AdaptVjz3DataNodes()
+
+	@loggedmethod
+	def _AdaptVjz3DryWetSwitch(self):
+		drywetswitch = self.Module and self.Module.op('dry_wet_switch')
+		if not drywetswitch or drywetswitch.python:
+			return
+		parswithexprs = _ParsWithExprs(drywetswitch)
+		if len(parswithexprs) > 2:
+			self._LogEvent('too many pars with expressions: {!r}'.format(parswithexprs))
+			return
+		indexpar = parswithexprs.get('index')
+		blendpar = parswithexprs.get('blend')
+		if indexpar is None or blendpar is None or indexpar.mode != ParMode.EXPRESSION or blendpar.mode != ParMode.EXPRESSION:
+			self._LogEvent('missing required parameter expressions: {!r}'.format(parswithexprs))
+			return
+		if blendpar.expr not in _BothTypesOfQuotes(
+				'!par("../Bypass")'):
+			self._LogEvent('blend expression does not match: {!r}'.format(blendpar.expr))
+			return
+		if indexpar.expr in _BothTypesOfQuotes(
+				'if(par("../Bypass"), 0, chop("vals/Level"))',
+				'chop("vals/Level")'):
+			self._LogEvent('index expression is using vals CHOP: {!r}'.format(indexpar.expr))
+			levelexpr = 'op("vals")["Level"]'
+		elif indexpar.expr in _BothTypesOfQuotes(
+			'if(par("../Bypass), 0, par("../Level"))',
+			'par("../Level")'):
+			self._LogEvent('index expression is using parameter reference: {!r}'.format(indexpar.expr))
+			levelexpr = 'parent().par.Level'
+		else:
+			self._LogEvent('index expression does not match: {!r}'.format(indexpar.expr))
+			return
+		drywetswitch.python = True
+		drywetswitch.par.index.expr = 'not parent().par.Bypass'
+		drywetswitch.par.blend.expr = '0 if parent().par.Bypass else ' + levelexpr
+
+	@loggedmethod
+	def _AdaptVjz3DataNodes(self):
+		module = self.Module
+		if not module:
+			return
+		self._AdaptVjz3DataNode(module.op('out_node'), ' Output')
+		self._AdaptVjz3DataNode(module.op('wet_node'), ' Wet')
+
+	@loggedmethod
+	def _AdaptVjz3DataNode(self, node, labelsuffix):
+		if not node or node.python:
+			self._LogEvent('node missing or already using python: {}'.format(node))
+			return
+		if not hasattr(node.par, 'Label') or not hasattr(node.par, 'Nodeid'):
+			self._LogEvent('node missing required parameters: {}'.format(node.customPars))
+			return
+		if node.par.Label.val not in _BothTypesOfQuotes('`pars("../Uilabel")`' + labelsuffix):
+			self._LogEvent('node label par does not match: {!r}'.format(node.par.Label.val))
+			return
+
+		node.par.Label = ''
+		node.par.Nodeid = ''
+		node.par.clone = ''
+		node.python = True
+		node.par.Label.expr = 'parent().par.Uilabel + {!r}'.format(labelsuffix)
+
+def _BothTypesOfQuotes(*exprs: str):
+	results = []
+	for expr in exprs:
+		results.append(expr)
+		if '"' not in expr and "'" not in expr:
+			continue
+		if '"' in expr and "'" in expr:
+			raise Exception('both types of quotes used in expression: {!r}'.format(expr))
+		if '"' in expr:
+			results.append(expr.replace('"', "'"))
+		else:
+			results.append(expr.replace("'", '"'))
+	return results
+
+def _ParsWithExprs(o):
+	if not o:
+		return {}
+	return {
+		p.name: p
+		for p in o.pars()
+		if p.mode == ParMode.EXPRESSION
+	}
 
 class _Vjz3ParAttrExtractor:
 	def __init__(
