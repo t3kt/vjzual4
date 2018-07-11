@@ -642,6 +642,9 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 
 
 class ModuleHostConnector:
+	"""
+	Interface used by ModuleHost to get information about and interact with the hosted module.
+	"""
 	def __init__(
 			self,
 			modschema: schema.ModuleSchema):
@@ -651,6 +654,11 @@ class ModuleHostConnector:
 	def GetPar(self, name): return None
 
 	def GetParExpr(self, name):
+		"""
+		Creates an expression (as a string) that can be used to reference a TD parameter of the hosted module.
+		The expressions are of the form: `op("____").par.____`
+		This can be used to create bindings in UI controls.
+		"""
 		par = self.GetPar(name)
 		if par is None:
 			return None

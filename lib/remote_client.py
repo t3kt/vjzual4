@@ -35,6 +35,17 @@ except ImportError:
 
 
 class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt):
+	"""
+	Client which connects to a TD project that includes a RemoteServer, queries it for information about the project,
+	and facilitates communication between the two TD instances.
+
+	Commands/requests/responses are sent/received over TCP.
+	Control data (for non-text parameters) is sent/received over OSC using CHOPs.
+	Control data for text parameters is sent/received over OSC using DATs on separate ports from those used for numeric
+	data.
+	Video data is received over Syphon/Spout. This may later be changed to something that can run over a network, like
+	NDI.
+	"""
 	def __init__(self, ownerComp):
 		remote.RemoteBase.__init__(
 			self,
