@@ -1,3 +1,5 @@
+import re
+
 print('vjz4/module_editor.py loading')
 
 if False:
@@ -98,6 +100,128 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 			return
 		self._LogEvent('Saving module to {}'.format(toxfile))
 		module.save(toxfile)
+
+	@loggedmethod
+	def AdaptOpExpressions(self):
+		selected = _GetSelected()
+		if not selected:
+			return
+		for o in selected:
+			self._AdaptOpExpressions(o)
+		pass
+
+	@loggedmethod
+	def _AdaptOpExpressions(self, o, testonly=False):
+		if o.python:
+			newexprs = self._GetPythonParChanges(o)
+			if newexprs is None:
+				self._LogEvent('Not able to adapt expressions for python op: {}'.format(o))
+				return
+			if not newexprs:
+				self._LogEvent('No parameter expressions to convert for python op: {}'.format(o))
+				return
+			self._LogEvent('Converted expressions for python op {}:\n{!r}'.format(o, newexprs))
+			if not testonly:
+				for name, expr in newexprs.items():
+					par = getattr(o.par, name)
+					par.expr = expr
+		else:
+			newexprs = self._GetTScriptParConversions(o)
+			if newexprs is None:
+				self._LogEvent('Not able to adapt expressions for TScript op: {}'.format(o))
+				return
+			if not newexprs:
+				self._LogEvent('No parameter expressions to convert for TScript op: {}'.format(o))
+				if not testonly:
+					o.python = True
+				return
+			if not testonly:
+				for name in newexprs.keys():
+					par = getattr(o.par, name)
+					if par.isString:
+						par.val = ''
+				o.python = True
+				for name, expr in newexprs.items():
+					par = getattr(o.par, name)
+					par.expr = expr
+
+	@loggedmethod
+	def _GetPythonParChanges(self, o):
+		parentmod = getattr(o.parent, 'tmod', None)
+		if not parentmod:
+			return None
+		if parentmod == o.parent():
+			parentexpr = 'parent()'
+		else:
+			parentexpr = 'op({!r})'.format(o.relativePath(parentmod))
+
+		newexprs = {}
+		for p in o.pars():
+			if not p.mode == ParMode.EXPRESSION:
+				continue
+			if 'parent.tmod' in p.expr:
+				newexprs[p.name] = p.expr.replace('parent.tmod', parentexpr)
+		self._LogEvent('Python expr changes: {!r}'.format(newexprs))
+		return newexprs
+
+	@loggedmethod
+	def _GetTScriptParConversions(self, o):
+		newexprs = {}
+		for p in o.pars():
+			if p.isString:
+				if '`' not in p.val:
+					continue
+				if p.val.count('`') != 2:
+					self._LogEvent('Cannot convert parameter: {!r}'.format(p))
+					return None
+				match = re.match('^(.*)`(.*)`(.*)', p.val)
+				if not match:
+					self._LogEvent('Cannot convert parameter: {!r}'.format(p))
+					return None
+				if not match.group(1):
+					continue
+				newexpr = self._ConvertTScriptExpression(match.group(2))
+				if not newexpr:
+					self._LogEvent('Cannot convert parameter: {!r}'.format(p))
+					return None
+				if match.group(1):
+					newexpr = repr(match.group(1)) + ' + ' + newexpr
+				if match.group(3):
+					newexpr += ' + ' + repr(match.group(3))
+			else:
+				if p.mode != ParMode.EXPRESSION or not p.expr:
+					continue
+				newexpr = self._ConvertTScriptExpression(p.expr)
+				if not newexpr:
+					self._LogEvent('Cannot convert parameter: {!r}'.format(p))
+					return None
+			if newexpr:
+				self._LogEvent('Mapped par {!r} expression to: {!r}'.format(p, newexpr))
+				newexprs[p.name] = newexpr
+		return newexprs
+
+	@staticmethod
+	def _ConvertTScriptExpression(expr):
+		# r"^([^\"']*)([\"'])(.+)?\2([^\"']*)$"  - parses <before quote>, <quote mark>, <within quotes>, <after quote>
+		match = re.match(r"^par\(([\"'])(.+)?\1([^\"']*)\)$", expr)
+		if match:
+			parpath = match.group(2)
+			if "'" in parpath or '"' in parpath:
+				return None
+			if '/' in parpath:
+				path, parname = parpath.rsplit('/', maxsplit=1)
+				if not path or not parname:
+					return None
+				return 'op({!r}).par.{}'.format(path, parname)
+			else:
+				return 'me.par.{}'.format(parpath)
+		match = re.match(r"^chop\(([\"'])(.+)/(.+)\1\)$", expr)
+		if match:
+			path, chan = match.group(2), match.group(3)
+			if not path or not chan:
+				return None
+			return 'op({!r})[{!r}]'.format(path, chan)
+		return None
 
 	@loggedmethod
 	def AdaptVjz3Module(self, destructive=False):
@@ -409,7 +533,7 @@ def _GetTargetPane():
 def _GetSelected():
 	pane = _GetTargetPane()
 	if not pane:
-		return
+		return []
 	selected = pane.owner.selectedChildren
 	if not selected:
 		selected = [pane.owner.currentChild]
