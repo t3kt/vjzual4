@@ -29,35 +29,48 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 			self,
 			ownerComp,
 			actions={
-				'Attachmodule': self.AttachModule,
-				'Detachmodule': self.DetachModule,
 				'Updatemodulemetadata': lambda: self.UpdateModuleMetadata(),
 				'Adaptvjz3module': lambda: self.AdaptVjz3Module(destructive=False),
 				'Adaptvjz3moduledestructive': lambda: self.AdaptVjz3Module(destructive=True),
 				'Savemoduletox': lambda: self.SaveModuleTox(),
+				'Testprintmodule': lambda: self._TestPrintModule(),
 			},
 			autoinitparexec=True)
 		self._AutoInitActionParams()
-		self.AttachModule()
 
 	@property
 	def Module(self):
-		return self.ownerComp.par.Module.eval()
+		selected = _GetSelected()
+		if len(selected) == 1 and self._IsModule(selected[0]):
+			return selected[0]
+		context = _GetContext()
+		if not context:
+			return None
+		if self._IsModule(context):
+			return context
+		o = context
+		while o.parent() and o.parent() != o:
+			o = o.parent()
+			if self._IsModule(o):
+				return o
+		return None
+
+	@staticmethod
+	def _IsModule(o):
+		if not o or not o.isCOMP:
+			return False
+		if o.parent() and o.parent().path != '/_/modules':
+			return False
+		if 'tmod' in o.tags:
+			return True
+		if 'vjzmod4' in o.tags:
+			return True
+		return False
 
 	@loggedmethod
-	def DetachModule(self):
-		self.ownerComp.par.Module = None
-
-	def AttachModule(self):
-		module = self.ownerComp.par.Module.eval()
-		self._LogBegin('AttachModule({})'.format(module))
-		try:
-			if not module:
-				self.DetachModule()
-				return
-			pass
-		finally:
-			self._LogEnd()
+	def _TestPrintModule(self):
+		module = self.Module
+		self._LogEvent('Module determined to be: {!r}'.format(module))
 
 	def UpdateModuleMetadata(self, **kwargs):
 		module = self.Module
@@ -69,28 +82,27 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 		finally:
 			self._LogEnd()
 
+	@loggedmethod
 	def SaveModuleTox(self):
 		module = self.Module
-		self._LogBegin('SaveModuleTox({})'.format(module))
-		try:
-			if not module:
-				return
-			toxfilepar = module.par.externaltox
-			toxfile = toxfilepar.eval()
-			if not toxfilepar.expr or "var('shelldir')" in toxfilepar.expr or 'var("shelldir")' in toxfilepar.expr:
-				toxfile = 'modules/{}.tox'.format(module.name)
-				toxfilepar.expr = '({!r} if (mod.os.path.exists({!r}) and me.par.clone.eval() in (None, me)) else None) or ""'.format(toxfile, toxfile)
-			if not toxfile:
-				self._LogEvent('No associated tox file')
-				return
-			self._LogEvent('Saving module to {}'.format(toxfile))
-			module.save(toxfile)
-		finally:
-			self._LogEnd()
+		self._LogEvent('module: {}'.format(module))
+		if not module:
+			return
+		toxfilepar = module.par.externaltox
+		toxfile = toxfilepar.eval()
+		if not toxfilepar.expr or "var('shelldir')" in toxfilepar.expr or 'var("shelldir")' in toxfilepar.expr:
+			toxfile = 'modules/{}.tox'.format(module.name)
+			toxfilepar.expr = '({!r} if (mod.os.path.exists({!r}) and me.par.clone.eval() in (None, me)) else None) or ""'.format(toxfile, toxfile)
+		if not toxfile:
+			self._LogEvent('No associated tox file')
+			return
+		self._LogEvent('Saving module to {}'.format(toxfile))
+		module.save(toxfile)
 
 	@loggedmethod
 	def AdaptVjz3Module(self, destructive=False):
 		module = self.Module
+		self._LogEvent('module: {}'.format(module))
 		if not module:
 			return
 		settings = module_settings.ExtractSettings(module)
@@ -134,19 +146,22 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 			for o in destroyops:
 				o.destroy()
 
-		self._UpdateVjz3CommonOPs()
+		self._UpdateVjz3CommonOPs(module, destructive=destructive)
 
 	@loggedmethod
-	def _UpdateVjz3CommonOPs(self):
-		module = self.Module
+	def _UpdateVjz3CommonOPs(self, module, destructive):
 		if not module:
 			return
-		self._AdaptVjz3DryWetSwitch()
-		self._AdaptVjz3DataNodes()
+		self._AdaptVjz3DryWetSwitch(module)
+		self._AdaptVjz3DataNodes(module)
+		if destructive:
+			init = module.op('init')
+			if init and init.isDAT and init.text == "op('shell/init').run()":
+				init.destroy()
 
 	@loggedmethod
-	def _AdaptVjz3DryWetSwitch(self):
-		drywetswitch = self.Module and self.Module.op('dry_wet_switch')
+	def _AdaptVjz3DryWetSwitch(self, module):
+		drywetswitch = module and module.op('dry_wet_switch')
 		if not drywetswitch or drywetswitch.python:
 			return
 		parswithexprs = _ParsWithExprs(drywetswitch)
@@ -163,13 +178,13 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 			self._LogEvent('blend expression does not match: {!r}'.format(blendpar.expr))
 			return
 		if indexpar.expr in _BothTypesOfQuotes(
-				'if(par("../Bypass"), 0, chop("vals/Level"))',
+				"if(par('../Bypass'), 0, chop('vals/Level'))",
 				'chop("vals/Level")'):
 			self._LogEvent('index expression is using vals CHOP: {!r}'.format(indexpar.expr))
 			levelexpr = 'op("vals")["Level"]'
 		elif indexpar.expr in _BothTypesOfQuotes(
-			'if(par("../Bypass), 0, par("../Level"))',
-			'par("../Level")'):
+				"if(par('../Bypass'), 0, par('../Level'))",
+				'par("../Level")'):
 			self._LogEvent('index expression is using parameter reference: {!r}'.format(indexpar.expr))
 			levelexpr = 'parent().par.Level'
 		else:
@@ -180,22 +195,26 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 		drywetswitch.par.blend.expr = '0 if parent().par.Bypass else ' + levelexpr
 
 	@loggedmethod
-	def _AdaptVjz3DataNodes(self):
-		module = self.Module
+	def _AdaptVjz3DataNodes(self, module):
 		if not module:
 			return
-		self._AdaptVjz3DataNode(module.op('out_node'), ' Output')
-		self._AdaptVjz3DataNode(module.op('wet_node'), ' Wet')
+		for node in module.findChildren(tags=['tdatanode'], maxDepth=1):
+			self._AdaptVjz3DataNode(node)
 
 	@loggedmethod
-	def _AdaptVjz3DataNode(self, node, labelsuffix):
+	def _AdaptVjz3DataNode(self, node):
 		if not node or node.python:
 			self._LogEvent('node missing or already using python: {}'.format(node))
 			return
 		if not hasattr(node.par, 'Label') or not hasattr(node.par, 'Nodeid'):
 			self._LogEvent('node missing required parameters: {}'.format(node.customPars))
 			return
-		if node.par.Label.val not in _BothTypesOfQuotes('`pars("../Uilabel")`' + labelsuffix):
+		labelsuffix = None
+		for variation in _BothTypesOfQuotes('`pars("../Uilabel")`'):
+			if node.par.Label.val.startswith(variation):
+				labelsuffix = node.par.Label.val[len(variation):]
+				break
+		if not labelsuffix:
 			self._LogEvent('node label par does not match: {!r}'.format(node.par.Label.val))
 			return
 
@@ -204,6 +223,8 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 		node.par.clone = ''
 		node.python = True
 		node.par.Label.expr = 'parent().par.Uilabel + {!r}'.format(labelsuffix)
+		node.par.clone.expr = ''
+		node.par.clone.val = ''
 
 def _BothTypesOfQuotes(*exprs: str):
 	results = []
@@ -372,3 +393,44 @@ def _initModuleParams(m):
 	page.appendPulse('Resetstate', label=':Reset State')
 	comp_metadata.UpdateCompMetadata(m)
 	pass
+
+
+def _GetActiveEditor():
+	pane = ui.panes.current
+	if pane.type == PaneType.NETWORKEDITOR:
+		return pane
+	for pane in ui.panes:
+		if pane.type == PaneType.NETWORKEDITOR:
+			return pane
+
+def _GetTargetPane():
+	return _GetActiveEditor()
+
+def _GetSelected():
+	pane = _GetTargetPane()
+	if not pane:
+		return
+	selected = pane.owner.selectedChildren
+	if not selected:
+		selected = [pane.owner.currentChild]
+	return selected
+
+def _GetContext():
+	pane = _GetTargetPane()
+	if not pane:
+		return None
+	return pane.owner
+
+def _doOnSelectedOrContext(action):
+	selected = _GetSelected()
+	initedAny = False
+	for o in selected:
+		if action(o):
+			initedAny = True
+	if not initedAny:
+		pane = _GetTargetPane()
+		comp = pane.owner
+		while comp:
+			if action(comp):
+				return
+			comp = comp.parent()
