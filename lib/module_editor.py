@@ -36,6 +36,7 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 				'Adaptvjz3moduledestructive': lambda: self.AdaptVjz3Module(destructive=True),
 				'Savemoduletox': lambda: self.SaveModuleTox(),
 				'Testprintmodule': lambda: self._TestPrintModule(),
+				'Testprintsettings': lambda: self._TestPrintExtractedSettings(),
 			},
 			autoinitparexec=True)
 		self._AutoInitActionParams()
@@ -83,6 +84,16 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 			comp_metadata.UpdateCompMetadata(module, **kwargs)
 		finally:
 			self._LogEnd()
+
+	@loggedmethod
+	def _TestPrintExtractedSettings(self):
+		module = self.Module
+		if not module:
+			self._LogEvent('no module!')
+			return
+		self._LogEvent('Module: {}'.format(module))
+		settings = module_settings.ExtractSettings(module)
+		self._LogEvent('Settings: \n{!r}'.format(settings))
 
 	@loggedmethod
 	def SaveModuleTox(self):
