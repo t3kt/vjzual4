@@ -426,6 +426,8 @@ def UpdateAttrTable(dat, attrs: Dict, clear=False):
 		if not rowkey or not rowattrs:
 			continue
 		for k, v in rowattrs.items():
+			if isinstance(v, bool):
+				v = int(v)
 			GetOrAddCell(dat, rowkey, k).val = v
 
 def GetOrAddCell(dat, row, col):
