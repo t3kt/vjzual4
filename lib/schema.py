@@ -340,7 +340,7 @@ class ParamSchema(BaseDataObject, common.AttrBasedIdentity):
 		self.hidden = hidden
 		self.advanced = advanced
 		self.specialtype = specialtype or ''
-		self.isnode = specialtype and specialtype.startswith('node')
+		self.isnode = specialtype and specialtype in ParamSpecialTypes.nodetypes
 		self.mappable = mappable and not self.isnode
 		self.helptext = helptext
 
@@ -414,17 +414,17 @@ class ParamSchema(BaseDataObject, common.AttrBasedIdentity):
 		specialtype = attrs.get('specialtype')
 		if not specialtype:
 			if labelattrs.get('isnode'):
-				specialtype = 'node'
+				specialtype = ParamSpecialTypes.node
 			elif style == 'TOP':
-				specialtype = 'node.v'
+				specialtype = ParamSpecialTypes.videonode
 			elif style == 'CHOP':
-				specialtype = 'node.a'
+				specialtype = ParamSpecialTypes.audionode
 			elif style in ('COMP', 'PanelCOMP', 'OBJ'):
-				specialtype = 'node'
+				specialtype = ParamSpecialTypes.node
 			elif name == 'Bypass':
-				return 'switch.bypass'
+				return ParamSpecialTypes.bypass
 			elif name == 'Source' and style == 'Str':
-				return 'node'
+				return ParamSpecialTypes.node
 		return specialtype
 
 	@staticmethod
@@ -497,6 +497,75 @@ class ParamSchema(BaseDataObject, common.AttrBasedIdentity):
 					params.append(parschema)
 			params.sort(key=attrgetter('pageindex', 'order'))
 		return params
+
+class ParamSpecialTypes:
+	bypass = 'switch.bypass'
+	node = 'node'
+	videonode = 'node.v'
+	audionode = 'node.a'
+	texbufnode = 'node.t'
+	nodetypes = (node, videonode, audionode, texbufnode)
+
+class ParamGroupTypes:
+	generic = 'generic'
+	page = 'page'
+	toggledvalue = 'toggledvalue'
+
+class ParamGroupSchema(BaseDataObject):
+	def __init__(
+			self,
+			name: str=None,
+			label: str=None,
+			grouptype: str=None,
+			specialtype: str=None,
+			pagename: str=None,
+			hidden: bool=False,
+			advanced: bool=False,
+			helptext: str=None,
+			toggledby: str=None,
+			parprefix: str=None,
+			params: List[str]=None,
+			subgroups: 'List[ParamGroupSchema]'=None,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.name = name
+		self.label = label or name
+		self.pagename = pagename
+		self.hidden = hidden
+		self.advanced = advanced
+		self.helptext = helptext
+		self.grouptype = grouptype
+		self.specialtype = specialtype
+
+		# name of parameter that enables/disables the whole group, which may or may not be in the group itself
+		self.toggledby = toggledby
+
+		self.parprefix = parprefix
+		self.params = params or []
+
+		self.subgroups = subgroups or []
+
+	@classmethod
+	def FromJsonDict(cls, obj):
+		return cls(
+			subgroups=ParamGroupSchema.FromJsonDicts(obj.get('subgroups')),
+			**excludekeys(obj, ['subgroups']))
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'name': self.name,
+			'label': self.label,
+			'hidden': self.hidden,
+			'advanced': self.advanced,
+			'helptext': self.helptext,
+			'grouptype': self.grouptype,
+			'specialtype': self.specialtype,
+			'pagename': self.pagename,
+			'toggledby': self.toggledby,
+			'parprefix': self.parprefix,
+			'params': self.params,
+			'subgroups': ParamGroupSchema.ToJsonDicts(self.subgroups),
+		}))
 
 class DataNodeInfo(BaseDataObject):
 	def __init__(
@@ -574,7 +643,7 @@ class BaseModuleSchema(BaseDataObject):
 		for par in self.params:
 			if par.advanced:
 				self.hasadvanced = True
-			if par.specialtype == 'switch.bypass':
+			if par.specialtype == ParamSpecialTypes.bypass:
 				self.hasbypass = True
 
 	@property
@@ -917,7 +986,7 @@ class _AppSchemaBuilder:
 			return False
 		if modschema.hasbypass:
 			nonbypasspars = [
-				par for par in modschema.params if par.specialtype != 'switch.bypass'
+				par for par in modschema.params if par.specialtype != ParamSpecialTypes.bypass
 			]
 		else:
 			nonbypasspars = modschema.params
