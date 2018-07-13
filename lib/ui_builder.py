@@ -246,7 +246,7 @@ class UiBuilder:
 			parinfo,  # type: schema.ParamSchema
 			modhostconnector=None,  # type: ModuleHostConnector
 			attrs: opattrs=None, **kwargs):
-		if parinfo.specialtype in ['node', 'node.v', 'node.a', 'node.t']:
+		if parinfo.isnode:
 			nodetype = parinfo.specialtype
 		else:
 			nodetype = 'node'
