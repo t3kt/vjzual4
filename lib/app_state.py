@@ -32,6 +32,10 @@ except ImportError:
 	ui_builder = mod.ui_builder
 
 class AppState(BaseDataObject):
+	"""
+	The full state of the client app, attached to a server, including connection settings, current
+	state of each module, and a collection of module presets.
+	"""
 	def __init__(
 			self,
 			client: schema.ClientInfo=None,
@@ -67,6 +71,10 @@ class AppState(BaseDataObject):
 
 
 class ModuleState(BaseDataObject):
+	"""
+	The state of a hosted module, including the value of all of its parameters, as well as the UI
+	state of the module host.
+	"""
 	def __init__(
 			self,
 			collapsed=None,
@@ -95,6 +103,9 @@ class ModuleState(BaseDataObject):
 
 
 class ModulePreset(BaseDataObject):
+	"""
+	A set of parameter values that can be applied to a specific type of module.
+	"""
 	def __init__(
 			self,
 			name,
@@ -126,6 +137,10 @@ class ModulePreset(BaseDataObject):
 
 
 class PresetManager(common.ExtensionBase, common.ActionsExt):
+	"""
+	Manages the set of module presets in the current hosted app state, including managing the UI
+	panel that lists the presets.
+	"""
 	def __init__(self, ownerComp):
 		common.ExtensionBase.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions={
@@ -245,6 +260,7 @@ class PresetManager(common.ExtensionBase, common.ActionsExt):
 	@loggedmethod
 	def SavePresetFromModule(self, modhost: 'module_host.ModuleHost'):
 		if not modhost or not modhost.ModuleConnector or not modhost.ModuleConnector.modschema.masterpath:
+			self._LogEvent('Module host does not support saving presets: {}'.format(modhost))
 			return
 
 		ui_builder.ShowPromptDialog(

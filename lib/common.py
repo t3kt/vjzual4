@@ -111,6 +111,10 @@ def customloggedmethod(
 	return lambda func: _decoratewithlogging(func, formatargs)
 
 class ActionsExt:
+	"""
+	An extension class for a component that has some number of actions which can be invoked using
+	auto-generated pulse parameters on the extension's COMP.
+	"""
 	def __init__(self, ownerComp, actions=None, autoinitparexec=True):
 		self.ownerComp = ownerComp
 		self.Actions = actions or {}
@@ -141,6 +145,11 @@ class ActionsExt:
 				page.appendPulse(name)
 
 class TaskQueueExt:
+	"""
+	An extension class for components that can queue up tasks to be performed, spread over multiple
+	frames, so that TD doesn't block the main thread for too long.
+	If the component includes a progress bar, it is shown and updated as tasks are completed.
+	"""
 	def __init__(self, ownerComp):
 		self.ownerComp = ownerComp
 		self._TaskBatches = []  # type: List[_TaskBatch]
