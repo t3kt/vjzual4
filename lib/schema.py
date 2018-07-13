@@ -1,6 +1,7 @@
 from collections import OrderedDict
 import copy
 from operator import attrgetter
+from os.path import commonprefix
 from typing import List, Dict, Optional, Tuple
 
 print('vjz4/schema.py loading')
@@ -140,6 +141,53 @@ class RawParamInfo(BaseDataObject):
 			'startsection': self.startsection,
 		}))
 
+class RawParamGroupInfo(BaseDataObject):
+	def __init__(
+			self,
+			name: str=None,
+			label: str=None,
+			parentname: str=None,
+			grouptype: str=None,
+			specialtype: str=None,
+			hidden: bool=False,
+			advanced: bool=False,
+			helptext: str=None,
+			toggledby: str=None,
+			parprefix: str=None,
+			params: List[str]=None,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.name = name
+		self.label = label or name
+		self.parentname = parentname
+		self.hidden = hidden
+		self.advanced = advanced
+		self.helptext = helptext
+		self.grouptype = grouptype
+		self.specialtype = specialtype
+
+		# name of parameter that enables/disables the whole group, which may or may not be in the group itself
+		self.toggledby = toggledby
+
+		self.parprefix = parprefix
+		self.params = params or []
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'name': self.name,
+			'label': self.label,
+			'parentname': self.parentname,
+			'hidden': self.hidden,
+			'advanced': self.advanced,
+			'helptext': self.helptext,
+			'grouptype': self.grouptype,
+			'specialtype': self.specialtype,
+			'toggledby': self.toggledby,
+			'parprefix': self.parprefix,
+			'params': self.params,
+		}))
+
+
 class RawModuleInfo(BaseDataObject):
 	"""
 	Raw, unprocessed information about a module (component). This is essentially just a mirror of the
@@ -159,6 +207,7 @@ class RawModuleInfo(BaseDataObject):
 			childmodpaths=None,
 			partuplets=None,
 			parattrs=None,
+			pargroups=None,
 			nodes=None,
 			primarynode=None,
 			**otherattrs):
@@ -171,6 +220,7 @@ class RawModuleInfo(BaseDataObject):
 		self.childmodpaths = childmodpaths  # type: List[str]
 		self.partuplets = partuplets or []  # type: List[Tuple[RawParamInfo]]
 		self.parattrs = parattrs or {}  # type: Dict[Dict[str, str]]
+		self.pargroups = pargroups or []  # type: List[RawParamGroupInfo]
 		self.nodes = nodes or []  # type: List[DataNodeInfo]
 		self.primarynode = primarynode  # type: str
 
@@ -178,14 +228,12 @@ class RawModuleInfo(BaseDataObject):
 	def FromJsonDict(cls, obj):
 		return cls(
 			partuplets=[
-				[RawParamInfo.FromJsonDict(pobj) for pobj in tobj]
-				for tobj in (obj.get('partuplets') or [])
+				RawParamInfo.FromJsonDicts(t)
+				for t in obj.get('partuplets') or []
 			],
-			nodes=[
-				DataNodeInfo.FromJsonDict(nobj)
-				for nobj in (obj.get('nodes') or [])
-			],
-			**excludekeys(obj, ['partuplets', 'nodes'])
+			pargroups=RawParamGroupInfo.FromJsonDicts(obj.get('pargroups')),
+			nodes=DataNodeInfo.FromJsonDicts(obj.get('nodes')),
+			**excludekeys(obj, ['partuplets', 'pargroups', 'nodes'])
 		)
 
 	tablekeys = [
@@ -210,6 +258,7 @@ class RawModuleInfo(BaseDataObject):
 				for t in self.partuplets
 			],
 			'parattrs': self.parattrs,
+			'pargroups': RawParamGroupInfo.ToJsonDicts(self.pargroups),
 			'nodes': BaseDataObject.ToJsonDicts(self.nodes),
 			'primarynode': self.primarynode,
 		}))
@@ -327,6 +376,7 @@ class ParamSchema(BaseDataObject, common.AttrBasedIdentity):
 			specialtype=None,
 			mappable=True,
 			helptext=None,
+			groupname=None,
 			parts=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
@@ -343,6 +393,8 @@ class ParamSchema(BaseDataObject, common.AttrBasedIdentity):
 		self.isnode = specialtype and specialtype in ParamSpecialTypes.nodetypes
 		self.mappable = mappable and not self.isnode
 		self.helptext = helptext
+		self.groupname = groupname or pagename
+		self.group = None  # type: ParamGroupSchema
 
 	tablekeys = [
 		'name',
@@ -357,6 +409,7 @@ class ParamSchema(BaseDataObject, common.AttrBasedIdentity):
 		'isnode',
 		'mappable',
 		'helptext',
+		'groupname',
 	]
 
 	def ToJsonDict(self):
@@ -373,6 +426,7 @@ class ParamSchema(BaseDataObject, common.AttrBasedIdentity):
 			'isnode': self.isnode,
 			'mappable': self.mappable,
 			'helptext': self.helptext,
+			'groupname': self.groupname,
 			'parts': BaseDataObject.ToJsonDicts(self.parts),
 		}))
 
@@ -483,6 +537,7 @@ class ParamSchema(BaseDataObject, common.AttrBasedIdentity):
 			specialtype=specialtype,
 			mappable=mappable,
 			helptext=trygetdictval(attrs, 'helptext', 'help', parse=str),
+			groupname=trygetdictval(attrs, 'group', 'groupname', parse=str),
 			parts=[ParamPartSchema.FromRawParamInfo(part) for part in partuplet],
 		)
 
@@ -509,6 +564,7 @@ class ParamSpecialTypes:
 class ParamGroupTypes:
 	generic = 'generic'
 	page = 'page'
+	default = 'default'
 	toggledvalue = 'toggledvalue'
 
 class ParamGroupSchema(BaseDataObject):
@@ -516,21 +572,22 @@ class ParamGroupSchema(BaseDataObject):
 			self,
 			name: str=None,
 			label: str=None,
+			parentname: str=None,
 			grouptype: str=None,
 			specialtype: str=None,
-			pagename: str=None,
-			hidden: bool=False,
-			advanced: bool=False,
+			hidden: bool=None,
+			advanced: bool=None,
 			helptext: str=None,
 			toggledby: str=None,
 			parprefix: str=None,
-			params: List[str]=None,
+			params: List[ParamSchema]=None,
 			subgroups: 'List[ParamGroupSchema]'=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.name = name
 		self.label = label or name
-		self.pagename = pagename
+		self.parentname = parentname
+		self.parentgroup = None  # type: ParamGroupSchema
 		self.hidden = hidden
 		self.advanced = advanced
 		self.helptext = helptext
@@ -547,25 +604,97 @@ class ParamGroupSchema(BaseDataObject):
 
 	@classmethod
 	def FromJsonDict(cls, obj):
-		return cls(
-			subgroups=ParamGroupSchema.FromJsonDicts(obj.get('subgroups')),
-			**excludekeys(obj, ['subgroups']))
+		raise NotImplementedError()
 
 	def ToJsonDict(self):
 		return cleandict(mergedicts(self.otherattrs, {
 			'name': self.name,
 			'label': self.label,
+			'parentname': self.parentname,
 			'hidden': self.hidden,
 			'advanced': self.advanced,
 			'helptext': self.helptext,
 			'grouptype': self.grouptype,
 			'specialtype': self.specialtype,
-			'pagename': self.pagename,
 			'toggledby': self.toggledby,
 			'parprefix': self.parprefix,
-			'params': self.params,
+			'params': ParamSchema.ToJsonDicts(self.params),
 			'subgroups': ParamGroupSchema.ToJsonDicts(self.subgroups),
 		}))
+
+	@classmethod
+	def GroupsFromRawGroupInfo(
+			cls,
+			rawgroups: List[RawParamGroupInfo],
+			params: List[ParamSchema]):
+		groups = OrderedDict()  # type: Dict[str, ParamGroupSchema]
+		for groupinfo in rawgroups:
+			group = ParamGroupSchema(
+				name=groupinfo.name,
+				label=groupinfo.label,
+				parentname=groupinfo.parentname,
+				grouptype=groupinfo.grouptype,
+				specialtype=groupinfo.specialtype,
+				hidden=groupinfo.hidden,
+				advanced=groupinfo.advanced,
+				helptext=groupinfo.helptext,
+				toggledby=groupinfo.toggledby,
+				parprefix=groupinfo.parprefix)
+			groups[group.name] = group
+
+		for group in groups.values():
+			if not group.parentname:
+				continue
+			if group.parentname == group.name or group.parentname not in groups:
+				group.parentname = None
+				continue
+			parentgroup = groups[group.parentname]
+			parentgroup.subgroups.append(group)
+			group.parentgroup = parentgroup
+			if not group.grouptype and not group.parentgroup:
+				group.grouptype = ParamGroupTypes.page
+
+		def _getparamgroup(p: ParamSchema):
+			if p.groupname and p.groupname in groups:
+				return groups[p.groupname]
+			if p.pagename:
+				page = groups.get(p.pagename)
+				if not page:
+					page = groups[p.pagename] = ParamGroupSchema(
+						name=p.pagename,
+						label=p.pagename,
+						grouptype=ParamGroupTypes.page)
+				return page
+			defaultgroup = groups.get('_')
+			if not defaultgroup:
+				defaultgroup = groups['_'] = ParamGroupSchema(
+					name='_',
+					label='(default)',
+					grouptype=ParamGroupTypes.default)
+			return defaultgroup
+
+		for param in params:
+			group = _getparamgroup(param)
+			param.group = group
+			group.params.append(param)
+
+		emptynames = [
+			g.name
+			for g in groups.values()
+			if not g.params
+		]
+		for name in emptynames:
+			del groups[name]
+
+		for group in groups.values():
+			if not group.parprefix:
+				group.parprefix = commonprefix([p.name for p in group.params]) or None
+				if group.hidden is None:
+					group.hidden = all([p.hidden for p in group.params])
+				if group.advanced is None:
+					group.advanced = all([p.advanced for p in group.params])
+
+		return groups.values()
 
 class DataNodeInfo(BaseDataObject):
 	def __init__(
