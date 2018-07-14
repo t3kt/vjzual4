@@ -142,6 +142,7 @@ class _BaseModuleSchemaBuilder:
 		self.params = []
 		self.groups = OrderedDict()  # type: Dict[str, ParamGroupSchema]
 		self.defaultgroup = None  # type: ParamGroupSchema
+		self.tags = set(modinfo.tags or [])
 
 	def _GetDefaultGroup(self):
 		if self.defaultgroup:
@@ -381,6 +382,7 @@ class _ModuleSchemaBuilder(_BaseModuleSchemaBuilder):
 			masterpath=modinfo.masterpath,
 			parentpath=modinfo.parentpath,
 			childmodpaths=list(modinfo.childmodpaths) if modinfo.childmodpaths else None,
+			tags=self.tags,
 			params=self.params,
 			paramgroups=list(self._GetFilteredGroups()),
 			nodes=self.nodes,
@@ -399,6 +401,7 @@ class _ModuleTypeSchemaBuilder(_BaseModuleSchemaBuilder):
 			name=modinfo.name,
 			label=modinfo.label,
 			path=modinfo.path,
+			tags=self.tags,
 			params=self.params,
 			paramgroups=list(self._GetFilteredGroups()),
 		)

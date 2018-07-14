@@ -1,5 +1,5 @@
 from collections import OrderedDict
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Iterable, Optional, Set, Tuple
 
 print('vjz4/schema.py loading')
 
@@ -199,6 +199,7 @@ class RawModuleInfo(BaseDataObject):
 			parentpath=None,
 			name=None,
 			label=None,
+			tags=None,
 			masterpath=None,
 			childmodpaths=None,
 			partuplets=None,
@@ -211,13 +212,14 @@ class RawModuleInfo(BaseDataObject):
 		self.path = path
 		self.name = name
 		self.label = label
+		self.tags = set(tags or [])  # type: Set[str]
 		self.parentpath = parentpath
 		self.masterpath = masterpath
-		self.childmodpaths = childmodpaths  # type: List[str]
-		self.partuplets = partuplets or []  # type: List[Tuple[RawParamInfo]]
-		self.parattrs = parattrs or {}  # type: Dict[Dict[str, str]]
-		self.pargroups = pargroups or []  # type: List[RawParamGroupInfo]
-		self.nodes = nodes or []  # type: List[DataNodeInfo]
+		self.childmodpaths = list(childmodpaths) if childmodpaths else None  # type: List[str]
+		self.partuplets = list(partuplets or [])  # type: List[Tuple[RawParamInfo]]
+		self.parattrs = dict(parattrs or {})  # type: Dict[Dict[str, str]]
+		self.pargroups = list(pargroups or [])  # type: List[RawParamGroupInfo]
+		self.nodes = list(nodes or [])  # type: List[DataNodeInfo]
 		self.primarynode = primarynode  # type: str
 
 	@classmethod
@@ -239,6 +241,7 @@ class RawModuleInfo(BaseDataObject):
 		'parentpath',
 		'masterpath',
 		'primarynode',
+		'tags',
 	]
 
 	def ToJsonDict(self):
@@ -246,6 +249,7 @@ class RawModuleInfo(BaseDataObject):
 			'path': self.path,
 			'name': self.name,
 			'label': self.label,
+			'tags': list(sorted(self.tags)),
 			'parentpath': self.parentpath,
 			'masterpath': self.masterpath,
 			'childmodpaths': self.childmodpaths,
@@ -539,14 +543,16 @@ class BaseModuleSchema(BaseDataObject):
 			name=None,
 			label=None,
 			path=None,
-			params=None,  # type: List[ParamSchema]
-			paramgroups=None,  # type: List[ParamGroupSchema]
+			tags=None,  # type: Iterable[str]
+			params=None,  # type: Iterable[ParamSchema]
+			paramgroups=None,  # type: Iterable[ParamGroupSchema]
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.name = name
 		self.label = label or name
 		self.path = path
-		self.params = params or []
+		self.tags = set(tags or [])
+		self.params = list(params or [])
 		self.paramsbyname = OrderedDict()  # type: Dict[str, ParamSchema]
 		for p in self.params:
 			self.paramsbyname[p.name] = p
@@ -570,6 +576,7 @@ class BaseModuleSchema(BaseDataObject):
 			'name': self.name,
 			'label': self.label,
 			'path': self.path,
+			'tags': list(sorted(self.tags)),
 			'hasbypass': self.hasbypass,
 			'hasadvanced': self.hasadvanced,
 			'params': BaseDataObject.ToJsonDicts(self.params),
@@ -598,6 +605,7 @@ class ModuleTypeSchema(BaseModuleSchema):
 			name=None,
 			label=None,
 			path=None,
+			tags=None,  # type: Iterable[str]
 			params=None,  # type: List[ParamSchema]
 			paramgroups=None,  # type: List[ParamGroupSchema]
 			derivedfrompath=None,
@@ -606,6 +614,7 @@ class ModuleTypeSchema(BaseModuleSchema):
 			name=name,
 			label=label,
 			path=path,
+			tags=tags,
 			params=params,
 			paramgroups=paramgroups,
 			**otherattrs)
@@ -634,6 +643,7 @@ class ModuleTypeSchema(BaseModuleSchema):
 		'hasbypass',
 		'hasadvanced',
 		'derivedfrompath',
+		'tags',
 	]
 
 	def ToJsonDict(self):
@@ -648,18 +658,20 @@ class ModuleSchema(BaseModuleSchema):
 			label=None,
 			path=None,
 			parentpath=None,
+			tags=None,  # type: Iterable[str]
 			childmodpaths=None,
 			masterpath=None,
 			masterisimplicit=None,
 			masterispartialmatch=None,
-			params=None,  # type: List[ParamSchema]
-			nodes=None,  # type: List[DataNodeInfo]
+			params=None,  # type: Iterable[ParamSchema]
+			nodes=None,  # type: Iterable[DataNodeInfo]
 			primarynode=None,
 			**otherattrs):
 		super().__init__(
 			name=name,
 			label=label,
 			path=path,
+			tags=tags,
 			params=params,
 			**otherattrs)
 		self.parentpath = parentpath
@@ -667,7 +679,7 @@ class ModuleSchema(BaseModuleSchema):
 		self.masterpath = masterpath
 		self.masterisimplicit = masterisimplicit
 		self.masterispartialmatch = masterispartialmatch
-		self.nodes = nodes or []
+		self.nodes = list(nodes or [])
 		self.primarynodepath = primarynode
 		self.primarynode = None  # type: Optional[DataNodeInfo]
 		if self.primarynodepath:
