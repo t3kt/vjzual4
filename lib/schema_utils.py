@@ -1,6 +1,7 @@
 import copy
 from operator import attrgetter
 from os.path import commonprefix
+from typing import List, Dict, Optional, Tuple
 
 print('vjz4/schema_utils.py loading')
 
@@ -228,6 +229,9 @@ class _BaseModuleSchemaBuilder:
 
 		self._PostProcessGroups()
 
+	def _TransformParamGroups(self):
+		pass
+
 	def _BuildParams(self):
 		parattrs = self.modinfo.parattrs or {}
 		if self.modinfo.partuplets:
@@ -405,3 +409,91 @@ class _ModuleTypeSchemaBuilder(_BaseModuleSchemaBuilder):
 			params=self.params,
 			paramgroups=list(self._GetFilteredGroups()),
 		)
+
+
+class _ParamSpec:
+	def __init__(
+			self,
+			name,
+			alternatenames=None,
+			style=None,
+			optional=False,
+			ignoremismatch=False):
+		self.name = name
+		self.possiblenames = set([name] + (alternatenames or []))
+		self.optional = optional
+		self.ignoremismatch = ignoremismatch
+		if not style:
+			self.styles = None
+		elif isinstance(style, str):
+			self.styles = [style]
+		else:
+			self.styles = list(style)
+
+	def Matches(self, param: ParamSchema):
+		if self.styles and param.style not in self.styles:
+			return False
+		return True
+
+class _ParamGroupMatcher:
+	def __init__(
+			self,
+			specialtype=None,
+			groupname=None,
+			paramspecs=None,
+			allowprefix=False):
+		self.specialtype = specialtype
+		self.groupname = groupname
+		self.paramspecs = list(paramspecs or [])  # type: List[_ParamSpec]
+		self.allowprefix = allowprefix
+
+	def _GetParam(self, group: ParamGroupSchema, name):
+		name = name.lower()
+		for param in group.params or []:
+			lowparname = param.name.lower()
+			if lowparname == name:
+				return param
+			if self.allowprefix and group.parprefix and lowparname.startswith(group.parprefix.lower()):
+				lowprefix = group.parprefix.lower()
+				if lowparname == lowprefix:
+					# ignore if there isn't anything after the prefix in the par name
+					continue
+				if lowparname[len(lowprefix):] == name:
+					return param
+		return None
+
+	def _GetParamForSpec(self, group: ParamGroupSchema, spec: _ParamSpec):
+		for name in spec.possiblenames:
+			param = self._GetParam(group, name)
+			if param is not None:
+				return param
+
+	def Match(self, group: ParamGroupSchema) -> Optional[Dict[str, ParamSchema]]:
+		if self.groupname and group.grouptype != self.groupname:
+			return None
+		namemap = {}
+		if self.paramspecs:
+			for spec in self.paramspecs:
+				param = self._GetParamForSpec(group, spec)
+				if param is None:
+					if spec.optional:
+						continue
+					else:
+						return None
+				else:
+					if spec.Matches(param):
+						namemap[spec.name] = param
+					elif not spec.optional and not spec.ignoremismatch:
+						return None
+		return namemap
+
+feedbackGroupMatcher = _ParamGroupMatcher(
+	specialtype='feedback',
+	allowprefix=False,
+	paramspecs=[
+		_ParamSpec('Feedbackenabled', 'Toggle'),
+		_ParamSpec('Feedbacklevel', 'Float'),
+		_ParamSpec('Feedbacklevelexp', 'Float', optional=True),
+		_ParamSpec('Feedbackoperand', 'Menu'),
+		_ParamSpec('Feedbackblacklevel', 'Float', optional=True),
+	])

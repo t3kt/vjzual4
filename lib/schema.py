@@ -436,7 +436,9 @@ class ParamGroupTypes:
 	generic = 'generic'
 	page = 'page'
 	default = 'default'
-	toggledvalue = 'toggledvalue'
+
+class ParamGroupSpecialTypes:
+	pass
 
 class ParamGroupSchema(BaseDataObject):
 	def __init__(
