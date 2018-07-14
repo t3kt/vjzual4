@@ -420,7 +420,12 @@ class _ParamSpec:
 			optional=False,
 			ignoremismatch=False):
 		self.name = name
-		self.possiblenames = set([name] + (alternatenames or []))
+		self.possiblenames = set()
+		self.possiblenames.add(name)
+		if isinstance(alternatenames, (list, set, tuple)):
+			self.possiblenames.update(alternatenames)
+		elif alternatenames:
+			self.possiblenames.add(alternatenames)
 		self.optional = optional
 		self.ignoremismatch = ignoremismatch
 		if not style:
