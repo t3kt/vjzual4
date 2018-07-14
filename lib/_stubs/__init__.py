@@ -32,6 +32,7 @@ class op:
 		self.op = op
 		self.storage = {}
 		self.isCOMP = False
+		self.tags = set()
 
 	def ops(self, *args): return [op()]
 

@@ -1,5 +1,4 @@
 from typing import Dict, List, Optional
-from operator import attrgetter
 
 print('vjz4/module_host.py loading')
 
@@ -77,7 +76,7 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			'Saveuistate': self.SaveUIState,
 		})
 		self.ModuleConnector = None  # type: ModuleHostConnector
-		self.controlsByParam = {}
+		self.controlsByParam = {}  # type: Dict[str, COMP]
 		self.paramsByControl = {}
 		self.Mappings = control_mapping.ModuleControlMap()
 		self.UiModeNames = DependList([])
@@ -296,9 +295,13 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		hostcore = self.ownerComp.op('host_core')
 		ctrltable = hostcore.op('set_param_control_table')
 		ctrltable.clear()
-		ctrltable.appendRow(['name', 'ctrl'])
+		ctrltable.appendRow(['name', 'ctrl', 'mappable'])
 		for name, ctrl in self.controlsByParam.items():
-			ctrltable.appendRow([name, ctrl])
+			ctrltable.appendRow([
+				name,
+				ctrl.path,
+				1 if 'vjz4mappable' in ctrl.tags else 0,
+			])
 
 	def _BuildDataNodeTable(self, dat):
 		dat.clear()
@@ -352,6 +355,7 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		if not self.ModuleConnector or not uibuilder:
 			self._RebuildParamControlTable()
 			return
+		dropscript = self.ownerComp.op('control_drop')
 		for i, parinfo in enumerate(self._Params):
 			if parinfo.hidden or parinfo.specialtype.startswith('switch.'):
 				continue
@@ -361,6 +365,12 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 				parinfo=parinfo,
 				order=i,
 				nodepos=[100, -200 * i],
+				parvals=mergedicts(
+					parinfo.mappable and {
+						'drop': 'legacy',
+						'dropscript': dropscript,
+					}
+				),
 				parexprs=mergedicts(
 					parinfo.advanced and {'display': 'parent.ModuleHost.par.Showadvanced'}
 				),
@@ -639,6 +649,24 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		self.ModuleConnector.SetParVals(
 			parvals=params,
 			resetmissing=not partial)
+
+	@loggedmethod
+	def HandleControlDrop(self, ctrl: COMP, dropName, baseName):
+		if not self.ModuleConnector:
+			return
+		if 'vjz4mappable' not in ctrl.tags:
+			self._LogEvent('Control does not support mapping: {}'.format(ctrl))
+			return
+		sourceparent = op(baseName)
+		if not sourceparent:
+			return
+		sourceop = sourceparent.op(dropName)
+		if not sourceop:
+			return
+		if 'vjz4ctrlmarker' not in sourceop.tags:
+			self._LogEvent('Unsupported drop source: {}'.format(sourceop))
+			return
+		pass
 
 
 class ModuleHostConnector:

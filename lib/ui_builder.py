@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable, Dict
 
 print('vjz4/ui_builder.py loading')
 
@@ -75,7 +75,8 @@ class UiBuilder:
 			valrange=[
 				parinfo.parts[0].minnorm if parinfo.parts[0].minlimit is None else parinfo.parts[0].minlimit,
 				parinfo.parts[0].maxnorm if parinfo.parts[0].maxlimit is None else parinfo.parts[0].maxlimit,
-			])
+			],
+			tags=['vjz4mappable'])
 
 	def CreateParMultiSlider(
 			self, dest, name,
@@ -131,11 +132,10 @@ class UiBuilder:
 						'Rangehigh1': part.maxnorm if part.maxlimit is None else part.maxlimit,
 						'Push1': True,
 						'Integer': isint,
-					}
-				),
+					}),
 				parexprs=mergedicts(
-					valexpr and {'Value1': valexpr}
-				)
+					valexpr and {'Value1': valexpr}),
+				tags=['vjz4mappable'],
 			)
 			sliders.append(slider)
 		return sliders
@@ -169,7 +169,8 @@ class UiBuilder:
 						behavior and {'Behavior': behavior},
 						valueexpr and {'Push1': True}),
 					parexprs=mergedicts(
-						valueexpr and {'Value1': valueexpr})),
+						valueexpr and {'Value1': valueexpr}),
+					tags=['vjz4mappable']),
 				attrs,
 				**kwargs))
 
@@ -184,7 +185,8 @@ class UiBuilder:
 			label=parinfo.label,
 			behavior='toggledown',
 			valueexpr=modhostconnector.GetParExpr(name) if modhostconnector else None,
-			defval=parinfo.parts[0].default)
+			defval=parinfo.parts[0].default,
+			tags=['vjz4mappable'])
 
 	def CreateParTrigger(
 			self, dest, name,
@@ -291,7 +293,7 @@ class UiBuilder:
 	def CreateParControl(
 			self, dest, name,
 			parinfo,  # type: schema.ParamSchema
-			addtocontrolmap=None,
+			addtocontrolmap=None,  # type: Dict[str, COMP]
 			modhostconnector=None,  # type: ModuleHostConnector
 			attrs: opattrs=None, **kwargs):
 
@@ -299,18 +301,13 @@ class UiBuilder:
 
 		def _register(ctrlop):
 			if addtocontrolmap is not None:
-				# print('registering in control map {} -> {}'.format(parinfo.name, ctrlop))
-				addtocontrolmap[parinfo.name] = ctrlop.path
-			else:
-				# print('NOT registering in control map {} -> {}'.format(parinfo.name, ctrlop))
-				pass
+				addtocontrolmap[parinfo.name] = ctrlop
 			return ctrlop
 
 		def _registerparts(ctrls):
 			if addtocontrolmap is not None:
 				for i, ctrlop in enumerate(ctrls):
-					# print('registering part in control map {} -> {}'.format(parinfo.parts[i].name, ctrlop))
-					addtocontrolmap[parinfo.parts[i].name] = ctrlop.path
+					addtocontrolmap[parinfo.parts[i].name] = ctrlop
 			return ctrls
 
 		if parinfo.style in ('Float', 'Int') and len(parinfo.parts) == 1:

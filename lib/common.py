@@ -502,7 +502,14 @@ class opattrs:
 	def merged(cls, *attrs, **kwargs):
 		result = cls()
 		for a in attrs:
-			result.override(a)
+			if not a:
+				continue
+			if isinstance(a, (list, tuple, set)):
+				for suba in a:
+					if suba:
+						result.override(suba)
+			else:
+				result.override(a)
 		if kwargs:
 			result.override(cls(**kwargs))
 		return result
