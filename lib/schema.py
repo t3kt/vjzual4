@@ -627,6 +627,8 @@ class ParamGroupSchema(BaseDataObject):
 			cls,
 			rawgroups: List[RawParamGroupInfo],
 			params: List[ParamSchema]):
+		rawgroups = rawgroups or []
+		params = params or []
 		groups = OrderedDict()  # type: Dict[str, ParamGroupSchema]
 		for groupinfo in rawgroups:
 			group = ParamGroupSchema(
@@ -654,6 +656,15 @@ class ParamGroupSchema(BaseDataObject):
 			if not group.grouptype and not group.parentgroup:
 				group.grouptype = ParamGroupTypes.page
 
+		def _getdefaultgroup():
+			defaultgroup = groups.get('_')
+			if not defaultgroup:
+				defaultgroup = groups['_'] = ParamGroupSchema(
+					name='_',
+					label='(default)',
+					grouptype=ParamGroupTypes.default)
+			return defaultgroup
+
 		def _getparamgroup(p: ParamSchema):
 			if p.groupname and p.groupname in groups:
 				return groups[p.groupname]
@@ -665,15 +676,11 @@ class ParamGroupSchema(BaseDataObject):
 						label=p.pagename,
 						grouptype=ParamGroupTypes.page)
 				return page
-			defaultgroup = groups.get('_')
-			if not defaultgroup:
-				defaultgroup = groups['_'] = ParamGroupSchema(
-					name='_',
-					label='(default)',
-					grouptype=ParamGroupTypes.default)
-			return defaultgroup
+			return _getdefaultgroup()
 
 		for param in params:
+			if param.specialtype == ParamSpecialTypes.bypass:
+				continue
 			group = _getparamgroup(param)
 			param.group = group
 			group.params.append(param)
@@ -694,7 +701,7 @@ class ParamGroupSchema(BaseDataObject):
 				if group.advanced is None:
 					group.advanced = all([p.advanced for p in group.params])
 
-		return groups.values()
+		return list(groups.values())
 
 class DataNodeInfo(BaseDataObject):
 	def __init__(
@@ -758,6 +765,7 @@ class BaseModuleSchema(BaseDataObject):
 			label=None,
 			path=None,
 			params=None,  # type: List[ParamSchema]
+			paramgroups=None,  # type: List[ParamGroupSchema]
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.name = name
@@ -774,6 +782,7 @@ class BaseModuleSchema(BaseDataObject):
 				self.hasadvanced = True
 			if par.specialtype == ParamSpecialTypes.bypass:
 				self.hasbypass = True
+		self.paramgroups = paramgroups or []
 
 	@property
 	def parampartnames(self):
@@ -789,6 +798,7 @@ class BaseModuleSchema(BaseDataObject):
 			'hasbypass': self.hasbypass,
 			'hasadvanced': self.hasadvanced,
 			'params': BaseDataObject.ToJsonDicts(self.params),
+			'paramgroups': BaseDataObject.ToJsonDicts(self.paramgroups),
 		}))
 
 	def MatchesModuleType(self, modtypeschema: 'BaseModuleSchema', exact=False):
@@ -814,6 +824,7 @@ class ModuleTypeSchema(BaseModuleSchema):
 			label=None,
 			path=None,
 			params=None,  # type: List[ParamSchema]
+			paramgroups=None,  # type: List[ParamGroupSchema]
 			derivedfrompath=None,
 			**otherattrs):
 		super().__init__(
@@ -821,6 +832,7 @@ class ModuleTypeSchema(BaseModuleSchema):
 			label=label,
 			path=path,
 			params=params,
+			paramgroups=paramgroups,
 			**otherattrs)
 		self.derivedfrompath = derivedfrompath
 
@@ -835,6 +847,7 @@ class ModuleTypeSchema(BaseModuleSchema):
 
 	@classmethod
 	def FromJsonDict(cls, obj):
+		# WARNING: param groups aren't handled here
 		return cls(
 			params=ParamSchema.FromJsonDicts(obj.get('params')),
 			**excludekeys(obj, ['params', 'hasbypass', 'hasadvanced']))
@@ -855,11 +868,16 @@ class ModuleTypeSchema(BaseModuleSchema):
 
 	@classmethod
 	def FromRawModuleInfo(cls, modinfo: RawModuleInfo):
+		params = ParamSchema.ParamsFromRawModuleInfo(modinfo)
+		paramgroups = ParamGroupSchema.GroupsFromRawGroupInfo(
+			rawgroups=modinfo.pargroups,
+			params=params)
 		return cls(
 			name=modinfo.name,
 			label=modinfo.label,
 			path=modinfo.path,
-			params=ParamSchema.ParamsFromRawModuleInfo(modinfo),
+			params=params,
+			paramgroups=paramgroups,
 		)
 
 class ModuleSchema(BaseModuleSchema):
@@ -933,6 +951,10 @@ class ModuleSchema(BaseModuleSchema):
 
 	@classmethod
 	def FromRawModuleInfo(cls, modinfo: RawModuleInfo):
+		params = ParamSchema.ParamsFromRawModuleInfo(modinfo)
+		paramgroups = ParamGroupSchema.GroupsFromRawGroupInfo(
+			rawgroups=modinfo.pargroups,
+			params=params)
 		return cls(
 			name=modinfo.name,
 			label=modinfo.label,
@@ -940,7 +962,8 @@ class ModuleSchema(BaseModuleSchema):
 			masterpath=modinfo.masterpath,
 			parentpath=modinfo.parentpath,
 			childmodpaths=list(modinfo.childmodpaths) if modinfo.childmodpaths else None,
-			params=ParamSchema.ParamsFromRawModuleInfo(modinfo),
+			params=params,
+			paramgroups=paramgroups,
 			nodes=DataNodeInfo.NodesFromRawModuleInfo(modinfo),
 			primarynode=modinfo.primarynode,
 		)
