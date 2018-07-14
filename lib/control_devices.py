@@ -225,7 +225,9 @@ class BcrMidiDevice(MidiDevice):
 				rangehigh=rangehigh)
 
 		for parinfo in modschema.params:
-			if not parinfo.mappable or parinfo.advanced or parinfo.hidden or parinfo.specialtype == 'switch.bypass':
+			if not parinfo.mappable or parinfo.advanced or parinfo.hidden:
+				continue
+			if parinfo.specialtype == schema.ParamSpecialTypes.bypass:
 				continue
 			if parinfo.style == 'Toggle':
 				_addButton(parinfo.name)

@@ -45,7 +45,7 @@ class ModuleSettings(common.BaseDataObject):
 			if not overwrite and attrname in attrs:
 				continue
 			if val is not None:
-				attrs[attrname] = val
+				attrs[attrname] = str(val)
 			elif attrname in attrs:
 				del attrs[attrname]
 
@@ -53,7 +53,7 @@ def ExtractSettings(comp: 'OP'):
 	settingscomp = comp.op('module_settings')
 	settings = ModuleSettings()
 	if settingscomp:
-		parattrsdat = settingscomp.op('module_settings')
+		parattrsdat = settingscomp.op('parameter_metadata')
 		if parattrsdat:
 			settings.parattrs = ParseAttrTable(parattrsdat)
 	return settings

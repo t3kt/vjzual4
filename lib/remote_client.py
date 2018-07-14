@@ -10,7 +10,8 @@ try:
 except ImportError:
 	common = mod.common
 mergedicts = common.mergedicts
-BaseDataObject = common.BaseDataObject
+loggedmethod = common.loggedmethod
+Future = common.Future
 
 try:
 	import remote
@@ -21,6 +22,11 @@ try:
 	import schema
 except ImportError:
 	schema = mod.schema
+
+try:
+	import schema_utils
+except ImportError:
+	schema_utils = mod.schema_utils
 
 try:
 	import module_proxy
@@ -34,6 +40,17 @@ except ImportError:
 
 
 class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt):
+	"""
+	Client which connects to a TD project that includes a RemoteServer, queries it for information about the project,
+	and facilitates communication between the two TD instances.
+
+	Commands/requests/responses are sent/received over TCP.
+	Control data (for non-text parameters) is sent/received over OSC using CHOPs.
+	Control data for text parameters is sent/received over OSC using DATs on separate ports from those used for numeric
+	data.
+	Video data is received over Syphon/Spout. This may later be changed to something that can run over a network, like
+	NDI.
+	"""
 	def __init__(self, ownerComp):
 		remote.RemoteBase.__init__(
 			self,
@@ -50,6 +67,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 		self._AutoInitActionParams()
 		self.rawAppInfo = None  # type: schema.RawAppInfo
 		self.rawModuleInfos = []  # type: List[schema.RawModuleInfo]
+		self.rawModuleTypeInfos = []  # type: List[schema.RawModuleInfo]
 		self.AppSchema = None  # type: schema.AppSchema
 
 	@property
@@ -115,10 +133,19 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 		self._LogBegin('Connect({}, {})'.format(host, port))
 		try:
 			self.Detach()
-			connpar = self.Connection.par
-			info = schema.ClientInfo(
+			info = self.BuildClientInfo()
+			return self.Connection.SendRequest('connect', info.ToJsonDict()).then(
+				success=self._OnConfirmConnect,
+				failure=self._OnConnectFailure)
+		finally:
+			self._LogEnd()
+
+	def BuildClientInfo(self):
+		connpar = self.Connection.par
+		return schema.ClientInfo(
 				version=1,
 				address=self.ownerComp.par.Localaddress.eval() or self.ownerComp.par.Localaddress.default,
+				cmdsend=self.ownerComp.par.Commandsendport.eval(),
 				cmdrecv=self.ownerComp.par.Commandreceiveport.eval(),
 				oscsend=connpar.Oscsendport.eval(),
 				oscrecv=connpar.Oscreceiveport.eval(),
@@ -127,11 +154,27 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 				primaryvidrecv=self.ownerComp.par.Primaryvideoreceivename.eval() or None,
 				secondaryvidrecv=self.ownerComp.par.Secondaryvideoreceivename.eval() or None
 			)
-			self.Connection.SendRequest('connect', info.ToJsonDict()).then(
-				success=self._OnConfirmConnect,
-				failure=self._OnConnectFailure)
-		finally:
-			self._LogEnd()
+
+	@loggedmethod
+	def SetClientInfo(self, info: schema.ClientInfo):
+		if not info:
+			return Future.immediate()
+		if not info.address and not info.cmdsend:
+			self.Detach()
+		connpar = self.Connection.par
+		_ApplyParVal(self.ownerComp.par.Localaddress, info.address)
+		_ApplyParVal(self.ownerComp.par.Commandsendport, info.cmdsend)
+		_ApplyParVal(self.ownerComp.par.Commandreceiveport, info.cmdrecv)
+		_ApplyParVal(connpar.Oscendport, info.oscsend)
+		_ApplyParVal(connpar.Oscreceiveport, info.oscrecv)
+		_ApplyParVal(connpar.Osceventsendport, info.osceventsend)
+		_ApplyParVal(connpar.Osceventreceiveport, info.osceventrecv)
+		_ApplyParVal(self.ownerComp.par.Primaryvideoreceivename, info.primaryvidrecv)
+		_ApplyParVal(self.ownerComp.par.Secondaryvideoreceivename, info.secondaryvidrecv)
+		if info.address or info.cmdsend:
+			return self.Connect(host=info.address, port=info.cmdsend)
+		else:
+			return Future.immediate()
 
 	def _OnConfirmConnect(self, _):
 		self.Connected.val = True
@@ -165,7 +208,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 			self.ProxyManager.par.Rootpath = appinfo.path
 
 			def _makeQueryModTask(modpath):
-				return lambda: self.QueryModule(modpath)
+				return lambda: self.QueryModule(modpath, ismoduletype=False)
 
 			self.AddTaskBatch(
 				[
@@ -238,59 +281,84 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 				dat,
 				attrs={'modpath': modpath})
 
-	def QueryModule(self, modpath):
-		self._LogBegin('QueryModule({})'.format(modpath))
-		try:
-			if not self.Connected:
-				return
-			return self.Connection.SendRequest('queryMod', modpath).then(
-				success=self._OnReceiveModuleInfo,
-				failure=self._OnQueryModuleFailure)
-		finally:
-			self._LogEnd()
+	@loggedmethod
+	def QueryModule(self, modpath, ismoduletype=False):
+		if not self.Connected:
+			return
+		return self.Connection.SendRequest('queryMod', modpath).then(
+			success=lambda cmdmesg: self._OnReceiveModuleInfo(cmdmesg, modpath, ismoduletype=ismoduletype),
+			failure=self._OnQueryModuleFailure)
 
-	def _OnReceiveModuleInfo(self, cmdmesg: remote.CommandMessage):
-		arg = cmdmesg.arg
-		self._LogBegin('_OnReceiveModuleInfo({})'.format((arg.get('path') if arg else None) or ''))
+	def _OnReceiveModuleInfo(self, cmdmesg: remote.CommandMessage, path, ismoduletype=False):
+		self._LogBegin('_OnReceiveModuleInfo({})'.format(path or ''))
 		try:
 			arg = cmdmesg.arg
 			if not arg:
-				raise Exception('No app info!')
+				self._LogEvent('no info for module: {}'.format(path))
+				return
 			modinfo = schema.RawModuleInfo.FromJsonDict(arg)
-			self.rawModuleInfos.append(modinfo)
+			if ismoduletype:
+				self.rawModuleTypeInfos.append(modinfo)
+			else:
+				self.rawModuleInfos.append(modinfo)
 		finally:
 			self._LogEnd()
 
 	def _OnQueryModuleFailure(self, cmdmesg: remote.CommandMessage):
 		self._LogEvent('_OnQueryModuleFailure({})'.format(cmdmesg))
 
+	@loggedmethod
 	def _OnAllModulesReceived(self):
-		self._LogBegin('_OnAllModulesReceived()')
-		try:
-			self.AppSchema = schema.AppSchema.FromRawAppAndModuleInfo(
-				appinfo=self.rawAppInfo,
-				modules=self.rawModuleInfos)
-			moduletable = self._ModuleTable
-			for modschema in self.AppSchema.modules:
-				modschema.AddToTable(moduletable)
-				self._AddParamsToTable(modschema.path, modschema.params)
-				self._AddToDataNodesTable(modschema.path, modschema.nodes)
+		modpaths = []
+		masterpaths = set()
+		for modinfo in self.rawModuleInfos:
+			modpaths.append(modinfo.path)
+			if modinfo.masterpath:
+				masterpaths.add(modinfo.masterpath)
+		if not masterpaths:
+			return self._OnAllModuleTypesReceived()
 
-			def _makeQueryStateTask(modpath):
-				return lambda: self.QueryModuleState(modpath)
+		return self._QueryModuleTypes(masterpaths)
 
-			self.AddTaskBatch(
-				[
-					lambda: self.BuildModuleProxies(),
-				] + [
-					_makeQueryStateTask(m.path)
-					for m in self.AppSchema.modules
-				] + [
-					lambda: self.NotifyAppSchemaLoaded(),
-				],
-				autostart=True)
-		finally:
-			self._LogEnd()
+	@loggedmethod
+	def _QueryModuleTypes(self, masterpaths):
+		def _makeQueryStateTask(modpath):
+			return lambda: self.QueryModule(modpath, ismoduletype=True)
+
+		return self.AddTaskBatch(
+			[
+				_makeQueryStateTask(modpath)
+				for modpath in masterpaths
+			] + [
+				lambda: self._OnAllModuleTypesReceived(),
+			],
+			autostart=True)
+
+	@loggedmethod
+	def _OnAllModuleTypesReceived(self):
+		self.AppSchema = schema_utils.AppSchemaBuilder(
+			appinfo=self.rawAppInfo,
+			modules=self.rawModuleInfos,
+			moduletypes=self.rawModuleTypeInfos).Build()
+		moduletable = self._ModuleTable
+		for modschema in self.AppSchema.modules:
+			modschema.AddToTable(moduletable)
+			self._AddParamsToTable(modschema.path, modschema.params)
+			self._AddToDataNodesTable(modschema.path, modschema.nodes)
+
+		def _makeQueryStateTask(modpath):
+			return lambda: self.QueryModuleState(modpath)
+
+		self.AddTaskBatch(
+			[
+				lambda: self.BuildModuleProxies(),
+			] + [
+				_makeQueryStateTask(m.path)
+				for m in self.AppSchema.modules
+			] + [
+				lambda: self.NotifyAppSchemaLoaded(),
+			],
+			autostart=True)
 
 	def BuildModuleProxies(self):
 		self._LogBegin('BuildModuleProxies()')
@@ -369,3 +437,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 		self._LogEvent('HandleOscEvent({!r}, {!r})'.format(address, args))
 		modpath, name = address.split(':', maxsplit=1)
 		self.ProxyManager.SetParamValue(modpath, name, args[0])
+
+def _ApplyParVal(par, val):
+	if val is not None:
+		par.val = val
