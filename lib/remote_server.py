@@ -237,6 +237,7 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 				parentpath=module.parent().path,
 				name=module.name,
 				label=str(getattr(module.par, 'Uilabel', None) or getattr(module.par, 'Label', None) or '') or None,
+				tags=module.tags,
 				masterpath=_GetModuleMasterPath(module),
 				childmodpaths=[c.path for c in submods],
 				partuplets=[

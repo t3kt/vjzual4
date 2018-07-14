@@ -623,6 +623,8 @@ class BaseDataObject:
 			val = attrs.get(col.val, '')
 			if isinstance(val, bool):
 				val = 1 if val else 0
+			elif isinstance(val, (list, set, tuple)):
+				val = ' '.join(val)
 			vals.append(val)
 		dat.appendRow(vals)
 
@@ -638,6 +640,8 @@ class BaseDataObject:
 				val = attrs.get(col.val, '')
 				if isinstance(val, bool):
 					val = 1 if val else 0
+				elif isinstance(val, (list, set, tuple)):
+					val = ' '.join(val)
 				cell.val = val
 
 class AttrBasedIdentity:

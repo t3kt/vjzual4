@@ -24,6 +24,11 @@ except ImportError:
 	schema = mod.schema
 
 try:
+	import schema_utils
+except ImportError:
+	schema_utils = mod.schema_utils
+
+try:
 	import module_proxy
 except ImportError:
 	module_proxy = mod.module_proxy
@@ -331,10 +336,10 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 
 	@loggedmethod
 	def _OnAllModuleTypesReceived(self):
-		self.AppSchema = schema.AppSchema.FromRawAppAndModuleInfo(
+		self.AppSchema = schema_utils.AppSchemaBuilder(
 			appinfo=self.rawAppInfo,
 			modules=self.rawModuleInfos,
-			moduletypes=self.rawModuleTypeInfos)
+			moduletypes=self.rawModuleTypeInfos).Build()
 		moduletable = self._ModuleTable
 		for modschema in self.AppSchema.modules:
 			modschema.AddToTable(moduletable)
