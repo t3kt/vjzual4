@@ -11,7 +11,6 @@ try:
 except ImportError:
 	common = mod.common
 cleandict, excludekeys, mergedicts = common.cleandict, common.excludekeys, common.mergedicts
-trygetdictval = common.trygetdictval
 BaseDataObject = common.BaseDataObject
 
 
@@ -530,17 +529,6 @@ class DataNodeInfo(BaseDataObject):
 			'texbuf': self.texbuf,
 			'parentpath': self.parentpath,
 		}))
-
-	@classmethod
-	def NodesFromRawModuleInfo(cls, modinfo: RawModuleInfo):
-		nodes = []
-		if modinfo.nodes:
-			for node in modinfo.nodes:
-				node = DataNodeInfo.FromJsonDict(node.ToJsonDict())
-				if not node.parentpath:
-					node.parentpath = modinfo.path
-				nodes.append(node)
-		return nodes
 
 class BaseModuleSchema(BaseDataObject):
 	"""

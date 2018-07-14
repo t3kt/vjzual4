@@ -29,98 +29,6 @@ except ImportError:
 	__dynamiclocalimport(schema)
 
 
-class _ModuleParamGroupsBuilder:
-	def __init__(
-			self,
-			rawgroups: List[RawParamGroupInfo]=None,
-			params: List[ParamSchema]=None):
-		self.rawgroups = rawgroups or []
-		self.params = params or []
-		self.groups = OrderedDict()  # type: Dict[str, ParamGroupSchema]
-		self.defaultgroup = None  # type: ParamGroupSchema
-
-	def _GetDefaultGroup(self):
-		if self.defaultgroup:
-			return self.defaultgroup
-		self.defaultgroup = self.groups['_'] = ParamGroupSchema(
-			name='_',
-			label='(default)',
-			grouptype=ParamGroupTypes.default)
-		return self.defaultgroup
-
-	def _GetParamGroup(self, p: ParamSchema):
-		if p.specialtype == ParamSpecialTypes.bypass:
-			return None
-		if p.groupname and p.groupname in self.groups:
-			return self.groups[p.groupname]
-		if p.pagename:
-			page = self.groups.get(p.pagename)
-			if not page:
-				page = self.groups[p.pagename] = ParamGroupSchema(
-					name=p.pagename,
-					label=p.pagename,
-					grouptype=ParamGroupTypes.page)
-			return page
-		return self._GetDefaultGroup()
-
-	def Build(self) -> List[ParamGroupSchema]:
-		for groupinfo in self.rawgroups:
-			group = ParamGroupSchema(
-				name=groupinfo.name,
-				label=groupinfo.label,
-				parentname=groupinfo.parentname,
-				grouptype=groupinfo.grouptype,
-				specialtype=groupinfo.specialtype,
-				hidden=groupinfo.hidden,
-				advanced=groupinfo.advanced,
-				helptext=groupinfo.helptext,
-				toggledby=groupinfo.toggledby,
-				parprefix=groupinfo.parprefix)
-			self.groups[group.name] = group
-
-		for group in self.groups.values():
-			if not group.parentname:
-				continue
-			if group.parentname == group.name or group.parentname not in self.groups:
-				group.parentname = None
-				continue
-			parentgroup = self.groups[group.parentname]
-			parentgroup.subgroups.append(group)
-			group.parentgroup = parentgroup
-			if not group.grouptype and not group.parentgroup:
-				group.grouptype = ParamGroupTypes.page
-
-		for param in self.params:
-			group = self._GetParamGroup(param)
-			if group is None:
-				param.groupname = None
-				continue
-			param.group = group
-			group.params.append(param)
-
-		emptynames = [
-			g.name
-			for g in self.groups.values()
-			if not g.params
-		]
-		for name in emptynames:
-			del self.groups[name]
-
-		results = []
-
-		for group in self.groups.values():
-			if not group.params:
-				continue
-			if not group.parprefix:
-				group.parprefix = commonprefix([p.name for p in group.params]) or None
-				if group.hidden is None:
-					group.hidden = all([p.hidden for p in group.params])
-				if group.advanced is None:
-					group.advanced = all([p.advanced for p in group.params])
-			results.append(group)
-
-		return results
-
 class AppSchemaBuilder:
 	def __init__(
 			self,
@@ -151,16 +59,182 @@ class AppSchemaBuilder:
 				if modschema.parentpath == self.appinfo.path
 			])
 
-	def _BuildParams(self, modinfo: RawModuleInfo):
-		parattrs = modinfo.parattrs or {}
-		params = []
-		if modinfo.partuplets:
-			for partuplet in modinfo.partuplets:
+	def _BuildModuleSchemas(self):
+		for modinfo in self.rawmodules:
+			self.modules[modinfo.path] = _ModuleSchemaBuilder(modinfo).Build()
+
+	def _BuildModuleTypeSchemas(self):
+		for modinfo in self.rawmoduletypes:
+			self.moduletypes[modinfo.path] = _ModuleTypeSchemaBuilder(modinfo).Build()
+
+	def _GetMatchingModuleType(self, modschema: ModuleSchema) -> Optional[ModuleTypeSchema]:
+		modtypes = []
+		for modtype in self.moduletypes.values():
+			if modschema.MatchesModuleType(modtype, exact=False):
+				modtypes.append(modtype)
+
+		modtypes = list(sorted(modtypes, key=attrgetter('isexplicit', 'paramcount'), reverse=True))
+		return modtypes[0] if modtypes else None
+
+	def _DeriveImplicitModuleTypes(self):
+
+		for modschema in self.modules.values():
+			masterpath = modschema.masterpath
+			if masterpath and masterpath in self.moduletypes:
+				continue
+			modtype = self._GetMatchingModuleType(modschema)
+			if not modtype:
+				if not self._IsElligibleForImplicitModuleType(modschema):
+					continue
+				modtype = _ModuleSchemaAsType(modschema, implicit=True)
+				self.moduletypes[modtype.path] = modtype
+			modschema.masterpath = modtype.path
+			modschema.masterisimplicit = True
+			modschema.masterispartialmatch = len(modschema.params) != len(modtype.params)
+
+	def _StripUnusedModuleTypes(self):
+		pathstoremove = set(self.moduletypes.keys())
+		for modschema in self.modules.values():
+			if modschema.masterpath and modschema.masterpath in pathstoremove:
+				pathstoremove.remove(modschema.masterpath)
+		for path in pathstoremove:
+			del self.moduletypes[path]
+
+	@staticmethod
+	def _IsElligibleForImplicitModuleType(modschema: ModuleSchema):
+		if not modschema.params:
+			return False
+		if modschema.hasbypass:
+			nonbypasspars = [
+				par for par in modschema.params if par.specialtype != ParamSpecialTypes.bypass
+			]
+		else:
+			nonbypasspars = modschema.params
+		if not nonbypasspars:
+			return False
+		# special case for modules that only have a single node parameter which are generally
+		# either non-configurable or are just containers for other modules
+		if len(nonbypasspars) == 1 and nonbypasspars[0].isnode:
+			return False
+		return True
+
+def _ModuleSchemaAsType(modschema: ModuleSchema, implicit=False):
+	if implicit:
+		name = '({})'.format(modschema.masterpath or modschema.name)
+		label = '({})'.format(modschema.masterpath) if modschema.masterpath else None
+		path = modschema.masterpath or modschema.path
+	else:
+		name, label, path = modschema.name, modschema.label, modschema.path
+	return ModuleTypeSchema(
+		name=name,
+		label=label,
+		path=path,
+		derivedfrompath=modschema.path if implicit else None,
+		params=[
+			copy.deepcopy(parinfo)
+			for parinfo in modschema.params
+		])
+
+
+class _BaseModuleSchemaBuilder:
+	def __init__(self, modinfo: RawModuleInfo):
+		self.modinfo = modinfo
+		self.params = []
+		self.groups = OrderedDict()  # type: Dict[str, ParamGroupSchema]
+		self.defaultgroup = None  # type: ParamGroupSchema
+
+	def _GetDefaultGroup(self):
+		if self.defaultgroup:
+			return self.defaultgroup
+		self.defaultgroup = self.groups['_'] = ParamGroupSchema(
+			name='_',
+			label='(default)',
+			grouptype=ParamGroupTypes.default)
+		return self.defaultgroup
+
+	def _GetParamGroup(self, p: ParamSchema):
+		if p.specialtype == ParamSpecialTypes.bypass:
+			return None
+		if p.groupname and p.groupname in self.groups:
+			return self.groups[p.groupname]
+		if p.pagename:
+			page = self.groups.get(p.pagename)
+			if not page:
+				page = self.groups[p.pagename] = ParamGroupSchema(
+					name=p.pagename,
+					label=p.pagename,
+					grouptype=ParamGroupTypes.page)
+			return page
+		return self._GetDefaultGroup()
+
+	def _BuildGroupHierarchy(self):
+		for group in self.groups.values():
+			if not group.parentname:
+				continue
+			if group.parentname == group.name or group.parentname not in self.groups:
+				group.parentname = None
+				continue
+			parentgroup = self.groups[group.parentname]
+			parentgroup.subgroups.append(group)
+			group.parentgroup = parentgroup
+			if not group.grouptype and not group.parentgroup:
+				group.grouptype = ParamGroupTypes.page
+
+	def _AttachGroupParams(self):
+		for param in self.params:
+			group = self._GetParamGroup(param)
+			if group is None:
+				param.groupname = None
+				continue
+			param.group = group
+			group.params.append(param)
+
+	def _PostProcessGroups(self):
+		for group in self.groups.values():
+			if not group.params and not group.subgroups:
+				continue
+			if not group.parprefix:
+				group.parprefix = commonprefix([p.name for p in group.params]) or None
+				if group.hidden is None:
+					group.hidden = all([p.hidden for p in group.params])
+				if group.advanced is None:
+					group.advanced = all([p.advanced for p in group.params])
+
+	def _GetFilteredGroups(self):
+		for group in self.groups.values():
+			if not group.params and not group.subgroups:
+				continue
+			yield group
+
+	def _BuildParamGroups(self):
+		for groupinfo in self.modinfo.pargroups or []:
+			group = ParamGroupSchema(
+				name=groupinfo.name,
+				label=groupinfo.label,
+				parentname=groupinfo.parentname,
+				grouptype=groupinfo.grouptype,
+				specialtype=groupinfo.specialtype,
+				hidden=groupinfo.hidden,
+				advanced=groupinfo.advanced,
+				helptext=groupinfo.helptext,
+				toggledby=groupinfo.toggledby,
+				parprefix=groupinfo.parprefix)
+			self.groups[group.name] = group
+
+		self._BuildGroupHierarchy()
+
+		self._AttachGroupParams()
+
+		self._PostProcessGroups()
+
+	def _BuildParams(self):
+		parattrs = self.modinfo.parattrs or {}
+		if self.modinfo.partuplets:
+			for partuplet in self.modinfo.partuplets:
 				parschema = self._BuildParam(partuplet, parattrs.get(partuplet[0].tupletname))
 				if parschema:
-					params.append(parschema)
-			params.sort(key=attrgetter('pageindex', 'order'))
-		return params
+					self.params.append(parschema)
+			self.params.sort(key=attrgetter('pageindex', 'order'))
 
 	def _BuildParam(
 			self,
@@ -278,20 +352,28 @@ class AppSchemaBuilder:
 				'Modname', 'Uilabel', 'Collapsed', 'Solo',
 				'Uimode', 'Showadvanced', 'Showviewers', 'Resetstate')
 
-	def _BuildModuleSchema(self, modinfo: RawModuleInfo, asmoduletype=False):
-		params = self._BuildParams(modinfo)
-		groupbuilder = _ModuleParamGroupsBuilder(
-			rawgroups=modinfo.pargroups,
-			params=params)
-		paramgroups = groupbuilder.Build()
-		if asmoduletype:
-			return ModuleTypeSchema(
-				name=modinfo.name,
-				label=modinfo.label,
-				path=modinfo.path,
-				params=params,
-				paramgroups=paramgroups,
-			)
+	def Build(self):
+		raise NotImplementedError()
+
+class _ModuleSchemaBuilder(_BaseModuleSchemaBuilder):
+	def __init__(self, modinfo: RawModuleInfo):
+		super().__init__(modinfo)
+		self.nodes = []  # type: List[DataNodeInfo]
+
+	def _BuildNodes(self):
+		if not self.modinfo.nodes:
+			return
+		for node in self.modinfo.nodes:
+			node = DataNodeInfo.FromJsonDict(node.ToJsonDict())
+			if not node.parentpath:
+				node.parentpath = self.modinfo.path
+			self.nodes.append(node)
+
+	def Build(self):
+		self._BuildParams()
+		self._BuildParamGroups()
+		self._BuildNodes()
+		modinfo = self.modinfo
 		return ModuleSchema(
 			name=modinfo.name,
 			label=modinfo.label,
@@ -299,84 +381,24 @@ class AppSchemaBuilder:
 			masterpath=modinfo.masterpath,
 			parentpath=modinfo.parentpath,
 			childmodpaths=list(modinfo.childmodpaths) if modinfo.childmodpaths else None,
-			params=params,
-			paramgroups=paramgroups,
-			nodes=DataNodeInfo.NodesFromRawModuleInfo(modinfo),
+			params=self.params,
+			paramgroups=list(self._GetFilteredGroups()),
+			nodes=self.nodes,
 			primarynode=modinfo.primarynode,
 		)
 
-	def _BuildModuleSchemas(self):
-		for modinfo in self.rawmodules:
-			self.modules[modinfo.path] = self._BuildModuleSchema(modinfo, asmoduletype=False)
+class _ModuleTypeSchemaBuilder(_BaseModuleSchemaBuilder):
+	def __init__(self, modinfo: RawModuleInfo):
+		super().__init__(modinfo)
 
-	def _BuildModuleTypeSchemas(self):
-		for modinfo in self.rawmoduletypes:
-			self.moduletypes[modinfo.path] = self._BuildModuleSchema(modinfo, asmoduletype=True)
-
-	def _GetMatchingModuleType(self, modschema: ModuleSchema) -> Optional[ModuleTypeSchema]:
-		modtypes = []
-		for modtype in self.moduletypes.values():
-			if modschema.MatchesModuleType(modtype, exact=False):
-				modtypes.append(modtype)
-
-		modtypes = list(sorted(modtypes, key=attrgetter('isexplicit', 'paramcount'), reverse=True))
-		return modtypes[0] if modtypes else None
-
-	def _DeriveImplicitModuleTypes(self):
-
-		for modschema in self.modules.values():
-			masterpath = modschema.masterpath
-			if masterpath and masterpath in self.moduletypes:
-				continue
-			modtype = self._GetMatchingModuleType(modschema)
-			if not modtype:
-				if not self._IsElligibleForImplicitModuleType(modschema):
-					continue
-				modtype = _ModuleSchemaAsType(modschema, implicit=True)
-				self.moduletypes[modtype.path] = modtype
-			modschema.masterpath = modtype.path
-			modschema.masterisimplicit = True
-			modschema.masterispartialmatch = len(modschema.params) != len(modtype.params)
-
-	def _StripUnusedModuleTypes(self):
-		pathstoremove = set(self.moduletypes.keys())
-		for modschema in self.modules.values():
-			if modschema.masterpath and modschema.masterpath in pathstoremove:
-				pathstoremove.remove(modschema.masterpath)
-		for path in pathstoremove:
-			del self.moduletypes[path]
-
-	@staticmethod
-	def _IsElligibleForImplicitModuleType(modschema: ModuleSchema):
-		if not modschema.params:
-			return False
-		if modschema.hasbypass:
-			nonbypasspars = [
-				par for par in modschema.params if par.specialtype != ParamSpecialTypes.bypass
-			]
-		else:
-			nonbypasspars = modschema.params
-		if not nonbypasspars:
-			return False
-		# special case for modules that only have a single node parameter which are generally
-		# either non-configurable or are just containers for other modules
-		if len(nonbypasspars) == 1 and nonbypasspars[0].isnode:
-			return False
-		return True
-
-def _ModuleSchemaAsType(modschema: ModuleSchema, implicit=False):
-	if implicit:
-		name = '({})'.format(modschema.masterpath or modschema.name)
-		label = '({})'.format(modschema.masterpath) if modschema.masterpath else None
-		path = modschema.masterpath or modschema.path
-	else:
-		name, label, path = modschema.name, modschema.label, modschema.path
-	return ModuleTypeSchema(
-		name=name,
-		label=label,
-		path=path,
-		derivedfrompath=modschema.path if implicit else None,
-		params=[
-			copy.deepcopy(parinfo)
-			for parinfo in modschema.params
-		])
+	def Build(self):
+		self._BuildParams()
+		self._BuildParamGroups()
+		modinfo = self.modinfo
+		return ModuleTypeSchema(
+			name=modinfo.name,
+			label=modinfo.label,
+			path=modinfo.path,
+			params=self.params,
+			paramgroups=list(self._GetFilteredGroups()),
+		)
