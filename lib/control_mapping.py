@@ -1,11 +1,12 @@
 from collections import OrderedDict
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 print('vjz4/control_mapping.py loading')
 
 if False:
 	from _stubs import *
 	from app_host import AppHost
+	from ui_builder import UiBuilder
 
 try:
 	import td
@@ -24,6 +25,11 @@ try:
 except ImportError:
 	schema = mod.schema
 ControlMapping = schema.ControlMapping
+
+try:
+	import menu
+except ImportError:
+	menu = mod.menu
 
 class ModuleControlMap:
 	def __init__(self, enable=True):
@@ -88,11 +94,72 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 	def GetMapping(self, mapid):
 		return self.mappings.get(str(mapid))
 
+	def GetMappingsForParam(self, modpath: str, paramname: str, devicename: str) -> List[schema.ControlMapping]:
+		prefix = (devicename + '.') if devicename else None
+		results = []
+		for mapping in self.mappings.values():
+			if mapping.path != modpath and mapping.param != paramname:
+				continue
+			if mapping.control and prefix and not mapping.control.startswith(prefix):
+				continue
+			results.append(mapping)
+		return results
+
 	@loggedmethod
 	def ClearMappings(self):
 		self.mappings.clear()
 		self._BuildMappingTable()
 		self._ClearMappingEditors()
+
+	@loggedmethod
+	def DeleteMapping(self, mapid):
+		if mapid is None:
+			return
+		mapid = str(mapid)
+		if not mapid or mapid not in self.mappings:
+			return
+		del self.mappings[mapid]
+		editor = self.editors.get(mapid)
+		if editor:
+			editor.destroy()
+			del self.editors[mapid]
+		maptable = self._MappingTable
+		if maptable.row(mapid):
+			maptable.deleteRow(mapid)
+
+	@loggedmethod
+	def AddOrReplaceMappingForParam(
+			self,
+			modpath: str,
+			paramname: str,
+			control: schema.DeviceControlInfo=None):
+		existingmappings = self.GetMappingsForParam(modpath, paramname, devicename=control.devname)
+		if not control:
+			if existingmappings:
+				for mapping in existingmappings:
+					if mapping.control:
+						mapping.control = None
+						mapping.enable = False
+						editor = self.editors.get(str(mapping.id))
+						if editor:
+							editor.LoadMapping()
+			return
+		else:
+			if existingmappings:
+				mapping = existingmappings[0]
+				mapping.control = control.fullname
+				mapping.enable = True
+				for mapping in existingmappings[1:]:
+					mapping.control = None
+					mapping.enable = False
+			else:
+				self.AddMappings(
+					[ControlMapping(
+						path=modpath,
+						param=paramname,
+						enable=True,
+						control=control,
+					)])
 
 	@loggedmethod
 	def AddMappings(self, mappings: List[ControlMapping], overwrite=False):
@@ -229,6 +296,7 @@ class MappingEditor(common.ExtensionBase, common.ActionsExt):
 		common.ActionsExt.__init__(self, ownerComp, actions={
 			'Savemapping': self.SaveMapping,
 			'Loadmapping': self.LoadMapping,
+			'Deletemapping': self._DeleteMapping,
 		})
 		self._AutoInitActionParams()
 
@@ -262,7 +330,8 @@ class MappingEditor(common.ExtensionBase, common.ActionsExt):
 		mapping = mapping or ControlMapping()
 		self.ownerComp.par.Modpath = mapping.path or ''
 		self.ownerComp.par.Param = mapping.param or ''
-		self.ownerComp.par.Enabled = mapping.enable
+		self.ownerComp.par.Enabled = bool(mapping.enable)
+		self.ownerComp.op('enable_toggle').par.Value1 = bool(mapping.enable)
 		self.ownerComp.par.Rangelow = mapping.rangelow
 		self.ownerComp.par.Rangehigh = mapping.rangehigh
 		self.ownerComp.par.Mapid = mapping.mapid or ''
@@ -283,4 +352,25 @@ class MappingEditor(common.ExtensionBase, common.ActionsExt):
 			return
 		mapping = controlmapper.GetMapping(self.ownerComp.par.Mapid.eval()) or ControlMapping()
 		self._Mapping = mapping
+
+	@loggedmethod
+	def _DeleteMapping(self):
+		controlmapper = self._ControlMapper
+		if not controlmapper:
+			return
+		mapping = self._Mapping
+		td.run('op({!r}).DeleteMapping({!r})'.format(controlmapper.path, mapping.mapid), delayFrames=1)
+
+	def _GetContextMenuItems(self):
+		return [
+			menu.Item(
+				'Delete mapping',
+				callback=lambda: self._DeleteMapping()
+			)
+		]
+
+	def ShowContextMenu(self):
+		menu.fromMouse().Show(
+			items=self._GetContextMenuItems(),
+			autoClose=True)
 

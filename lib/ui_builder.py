@@ -381,7 +381,7 @@ class UiBuilder:
 						'Modpath': mapping.path or '',
 						'Param': mapping.param or '',
 						'Control': mapping.control or '',
-						'Enabled': mapping.enable,
+						'Enabled': bool(mapping.enable),
 						'Rangelow': mapping.rangelow,
 						'Rangehigh': mapping.rangehigh,
 					}),
@@ -399,11 +399,14 @@ class UiBuilder:
 				opattrs(
 					parvals={
 						'Name': control.name,
+						'Device': control.devname,
 						'Fullname': control.fullname,
 						'Ctrltype': control.ctrltype or 'slider',
 						'Inputcc': control.inputcc if control.inputcc is not None else -1,
 						'Outputcc': control.outputcc if control.outputcc is not None else -1,
-					}),
+					},
+					tags=['vjz4ctrlmarker'],
+					storage={'controlinfo': control}),
 				attrs,
 				**kwargs)
 		)

@@ -1,5 +1,7 @@
 # trick pycharm
 
+from typing import List
+
 class _Expando:
 	def __init__(self):
 		pass
@@ -42,9 +44,12 @@ class op:
 
 	def closeViewer(self): pass
 
-	def unstore(self, name): pass
+	def store(self, key, value): pass
 
-	def findChildren(self, maxDepth=1, tags=None): return []
+	def unstore(self, keys1, *morekeys): pass
+
+	def findChildren(self, maxDepth=1, tags=None) -> 'List[op]':
+		pass
 
 	TDResources = _Expando()
 
