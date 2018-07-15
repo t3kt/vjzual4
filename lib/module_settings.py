@@ -50,12 +50,19 @@ class ModuleSettings(common.BaseDataObject):
 				del attrs[attrname]
 
 def ExtractSettings(comp: 'OP'):
+	existingpars = [
+		t[0].tupletName
+		for t in comp.customTuplets
+	]
 	settingscomp = comp.op('module_settings')
 	settings = ModuleSettings()
 	if settingscomp:
 		parattrsdat = settingscomp.op('parameter_metadata')
 		if parattrsdat:
-			settings.parattrs = ParseAttrTable(parattrsdat)
+			parsedattrs = ParseAttrTable(parattrsdat)
+			for name, attrs in parsedattrs.items():
+				if name in existingpars:
+					settings.parattrs[name] = attrs
 	return settings
 
 def ApplySettings(comp: 'OP', settings: ModuleSettings):
@@ -72,6 +79,6 @@ def ApplySettings(comp: 'OP', settings: ModuleSettings):
 		name='parameter_metadata',
 		nodepos=[0, -100])
 	parattrsdat.clear()
-	parattrsdat.appendRow(['name'])
+	parattrsdat.appendRow(['name', 'label', 'style', 'specialtype', 'advanced', 'mappable'])
 	settingscomp.par.opviewer = './parameter_metadata'
 	UpdateAttrTable(parattrsdat, settings.parattrs, clear=False)

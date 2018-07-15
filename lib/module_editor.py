@@ -37,6 +37,7 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 				'Savemoduletox': lambda: self.SaveModuleTox(),
 				'Testprintmodule': lambda: self._TestPrintModule(),
 				'Testprintsettings': lambda: self._TestPrintExtractedSettings(),
+				'Cleanparameterattrs': lambda: self.CleanParameterAttrs(),
 			},
 			autoinitparexec=True)
 		self._AutoInitActionParams()
@@ -111,6 +112,27 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 			return
 		self._LogEvent('Saving module to {}'.format(toxfile))
 		module.save(toxfile)
+
+	@loggedmethod
+	def CleanParameterAttrs(self):
+		module = self.Module
+		self._LogEvent('module: {}'.format(module))
+		if not module:
+			return
+		settings = module_settings.ExtractSettings(module)
+		existingnames = [
+			t[0].tupletName
+			for t in module.customTuplets
+		]
+		parstoremove = []
+		for name, attrs in settings.parattrs.items():
+			if name not in existingnames:
+				parstoremove.append(name)
+			pass
+		for name in sorted(parstoremove):
+			self._LogEvent('Removing orphan parameter attrs: {}'.format(name))
+			del settings.parattrs[name]
+		module_settings.ApplySettings(module, settings)
 
 	@loggedmethod
 	def AdaptOpExpressions(self):
