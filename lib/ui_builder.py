@@ -1,4 +1,4 @@
-from typing import Callable, Dict
+from typing import Callable, Dict, Optional
 
 print('vjz4/ui_builder.py loading')
 
@@ -59,11 +59,17 @@ class UiBuilder:
 	def CreateParSlider(
 			self, dest, name,
 			parinfo,  # type: schema.ParamSchema
+			dropscript=None,  # type: Optional[DAT]
 			modhostconnector=None,
 			attrs: opattrs=None, **kwargs):
 		return self.CreateSlider(
 			dest=dest, name=name,
-			attrs=opattrs.merged(attrs, **kwargs),
+			attrs=opattrs.merged(
+				attrs,
+				opattrs(
+					parvals=_DropScriptParVals(dropscript)
+				),
+				**kwargs),
 			label=parinfo.label,
 			isint=parinfo.style == 'Int',
 			valueexpr=modhostconnector.GetParExpr(parinfo.parts[0].name) if modhostconnector else None,
@@ -81,6 +87,7 @@ class UiBuilder:
 	def CreateParMultiSlider(
 			self, dest, name,
 			parinfo,  # type: schema.ParamSchema
+			dropscript=None,  # type: Optional[DAT]
 			modhostconnector=None,
 			attrs: opattrs=None, **kwargs):
 		n = len(parinfo.parts)
@@ -132,7 +139,8 @@ class UiBuilder:
 						'Rangehigh1': part.maxnorm if part.maxlimit is None else part.maxlimit,
 						'Push1': True,
 						'Integer': isint,
-					}),
+					},
+					_DropScriptParVals(dropscript)),
 				parexprs=mergedicts(
 					valexpr and {'Value1': valexpr}),
 				tags=['vjz4mappable'],
@@ -177,11 +185,16 @@ class UiBuilder:
 	def CreateParToggle(
 			self, dest, name,
 			parinfo,  # type: schema.ParamSchema
+			dropscript=None,  # type: Optional[DAT]
 			modhostconnector=None,
 			attrs: opattrs=None, **kwargs):
 		return self.CreateButton(
 			dest=dest, name=name,
-			attrs=opattrs.merged(attrs, **kwargs),
+			attrs=opattrs.merged(
+				attrs,
+				opattrs(
+					parvals=_DropScriptParVals(dropscript)),
+				**kwargs),
 			label=parinfo.label,
 			behavior='toggledown',
 			valueexpr=modhostconnector.GetParExpr(name) if modhostconnector else None,
@@ -227,6 +240,7 @@ class UiBuilder:
 	def CreateParTextField(
 			self, dest, name,
 			parinfo,  # type: schema.ParamSchema
+			dropscript=None,  # type: Optional[DAT]
 			modhostconnector=None,
 			attrs: opattrs=None, **kwargs):
 		ctrl = self.CreateTextField(
@@ -235,7 +249,11 @@ class UiBuilder:
 			fieldtype='string',
 			valueexpr=modhostconnector.GetParExpr(parinfo.name) if modhostconnector else None,
 			defval=parinfo.parts[0].default,
-			attrs=opattrs.merged(attrs, **kwargs))
+			attrs=opattrs.merged(
+				attrs,
+				opattrs(
+					parvals=_DropScriptParVals(dropscript)),
+				**kwargs))
 		celldat = ctrl.par.Celldat.eval()
 		# TODO: workaround for bug with initial value not being loaded
 		par = modhostconnector.GetPar(name) if modhostconnector else None
@@ -246,6 +264,7 @@ class UiBuilder:
 	def CreateParNodeSelector(
 			self, dest, name,
 			parinfo,  # type: schema.ParamSchema
+			dropscript=None,  # type: Optional[DAT]
 			modhostconnector=None,  # type: ModuleHostConnector
 			attrs: opattrs=None, **kwargs):
 		if parinfo.isnode:
@@ -258,10 +277,12 @@ class UiBuilder:
 			dest=dest, name=name,
 			attrs=opattrs.merged(
 				opattrs(
-					parvals={
-						'Label': parinfo.label,
-						'Nodetype': nodetype,
-					},
+					parvals=mergedicts(
+						{
+							'Label': parinfo.label,
+							'Nodetype': nodetype,
+						},
+						_DropScriptParVals(dropscript)),
 					parexprs={
 						'Targetpar': valueexpr,
 					}),
@@ -271,6 +292,7 @@ class UiBuilder:
 	def CreateParMenuField(
 			self, dest, name,
 			parinfo,  # type: schema.ParamSchema
+			dropscript=None,  # type: Optional[DAT]
 			modhostconnector=None,  # type: ModuleHostConnector
 			attrs: opattrs=None, **kwargs):
 		valueexpr = modhostconnector.GetParExpr(parinfo.name) if modhostconnector else None
@@ -281,7 +303,8 @@ class UiBuilder:
 				opattrs(
 					parvals=mergedicts(
 						parinfo.label and {'Label': parinfo.label},
-						parinfo.helptext and {'Help': parinfo.helptext}),
+						parinfo.helptext and {'Help': parinfo.helptext},
+						_DropScriptParVals(dropscript)),
 					parexprs={
 						'Menunames': repr(parinfo.parts[0].menunames or []),
 						'Menulabels': repr(parinfo.parts[0].menulabels or []),
@@ -294,6 +317,7 @@ class UiBuilder:
 			self, dest, name,
 			parinfo,  # type: schema.ParamSchema
 			addtocontrolmap=None,  # type: Dict[str, COMP]
+			dropscript=None,  # type: Optional[DAT]
 			modhostconnector=None,  # type: ModuleHostConnector
 			attrs: opattrs=None, **kwargs):
 
@@ -315,6 +339,7 @@ class UiBuilder:
 			ctrl = self.CreateParSlider(
 				dest=dest, name=name,
 				parinfo=parinfo,
+				dropscript=dropscript,
 				attrs=attrs,
 				modhostconnector=modhostconnector)
 		elif parinfo.style in [
@@ -326,6 +351,7 @@ class UiBuilder:
 			sliders = self.CreateParMultiSlider(
 				dest=dest, name=name,
 				parinfo=parinfo,
+				dropscript=dropscript,
 				attrs=attrs,
 				modhostconnector=modhostconnector)
 			_registerparts(sliders)
@@ -335,6 +361,7 @@ class UiBuilder:
 			ctrl = self.CreateParToggle(
 				dest=dest, name=name,
 				parinfo=parinfo,
+				dropscript=dropscript,
 				attrs=attrs,
 				modhostconnector=modhostconnector)
 		elif parinfo.style == 'Pulse':
@@ -342,24 +369,28 @@ class UiBuilder:
 			ctrl = self.CreateParTrigger(
 				dest=dest, name=name,
 				parinfo=parinfo,
+				dropscript=dropscript,
 				attrs=attrs)
 		elif parinfo.style == 'Str' and not parinfo.isnode:
 			# print('creating text field control for plain string {}'.format(parinfo))
 			ctrl = self.CreateParTextField(
 				dest=dest, name=name,
 				parinfo=parinfo,
+				dropscript=dropscript,
 				attrs=attrs,
 				modhostconnector=modhostconnector)
 		elif parinfo.isnode:
 			ctrl = self.CreateParNodeSelector(
 				dest=dest, name=name,
 				parinfo=parinfo,
+				dropscript=dropscript,
 				attrs=attrs,
 				modhostconnector=modhostconnector)
 		elif parinfo.style == 'Menu':
 			ctrl = self.CreateParMenuField(
 				dest=dest, name=name,
 				parinfo=parinfo,
+				dropscript=dropscript,
 				attrs=attrs,
 				modhostconnector=modhostconnector)
 		else:
@@ -460,6 +491,11 @@ class UiBuilder:
 				attrs,
 				**kwargs))
 
+def _DropScriptParVals(dropscript: 'Optional[DAT]'=None):
+	return dropscript and {
+		'drop': 'legacy',
+		'dropscript': dropscript.path
+	}
 
 # TODO: move dialog stuff elsewhere
 

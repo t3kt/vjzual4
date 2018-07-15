@@ -899,6 +899,12 @@ class ControlMapping(BaseDataObject):
 		self.control = control
 		self.mapid = mapid
 
+	@property
+	def parampath(self):
+		if not self.path or not self.param:
+			return None
+		return self.path + ':' + self.param
+
 	tablekeys = [
 		'mapid',
 		'path',

@@ -366,12 +366,7 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 				parinfo=parinfo,
 				order=i,
 				nodepos=[100, -200 * i],
-				parvals=mergedicts(
-					parinfo.mappable and {
-						'drop': 'legacy',
-						'dropscript': dropscript,
-					}
-				),
+				dropscript=dropscript if parinfo.mappable else None,
 				parexprs=mergedicts(
 					parinfo.advanced and {'display': 'parent.ModuleHost.par.Showadvanced'}
 				),
