@@ -422,7 +422,7 @@ def trygetdictval(d: Dict, *keys, default=None, parse=None):
 	return default
 
 def ParseAttrTable(dat):
-	if not dat:
+	if not dat or dat.numRows == 0:
 		return {}
 	cols = [c.val for c in dat.row(0)]
 	return {
