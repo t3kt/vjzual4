@@ -158,12 +158,23 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 			t[0].tupletName: t
 			for t in module.customTuplets
 		}
+		usedkeys = set()
+		for name, attrs in settings.parattrs.items():
+			for key, val in attrs.items():
+				if val != '' and key not in ('name', 'label', 'specialtype', 'advanced', 'mappable'):
+					usedkeys.add(key)
 		parstoremove = []
 		for name, attrs in settings.parattrs.items():
 			if name not in existingtupletsbyname:
 				parstoremove.append(name)
 			elif self._ShouldIgnoreParam(existingtupletsbyname[name][0]):
 				parstoremove.append(name)
+			unusedkeys = set(attrs.keys()) - usedkeys
+			if unusedkeys:
+				for key in unusedkeys:
+					del attrs[key]
+				if not attrs:
+					parstoremove.append(name)
 		for name in sorted(parstoremove):
 			self._LogEvent('Removing orphan parameter attrs: {}'.format(name))
 			del settings.parattrs[name]
