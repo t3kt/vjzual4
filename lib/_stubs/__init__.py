@@ -16,6 +16,7 @@ PaneType.NETWORKEDITOR = None
 
 class project:
 	name = ''
+	folder = ''
 
 class _Parent:
 	def __call__(self, *args, **kwargs):
