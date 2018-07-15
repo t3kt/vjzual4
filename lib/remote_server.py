@@ -30,6 +30,18 @@ except ImportError:
 	module_settings = mod.module_settings
 
 class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
+	"""
+	Server which can be dropped into a TD project to allow it to be controlled by Vjzual4's app host, through a
+	RemoteClient. The server responds to commands/requests from the client, providing information about the structure of
+	the project, and facilitates communication between the two TD instances.
+
+	Commands/requests/responses are sent/received over TCP.
+	Control data (for non-text parameters) is sent/received over OSC using CHOPs.
+	Control data for text parameters is sent/received over OSC using DATs on separate ports from those used for numeric
+	data.
+	Video data is sent over Syphon/Spout. This may later be changed to something that can run over a network, like
+	NDI.
+	"""
 	def __init__(self, ownerComp):
 		super().__init__(
 			ownerComp,
@@ -225,6 +237,7 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 				parentpath=module.parent().path,
 				name=module.name,
 				label=str(getattr(module.par, 'Uilabel', None) or getattr(module.par, 'Label', None) or '') or None,
+				tags=module.tags,
 				masterpath=_GetModuleMasterPath(module),
 				childmodpaths=[c.path for c in submods],
 				partuplets=[

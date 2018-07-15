@@ -158,7 +158,7 @@ class BcrMidiDevice(MidiDevice):
 
 		controls = []  # type: List[DeviceControlInfo]
 		devname = self.DeviceName
-		devprefix = devname + '.'
+		devprefix = devname + ':'
 
 		def _addrow(prefix, startctrl, ctrltype, startcc):
 			for i in range(8):
@@ -225,7 +225,9 @@ class BcrMidiDevice(MidiDevice):
 				rangehigh=rangehigh)
 
 		for parinfo in modschema.params:
-			if not parinfo.mappable or parinfo.advanced or parinfo.hidden or parinfo.specialtype == 'switch.bypass':
+			if not parinfo.mappable or parinfo.advanced or parinfo.hidden:
+				continue
+			if parinfo.specialtype == schema.ParamSpecialTypes.bypass:
 				continue
 			if parinfo.style == 'Toggle':
 				_addButton(parinfo.name)

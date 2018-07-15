@@ -22,6 +22,9 @@ except ImportError:
 
 
 class ModuleProxyManager(common.ExtensionBase, common.ActionsExt):
+	"""
+	Builds and manages a set of proxy COMPs that mirror those in a remote project, including matching parameters.
+	"""
 	def __init__(self, ownerComp):
 		common.ExtensionBase.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions={

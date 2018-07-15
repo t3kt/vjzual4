@@ -1,5 +1,4 @@
-from typing import Dict, List, Optional
-from operator import attrgetter
+from typing import Dict, Optional
 
 print('vjz4/module_host.py loading')
 
@@ -77,8 +76,8 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			'Saveuistate': self.SaveUIState,
 		})
 		self.ModuleConnector = None  # type: ModuleHostConnector
-		self.controlsByParam = {}
-		self.paramsByControl = {}
+		self.controlsbyparam = {}  # type: Dict[str, COMP]
+		self.parampartsbycontrolpath = {}  # type: Dict[str, schema.ParamPartSchema]
 		self.Mappings = control_mapping.ModuleControlMap()
 		self.UiModeNames = DependList([])
 		self._AutoInitActionParams()
@@ -296,9 +295,14 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		hostcore = self.ownerComp.op('host_core')
 		ctrltable = hostcore.op('set_param_control_table')
 		ctrltable.clear()
-		ctrltable.appendRow(['name', 'ctrl'])
-		for name, ctrl in self.controlsByParam.items():
-			ctrltable.appendRow([name, ctrl])
+		ctrltable.appendRow(['name', 'ctrl', 'mappable', 'isgroup'])
+		for name, ctrl in self.controlsbyparam.items():
+			ctrltable.appendRow([
+				name,
+				ctrl.path,
+				1 if 'vjz4mappable' in ctrl.tags else 0,
+				1 if name not in self.ModuleConnector.modschema.parampartsbyname else 0,
+			])
 
 	def _BuildDataNodeTable(self, dat):
 		dat.clear()
@@ -347,11 +351,12 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		uibuilder = self.UiBuilder
 		for ctrl in dest.ops('par__*'):
 			ctrl.destroy()
-		self.controlsByParam = {}
-		self.paramsByControl = {}
+		self.controlsbyparam = {}
+		self.parampartsbycontrolpath = {}
 		if not self.ModuleConnector or not uibuilder:
 			self._RebuildParamControlTable()
 			return
+		dropscript = self.ownerComp.op('control_drop')
 		for i, parinfo in enumerate(self._Params):
 			if parinfo.hidden or parinfo.specialtype.startswith('switch.'):
 				continue
@@ -361,14 +366,16 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 				parinfo=parinfo,
 				order=i,
 				nodepos=[100, -200 * i],
+				dropscript=dropscript if parinfo.mappable else None,
 				parexprs=mergedicts(
 					parinfo.advanced and {'display': 'parent.ModuleHost.par.Showadvanced'}
 				),
-				addtocontrolmap=self.controlsByParam,
+				addtocontrolmap=self.controlsbyparam,
 				modhostconnector=self.ModuleConnector)
-		self.paramsByControl = {
-			name: ctrl
-			for name, ctrl in self.controlsByParam.items()
+		self.parampartsbycontrolpath = {
+			ctrl.path: self.ModuleConnector.modschema.parampartsbyname[name]
+			for name, ctrl in self.controlsbyparam.items()
+			if name in self.ModuleConnector.modschema.parampartsbyname
 		}
 		self._RebuildParamControlTable()
 		dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
@@ -640,8 +647,34 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			parvals=params,
 			resetmissing=not partial)
 
+	@loggedmethod
+	def HandleControlDrop(self, ctrl: COMP, dropName, baseName):
+		if not self.ModuleConnector or not self.AppHost:
+			return
+		sourceparent = op(baseName)
+		if not sourceparent:
+			return
+		sourceop = sourceparent.op(dropName)
+		if not sourceop:
+			return
+		controlinfo = sourceop.storage.get('controlinfo')  # type: schema.DeviceControlInfo
+		if 'vjz4mappable' not in ctrl.tags or ctrl.path not in self.parampartsbycontrolpath or not controlinfo:
+			self._LogEvent('Control does not support mapping: {}'.format(ctrl))
+			return
+		parampart = self.parampartsbycontrolpath[ctrl.path]
+		if 'vjz4ctrlmarker' not in sourceop.tags:
+			self._LogEvent('Unsupported drop source: {}'.format(sourceop))
+			return
+		self.AppHost.ControlMapper.AddOrReplaceMappingForParam(
+			modpath=self.ModuleConnector.modpath,
+			paramname=parampart.name,
+			control=controlinfo)
+
 
 class ModuleHostConnector:
+	"""
+	Interface used by ModuleHost to get information about and interact with the hosted module.
+	"""
 	def __init__(
 			self,
 			modschema: schema.ModuleSchema):
@@ -651,6 +684,11 @@ class ModuleHostConnector:
 	def GetPar(self, name): return None
 
 	def GetParExpr(self, name):
+		"""
+		Creates an expression (as a string) that can be used to reference a TD parameter of the hosted module.
+		The expressions are of the form: `op("____").par.____`
+		This can be used to create bindings in UI controls.
+		"""
 		par = self.GetPar(name)
 		if par is None:
 			return None
