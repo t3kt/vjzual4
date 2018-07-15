@@ -291,8 +291,9 @@ class ParamPartSchema(BaseDataObject):
 		self.minlimit = minlimit
 		self.maxlimit = maxlimit
 		self.helptext = helptext
-		self.menunames = menunames
-		self.menulabels = menulabels
+		self.menunames = menunames  # type: List[str]
+		self.menulabels = menulabels  # type: List[str]
+		self.parent = None  # type: ParamSchema
 
 	tablekeys = [
 		'name',
@@ -355,6 +356,8 @@ class ParamSchema(BaseDataObject, common.AttrBasedIdentity):
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.parts = parts or []  # type: List[ParamPartSchema]
+		for part in self.parts:
+			part.parent = self
 		self.name = name
 		self.label = label
 		self.style = style
@@ -556,22 +559,22 @@ class BaseModuleSchema(BaseDataObject):
 		self.tags = set(tags or [])
 		self.params = list(params or [])
 		self.paramsbyname = OrderedDict()  # type: Dict[str, ParamSchema]
-		for p in self.params:
-			self.paramsbyname[p.name] = p
+		self.parampartsbyname = OrderedDict()  # type: Dict[str, ParamPartSchema]
 		self.hasbypass = False
 		self.hasadvanced = False
 		for par in self.params:
+			self.paramsbyname[par.name] = par
 			if par.advanced:
 				self.hasadvanced = True
 			if par.specialtype == ParamSpecialTypes.bypass:
 				self.hasbypass = True
+			for part in par.parts:
+				self.parampartsbyname[part.name] = part
 		self.paramgroups = paramgroups or []
 
 	@property
 	def parampartnames(self):
-		for param in self.params:
-			for part in param.parts:
-				yield part.name
+		return self.parampartsbyname.keys()
 
 	def ToJsonDict(self):
 		return cleandict(mergedicts(self.otherattrs, {
@@ -895,6 +898,12 @@ class ControlMapping(BaseDataObject):
 		self.rangehigh = rangehigh if rangehigh is not None else 1
 		self.control = control
 		self.mapid = mapid
+
+	@property
+	def parampath(self):
+		if not self.path or not self.param:
+			return None
+		return self.path + ':' + self.param
 
 	tablekeys = [
 		'mapid',

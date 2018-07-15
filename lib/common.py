@@ -1,6 +1,6 @@
 import datetime
 import json
-from typing import Callable, Dict, List, Iterable, Union
+from typing import Any, Callable, Dict, List, Iterable, Set, Union
 
 print('vjz4/common.py loading')
 
@@ -34,22 +34,24 @@ class IndentedLogger:
 	def Unindent(self):
 		self._AddIndent(-1)
 
-	def LogEvent(self, path, opid, event):
-		if not path and not opid:
-			Log('%s%s' % (self._indentStr, event), file=self._outFile)
-		elif not opid:
-			Log('%s%s %s' % (self._indentStr, path or '', event), file=self._outFile)
-		else:
-			Log('%s[%s] %s %s' % (self._indentStr, opid or '', path or '', event), file=self._outFile)
+	def LogEvent(self, path, opid, event, indentafter=False, unindentbefore=False):
+		if unindentbefore:
+			self.Unindent()
+		if event:
+			if not path and not opid:
+				Log('%s%s' % (self._indentStr, event), file=self._outFile)
+			elif not opid:
+				Log('%s%s %s' % (self._indentStr, path or '', event), file=self._outFile)
+			else:
+				Log('%s[%s] %s %s' % (self._indentStr, opid or '', path or '', event), file=self._outFile)
+		if indentafter:
+			self.Indent()
 
 	def LogBegin(self, path, opid, event):
-		self.LogEvent(path, opid, event)
-		self.Indent()
+		self.LogEvent(path, opid, event, indentafter=True)
 
 	def LogEnd(self, path, opid, event):
-		self.Unindent()
-		if event:
-			self.LogEvent(path, opid, event)
+		self.LogEvent(path, opid, event, unindentbefore=True)
 
 _logger = IndentedLogger()
 
@@ -59,19 +61,24 @@ class ExtensionBase:
 		self.enablelogging = True
 
 	def _GetLogId(self):
+		if not self.ownerComp.valid or not hasattr(self.ownerComp.par, 'opshortcut'):
+			return None
 		return self.ownerComp.par.opshortcut.eval()
 
-	def _LogEvent(self, event):
+	def _LogEvent(self, event, indentafter=False, unindentbefore=False):
 		if self.enablelogging:
-			_logger.LogEvent(self.ownerComp.path, self._GetLogId(), event)
+			_logger.LogEvent(
+				self.ownerComp.path,
+				self._GetLogId(),
+				event,
+				indentafter=indentafter,
+				unindentbefore=unindentbefore)
 
 	def _LogBegin(self, event):
-		if self.enablelogging:
-			_logger.LogBegin(self.ownerComp.path, self._GetLogId(), event)
+		self._LogEvent(event, indentafter=True)
 
 	def _LogEnd(self, event=None):
-		if self.enablelogging:
-			_logger.LogEnd(self.ownerComp.path, self._GetLogId(), event)
+		self._LogEvent(event, unindentbefore=True)
 
 def _defaultformatargs(args, kwargs):
 	if not args:
@@ -456,13 +463,16 @@ class opattrs:
 			tags=None,
 			panelparent=None,
 			parvals=None,
-			parexprs=None):
+			parexprs=None,
+			storage=None,
+	):
 		self.order = order
 		self.nodepos = nodepos
-		self.tags = tags
+		self.tags = set(tags) if tags else None  # type: Set[str]
 		self.panelparent = panelparent
-		self.parvals = parvals
-		self.parexprs = parexprs
+		self.parvals = parvals  # type: Dict[str, Any]
+		self.parexprs = parexprs  # type: Dict[str, str]
+		self.storage = storage  # type: Dict[str, Any]
 
 	def override(self, other: 'opattrs'):
 		if not other:
@@ -475,6 +485,11 @@ class opattrs:
 				self.tags.update(other.tags)
 			else:
 				self.tags = set(other.tags)
+		if other.storage:
+			if self.storage:
+				self.storage.update(other.storage)
+			else:
+				self.storage = dict(other.storage)
 		self.panelparent = other.panelparent or self.panelparent
 		self.parvals = mergedicts(self.parvals, other.parvals)
 		self.parexprs = mergedicts(self.parexprs, other.parexprs)
@@ -496,13 +511,26 @@ class opattrs:
 			comp.tags.update(self.tags)
 		if self.panelparent:
 			self.panelparent.outputCOMPConnectors[0].connect(comp)
+		if self.storage:
+			for key, val in self.storage.items():
+				if val is None:
+					comp.unstore(key)
+				else:
+					comp.store(key, val)
 		return comp
 
 	@classmethod
 	def merged(cls, *attrs, **kwargs):
 		result = cls()
 		for a in attrs:
-			result.override(a)
+			if not a:
+				continue
+			if isinstance(a, (list, tuple, set)):
+				for suba in a:
+					if suba:
+						result.override(suba)
+			else:
+				result.override(a)
 		if kwargs:
 			result.override(cls(**kwargs))
 		return result

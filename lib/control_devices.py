@@ -158,7 +158,7 @@ class BcrMidiDevice(MidiDevice):
 
 		controls = []  # type: List[DeviceControlInfo]
 		devname = self.DeviceName
-		devprefix = devname + '.'
+		devprefix = devname + ':'
 
 		def _addrow(prefix, startctrl, ctrltype, startcc):
 			for i in range(8):

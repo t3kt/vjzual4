@@ -83,8 +83,23 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def GetAppSchema(self):
 		return self.AppSchema
 
-	def GetModuleSchema(self, modpath):
+	def GetModuleSchema(self, modpath) -> 'Optional[schema.ModuleSchema]':
 		return self.AppSchema and self.AppSchema.modulesbypath.get(modpath)
+
+	def GetParamSchema(self, modpath, name) -> 'Optional[schema.ParamSchema]':
+		modschema = self.GetModuleSchema(modpath)
+		if not modschema:
+			return None
+		return modschema.paramsbyname.get(name)
+
+	def GetParamPartSchema(self, modpath, name) -> 'Optional[schema.ParamPartSchema]':
+		modschema = self.GetModuleSchema(modpath)
+		if not modschema:
+			return None
+		return modschema.parampartsbyname.get(name)
+
+	def GetModuleTypeSchema(self, typepath) -> 'Optional[schema.ModuleTypeSchema]':
+		return self.AppSchema.moduletypesbypath.get(typepath) if self.AppSchema else None
 
 	@loggedmethod
 	def OnAppSchemaLoaded(self, appschema: schema.AppSchema):
@@ -162,7 +177,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			host.par.alignorder = i
 			host.nodeX = 100
 			host.nodeY = -100 * i
-			connector = self._RemoteClient.ProxyManager.GetModuleProxyHost(modschema, self.AppSchema)
+			connector = self.ProxyManager.GetModuleProxyHost(modschema, self.AppSchema)
 			hostconnectorpairs.append([host, connector])
 
 		def _makeInitTask(h, c):
@@ -423,8 +438,9 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def PresetManager(self) -> 'app_state.PresetManager':
 		return self.ownerComp.op('presets')
 
-	def GetModuleTypeSchema(self, typepath) -> 'schema.ModuleTypeSchema':
-		return self.AppSchema.moduletypesbypath.get(typepath) if self.AppSchema else None
+	@property
+	def ProxyManager(self):
+		return self._RemoteClient.ProxyManager
 
 	def BuildState(self):
 		modstates = {}
