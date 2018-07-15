@@ -38,6 +38,7 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 				'Testprintmodule': lambda: self._TestPrintModule(),
 				'Testprintsettings': lambda: self._TestPrintExtractedSettings(),
 				'Cleanparameterattrs': lambda: self.CleanParameterAttrs(),
+				'Addmissingparams': lambda: self.AddMissingParams(),
 			},
 			autoinitparexec=True)
 		self._AutoInitActionParams()
@@ -85,6 +86,19 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 			comp_metadata.UpdateCompMetadata(module, **kwargs)
 		finally:
 			self._LogEnd()
+
+	@loggedmethod
+	def AddMissingParams(self):
+		module = self.Module
+		if not module:
+			self._LogEvent('no module!')
+			return
+		self._LogEvent('Module: {}'.format(module))
+		settings = module_settings.ExtractSettings(module)
+		for t in module.customTuplets:
+			if t[0].tupletName not in settings.parattrs:
+				settings.parattrs[t[0].tupletName] = {'label': t[0].label}
+		module_settings.ApplySettings(module, settings)
 
 	@loggedmethod
 	def _TestPrintExtractedSettings(self):
