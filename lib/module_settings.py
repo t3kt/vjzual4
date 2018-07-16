@@ -21,14 +21,18 @@ except ImportError:
 class ModuleSettings(common.BaseDataObject):
 	def __init__(
 			self,
+			modattrs=None,
 			parattrs=None,
+			pargroupattrs=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
+		self.modattrs = modattrs or {}  # type: Dict[str, str]
 		self.parattrs = parattrs or {}  # type: Dict[Dict[str, str]]
 
 	def ToJsonDict(self):
 		return cleandict(mergedicts(
 			{
+				'modattrs': self.modattrs,
 				'parattrs': self.parattrs,
 			},
 			self.otherattrs))
@@ -57,6 +61,12 @@ def ExtractSettings(comp: 'OP'):
 	settingscomp = comp.op('module_settings')
 	settings = ModuleSettings()
 	if settingscomp:
+		modattrsdat = settingscomp.op('module_metadata')
+		if modattrsdat and modattrsdat.numRows > 0 and modattrsdat.numCols >= 2:
+			for rowcells in modattrsdat.rows():
+				keycell, valcell = rowcells[0:2]
+				if keycell.val and valcell.val:
+					settings.modattrs[keycell.val] = valcell.val
 		parattrsdat = settingscomp.op('parameter_metadata')
 		if parattrsdat:
 			parsedattrs = ParseAttrTable(parattrsdat)
@@ -66,13 +76,24 @@ def ExtractSettings(comp: 'OP'):
 	return settings
 
 def ApplySettings(comp: 'OP', settings: ModuleSettings):
-	settingscomp = comp.op('module_settings')
-	if not settingscomp:
-		settingscomp = CreateOP(
-			baseCOMP,
-			dest=comp,
-			name='module_settings',
-			nodepos=[-800, 800])
+	settingscomp = GetOrCreateOP(
+		baseCOMP,
+		dest=comp,
+		name='module_settings',
+		nodepos=[-800, 800])
+	modattrsdat = GetOrCreateOP(
+		tableDAT,
+		dest=settingscomp,
+		name='module_metadata',
+		nodepos=[0, -200])
+	modattrsdat.clear()
+	for key in sorted(settings.modattrs.keys()):
+		val = settings.modattrs[key]
+		if val is None or val == '':
+			continue
+		if isinstance(val, bool):
+			val = int(val)
+		modattrsdat.appendRow([key, val])
 	parattrsdat = GetOrCreateOP(
 		tableDAT,
 		dest=settingscomp,

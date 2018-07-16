@@ -1,6 +1,6 @@
 from operator import attrgetter
 import re
-from typing import Optional
+from typing import Optional, List, Tuple
 
 print('vjz4/remote_server.py loading')
 
@@ -253,14 +253,7 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 			self._LogEnd()
 
 	@staticmethod
-	def _FindDataNodes(module, modulecore):
-		nodespar = modulecore and getattr(modulecore.par, 'Nodes', None)
-		nodes = nodespar.eval() if nodespar else None
-		if nodes:
-			if isinstance(nodes, (list, tuple)):
-				return module.ops(*nodes)
-			else:
-				return module.ops(nodes)
+	def _FindDataNodes(module):
 		nodes = module.findChildren(tags=['vjznode', 'tdatanode'], maxDepth=1)
 		if not nodes:
 			for n in module.ops('out_node', 'out1', 'video_out'):
@@ -388,3 +381,50 @@ def _GetModuleMasterPath(module):
 			path = match.group(1)
 			return path
 	return None
+
+class _RawModuleInfoBuilder:
+	def __init__(self, module: COMP):
+		self.module = module
+		self.settings = module_settings.ExtractSettings(module)
+
+	def _BuildParamTuplets(self) -> List[List[schema.RawParamInfo]]:
+		pass
+
+	def _BuildParamGroups(self) -> List[schema.RawParamGroupInfo]:
+		return []
+
+	def _BuildNodes(self) -> List[schema.DataNodeInfo]:
+		pass
+
+	def _GetPrimaryNodePath(self, nodes: List[schema.DataNodeInfo]):
+		if not nodes:
+			return None
+		primarynodename = self.settings.modattrs.get('primarynode')
+		if primarynodename:
+			for node in nodes:
+				if node.name == primarynodename:
+					return node.path
+		return nodes[0].path
+
+	def _FindSubModules(self) -> List[COMP]:
+		pass
+
+	def Build(self):
+		nodes = self._BuildNodes()
+		primarynodepath = self._GetPrimaryNodePath(nodes)
+		submods = self._FindSubModules()
+		return schema.RawModuleInfo(
+			path=self.module.path,
+			parentpath=self.module.parent().path if self.module.parent() not in (None, self.module) else None,
+			name=self.module.name,
+			label=trygetpar(self.module, 'Uilabel', 'Label', parse=str),
+			tags=self.module.tags,
+			masterpath=_GetModuleMasterPath(self.module),
+			childmodpaths=[c.path for c in submods],
+			partuplets=self._BuildParamTuplets(),
+			parattrs=self.settings.parattrs,
+			pargroups=self._BuildParamGroups(),
+			nodes=nodes,
+			primarynode=primarynodepath,
+			modattrs=self.settings.modattrs,
+		)

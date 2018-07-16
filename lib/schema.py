@@ -207,6 +207,7 @@ class RawModuleInfo(BaseDataObject):
 			pargroups=None,
 			nodes=None,
 			primarynode=None,
+			modattrs=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.path = path
@@ -221,6 +222,7 @@ class RawModuleInfo(BaseDataObject):
 		self.pargroups = list(pargroups or [])  # type: List[RawParamGroupInfo]
 		self.nodes = list(nodes or [])  # type: List[DataNodeInfo]
 		self.primarynode = primarynode  # type: str
+		self.modattrs = modattrs or {}  # type: Dict[str, str]
 
 	@classmethod
 	def FromJsonDict(cls, obj):
@@ -261,6 +263,7 @@ class RawModuleInfo(BaseDataObject):
 			'pargroups': RawParamGroupInfo.ToJsonDicts(self.pargroups),
 			'nodes': BaseDataObject.ToJsonDicts(self.nodes),
 			'primarynode': self.primarynode,
+			'modattrs': self.modattrs,
 		}))
 
 class ParamPartSchema(BaseDataObject):
