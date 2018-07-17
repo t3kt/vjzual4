@@ -129,6 +129,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		self.nodeMarkersByPath.clear()
 		self._BuildNodeMarkerTable()
 		self.SetPreviewSource(None)
+		common.OPExternalStorage.CleanOrphans()
 
 	def OnTDPreSave(self):
 		for o in self.ownerComp.ops('modules_panel/mod__*'):

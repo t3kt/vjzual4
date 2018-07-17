@@ -436,11 +436,11 @@ class UiBuilder:
 						'Inputcc': control.inputcc if control.inputcc is not None else -1,
 						'Outputcc': control.outputcc if control.outputcc is not None else -1,
 					},
-					tags=['vjz4ctrlmarker'],
-					storage={'controlinfo': control}),
+					tags=['vjz4ctrlmarker']),
 				attrs,
 				**kwargs)
 		)
+		common.OPExternalStorage.Store(ctrl, 'controlinfo', control)
 		return ctrl  # type: MappingEditor
 
 	def CreateNodeMarker(

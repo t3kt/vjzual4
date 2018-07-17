@@ -27,6 +27,7 @@ class _Parent:
 
 class op:
 	def __init__(self, arg=None):
+		self.id = 0
 		self.path = ''
 		self.name = ''
 		self.par = _Expando()
@@ -39,6 +40,7 @@ class op:
 		self.isCHOP = False
 		self.depth = 0
 		self.tags = set()
+		self.valid = True
 
 	def ops(self, *args): return [op()]
 
