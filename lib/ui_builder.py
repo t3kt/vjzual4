@@ -197,7 +197,7 @@ class UiBuilder:
 				**kwargs),
 			label=parinfo.label,
 			behavior='toggledown',
-			valueexpr=modhostconnector.GetParExpr(name) if modhostconnector else None,
+			valueexpr=modhostconnector.GetParExpr(parinfo.parts[0].name) if modhostconnector else None,
 			defval=parinfo.parts[0].default,
 			tags=['vjz4mappable'])
 
