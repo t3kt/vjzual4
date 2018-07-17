@@ -1,6 +1,6 @@
 import datetime
 import json
-from typing import Any, Callable, Dict, List, Iterable, Set, Union
+from typing import Any, Callable, Dict, List, Iterable, Set, Union, Optional
 
 print('vjz4/common.py loading')
 
@@ -55,7 +55,20 @@ class IndentedLogger:
 
 _logger = IndentedLogger()
 
-class ExtensionBase:
+class LoggableBase:
+	def _GetLogId(self) -> Optional[str]:
+		return None
+
+	def _LogEvent(self, event, indentafter=False, unindentbefore=False):
+		raise NotImplementedError()
+
+	def _LogBegin(self, event):
+		self._LogEvent(event, indentafter=True)
+
+	def _LogEnd(self, event=None):
+		self._LogEvent(event, unindentbefore=True)
+
+class ExtensionBase(LoggableBase):
 	def __init__(self, ownerComp):
 		self.ownerComp = ownerComp  # type: op
 		self.enablelogging = True
@@ -74,11 +87,17 @@ class ExtensionBase:
 				indentafter=indentafter,
 				unindentbefore=unindentbefore)
 
-	def _LogBegin(self, event):
-		self._LogEvent(event, indentafter=True)
+class LoggableSubComponent(LoggableBase):
+	def __init__(self, hostobj: LoggableBase, logprefix: str=None):
+		self.hostobj = hostobj
+		self.logprefix = logprefix if logprefix is not None else self.__class__.__name__
 
-	def _LogEnd(self, event=None):
-		self._LogEvent(event, unindentbefore=True)
+	def _LogEvent(self, event, indentafter=False, unindentbefore=False):
+		if self.hostobj is None:
+			return
+		if self.logprefix and event:
+			event = self.logprefix + ' ' + event
+		self.hostobj._LogEvent(event, indentafter=indentafter, unindentbefore=unindentbefore)
 
 def _defaultformatargs(args, kwargs):
 	if not args:
