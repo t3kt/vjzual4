@@ -759,3 +759,19 @@ class _OPExternalDataStorage:
 _OPStorageEntry = NamedTuple('_OPStorageEntry', [('opid', int), ('data', Dict[str, Any])])
 
 OPExternalStorage = _OPExternalDataStorage()
+
+class IdGenerator:
+	def __init__(self):
+		self._nextid = 1
+
+	def reset(self):
+		self._nextid = 1
+
+	def skip(self, idval):
+		if idval and idval >= self._nextid:
+			self._nextid = idval + 1
+
+	def next(self):
+		idval = self._nextid
+		self._nextid +=1
+		return idval

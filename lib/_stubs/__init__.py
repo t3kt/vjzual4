@@ -42,6 +42,8 @@ class op:
 		self.tags = set()
 		self.valid = True
 
+	def destroy(self): pass
+
 	def ops(self, *args): return [op()]
 
 	def openParameters(self): pass

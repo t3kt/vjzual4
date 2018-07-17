@@ -424,3 +424,8 @@ class MappingEditor(common.ExtensionBase, common.ActionsExt):
 			items=self._GetContextMenuItems(),
 			autoClose=True)
 
+
+class MappingSet:
+	def __init__(self):
+		pass
+

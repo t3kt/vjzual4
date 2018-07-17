@@ -929,6 +929,34 @@ class ControlMapping(BaseDataObject):
 			'control': self.control,
 		}))
 
+class ControlMappingSet(BaseDataObject):
+	def __init__(
+			self,
+			name=None,
+			enable=True,
+			generatedby: str=None,
+			mappings=None,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.name = name
+		self.enable = enable
+		self.generatedby = generatedby
+		self.mappings = mappings or []  # type: List[ControlMapping]
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'name': self.name,
+			'enable': self.enable,
+			'generatedby': self.generatedby,
+			'mappings': ControlMapping.ToJsonDicts(self.mappings),
+		}))
+
+	@classmethod
+	def FromJsonDict(cls, obj):
+		return cls(
+			mappings=ControlMapping.FromJsonDicts(obj.get('mappings')),
+			**excludekeys(obj, ['mappings']))
+
 class SchemaProvider:
 	def GetAppSchema(self) -> AppSchema:
 		raise NotImplementedError()
