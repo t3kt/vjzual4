@@ -16,6 +16,7 @@ PaneType.NETWORKEDITOR = None
 
 class project:
 	name = ''
+	folder = ''
 
 class _Parent:
 	def __call__(self, *args, **kwargs):
@@ -34,6 +35,9 @@ class op:
 		self.op = op
 		self.storage = {}
 		self.isCOMP = False
+		self.isTOP = False
+		self.isCHOP = False
+		self.depth = 0
 		self.tags = set()
 
 	def ops(self, *args): return [op()]

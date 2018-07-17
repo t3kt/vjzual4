@@ -1,11 +1,12 @@
 import json
 from operator import itemgetter
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 print('vjz4/app_host.py loading')
 
 if False:
 	from _stubs import *
+	from highlighting import HighlightManager
 
 try:
 	import ui_builder
@@ -103,6 +104,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 
 	@loggedmethod
 	def OnAppSchemaLoaded(self, appschema: schema.AppSchema):
+		self.HighlightManager.ClearAllHighlights()
 		self.AppSchema = appschema
 		self._ShowSchemaJson(None)
 		self._BuildSubModuleHosts().then(
@@ -120,6 +122,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		for o in self.ownerComp.ops('app_info', 'modules', 'params', 'param_parts', 'data_nodes'):
 			o.closeViewer()
 		self._ShowSchemaJson(None)
+		self.HighlightManager.ClearAllComponents()
 		for o in self.ownerComp.ops('nodes/node__*'):
 			o.destroy()
 		self.AppSchema = None
@@ -441,6 +444,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	@property
 	def ProxyManager(self):
 		return self._RemoteClient.ProxyManager
+
+	@property
+	def HighlightManager(self) -> 'HighlightManager':
+		return self.ownerComp.op('highlight_manager')
 
 	def BuildState(self):
 		modstates = {}
