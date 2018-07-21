@@ -309,6 +309,18 @@ class ParamPartSchema(BaseDataObject):
 		'helptext',
 	]
 
+	extratablekeys = ['key', 'param', 'paramkey', 'modpath', 'style', 'vecindex']
+
+	def GetExtraTableAttrs(self, param: 'ParamSchema', vecIndex: int, modpath: str):
+		return {
+			'key': modpath + ':' + self.name,
+			'param': param.name,
+			'paramkey': modpath + ':' + param.name,
+			'modpath': modpath,
+			'style': param.style,
+			'vecindex': vecIndex,
+		}
+
 	def ToJsonDict(self):
 		return cleandict(mergedicts(self.otherattrs, {
 			'name': self.name,
@@ -391,6 +403,14 @@ class ParamSchema(BaseDataObject, common.AttrBasedIdentity):
 		'helptext',
 		'groupname',
 	]
+
+	extratablekeys = ['key', 'modpath']
+
+	def GetExtraTableAttrs(self, modpath: str):
+		return {
+			'key': modpath + ':' + self.name,
+			'modpath': modpath,
+		}
 
 	def ToJsonDict(self):
 		return cleandict(mergedicts(self.otherattrs, {

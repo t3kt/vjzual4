@@ -239,10 +239,10 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 	def _ClearParamTables(self):
 		dat = self._ParamTable
 		dat.clear()
-		dat.appendRow(['key', 'modpath'] + schema.ParamSchema.tablekeys)
+		dat.appendRow(schema.ParamSchema.extratablekeys + schema.ParamSchema.tablekeys)
 		dat = self._ParamPartTable
 		dat.clear()
-		dat.appendRow(['key', 'param', 'modpath', 'style', 'vecindex'] + schema.ParamPartSchema.tablekeys)
+		dat.appendRow(schema.ParamPartSchema.extratablekeys + schema.ParamPartSchema.tablekeys)
 
 	def _AddParamsToTable(self, modpath, params: List[schema.ParamSchema]):
 		if not params:
@@ -252,20 +252,11 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 		for param in params:
 			param.AddToTable(
 				paramsdat,
-				attrs={
-					'key': modpath + ':' + param.name,
-					'modpath': modpath,
-				})
+				attrs=param.GetExtraTableAttrs(modpath=modpath))
 			for i, part in enumerate(param.parts):
 				part.AddToTable(
 					partsdat,
-					attrs={
-						'key': modpath + ':' + part.name,
-						'param': param.name,
-						'modpath': modpath,
-						'style': param.style,
-						'vecindex': i,
-					})
+					attrs=part.GetExtraTableAttrs(param=param, vecIndex=i, modpath=modpath))
 
 	def _ClearDataNodesTable(self):
 		dat = self._DataNodesTable
