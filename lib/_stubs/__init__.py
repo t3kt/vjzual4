@@ -27,6 +27,7 @@ class _Parent:
 
 class op:
 	def __init__(self, arg=None):
+		self.id = 0
 		self.path = ''
 		self.name = ''
 		self.par = _Expando()
@@ -39,6 +40,9 @@ class op:
 		self.isCHOP = False
 		self.depth = 0
 		self.tags = set()
+		self.valid = True
+
+	def destroy(self): pass
 
 	def ops(self, *args): return [op()]
 
@@ -54,6 +58,8 @@ class op:
 
 	def findChildren(self, maxDepth=1, tags=None) -> 'List[op]':
 		pass
+
+	def addScriptError(self, msg): pass
 
 	TDResources = _Expando()
 

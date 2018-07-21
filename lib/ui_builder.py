@@ -419,6 +419,29 @@ class UiBuilder:
 				attrs,
 				**kwargs))
 
+	def CreateMappingMarker(
+			self, dest, name,
+			mapping: schema.ControlMapping,
+			attrs: opattrs=None, **kwargs):
+		ctrl = CreateFromTemplate(
+			template=self.ownerComp.op('mapping_marker'),
+			dest=dest, name=name,
+			attrs=opattrs.merged(
+				opattrs(
+					parvals={
+						'Modpath': mapping.path or '',
+						'Param': mapping.param or '',
+						'Control': mapping.control or '',
+						'Enabled': bool(mapping.enable),
+						'Rangelow': mapping.rangelow,
+						'Rangehigh': mapping.rangehigh,
+					},
+					tags=['vjz4mappingmarker']),
+				attrs,
+				**kwargs))
+		common.OPExternalStorage.Store(ctrl, 'mapping', mapping)
+		return ctrl
+
 	def CreateControlMarker(
 			self, dest, name,
 			control,  # type: schema.DeviceControlInfo
@@ -436,11 +459,11 @@ class UiBuilder:
 						'Inputcc': control.inputcc if control.inputcc is not None else -1,
 						'Outputcc': control.outputcc if control.outputcc is not None else -1,
 					},
-					tags=['vjz4ctrlmarker'],
-					storage={'controlinfo': control}),
+					tags=['vjz4ctrlmarker']),
 				attrs,
 				**kwargs)
 		)
+		common.OPExternalStorage.Store(ctrl, 'controlinfo', control)
 		return ctrl  # type: MappingEditor
 
 	def CreateNodeMarker(

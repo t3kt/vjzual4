@@ -129,6 +129,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		self.nodeMarkersByPath.clear()
 		self._BuildNodeMarkerTable()
 		self.SetPreviewSource(None)
+		common.OPExternalStorage.CleanOrphans()
 
 	def OnTDPreSave(self):
 		for o in self.ownerComp.ops('modules_panel/mod__*'):
@@ -139,8 +140,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		if not self.AppSchema:
 			return
 		mapper = self.ControlMapper
-		for modschema in self.AppSchema.modules:
-			mapper.AddEmptyMissingMappingsForModule(modschema)
+		# TODO: initialize mappings
 
 	@property
 	def _ModuleHostTemplate(self):

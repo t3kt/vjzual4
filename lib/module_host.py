@@ -657,7 +657,7 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		sourceop = sourceparent.op(dropName)
 		if not sourceop:
 			return
-		controlinfo = sourceop.storage.get('controlinfo')  # type: schema.DeviceControlInfo
+		controlinfo = common.OPExternalStorage.Fetch(sourceop, 'controlinfo')  # type: schema.DeviceControlInfo
 		if 'vjz4mappable' not in ctrl.tags or ctrl.path not in self.parampartsbycontrolpath or not controlinfo:
 			self._LogEvent('Control does not support mapping: {}'.format(ctrl))
 			return
