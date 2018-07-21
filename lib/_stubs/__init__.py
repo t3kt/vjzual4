@@ -59,6 +59,8 @@ class op:
 	def findChildren(self, maxDepth=1, tags=None) -> 'List[op]':
 		pass
 
+	def addScriptError(self, msg): pass
+
 	TDResources = _Expando()
 
 op.TDResources = _Expando()
