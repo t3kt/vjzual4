@@ -134,6 +134,7 @@ class MenuField(common.ExtensionBase):
 		rawlabels = self.ownerComp.par.Menulabels.eval()
 		return _preparelist(rawlabels) or self._TargetPar.menuLabels
 
+	@common.loggedmethod
 	def OnClick(self, field):
 		names = self._MenuNames
 		labels = self._MenuLabels
@@ -160,13 +161,25 @@ class MenuField(common.ExtensionBase):
 		labels = self._MenuLabels
 		index = targetpar.menuIndex
 		parval = targetpar.eval()
-		if not names or not labels or index is None or index < 0:
+		if not names or not labels or index < 0:
 			return parval
-		elif index >= len(names) or index >= len(labels):
+		if index is None:
+			if parval in names:
+				index = names.index(parval)
+			else:
+				return parval
+		if index >= len(names) or index >= len(labels):
 			return parval
 		elif index == 0 and parval != names[index]:
 			# for StrMenu parameters when the value doesn't match the menuNames, it still has a menuIndex of 0
-			return parval
+			if parval in names:
+				index = names.index(parval)
+				if index < len(labels):
+					return labels[index]
+				else:
+					return parval
+			else:
+				return parval
 		else:
 			return labels[index]
 
