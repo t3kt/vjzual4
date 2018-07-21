@@ -435,7 +435,8 @@ class UiBuilder:
 						'Enabled': bool(mapping.enable),
 						'Rangelow': mapping.rangelow,
 						'Rangehigh': mapping.rangehigh,
-					}),
+					},
+					tags=['vjz4mappingmarker']),
 				attrs,
 				**kwargs))
 		common.OPExternalStorage.Store(ctrl, 'mapping', mapping)

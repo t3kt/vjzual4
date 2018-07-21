@@ -1,5 +1,5 @@
 from collections import OrderedDict
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 print('vjz4/control_mapping.py loading')
 
@@ -100,11 +100,22 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 			return op.UiBuilder
 
 	@property
+	def _SelectedIndex(self):
+		return self.ownerComp.par.Selectedmapping.eval()
+
+	@_SelectedIndex.setter
+	def _SelectedIndex(self, index):
+		if index is None or index < 0:
+			self.ownerComp.par.Selectedmapping = -1
+		else:
+			self.ownerComp.par.Selectedmapping = index
+
+	@property
 	def _SelectedMapping(self):
-		index = self.ownerComp.par.Selectedmapping.eval()
+		index = self._SelectedIndex
 		return self._GetMapping(index, warn=False)
 
-	def _GetMapping(self, index, warn=True):
+	def _GetMapping(self, index, warn=True) -> Optional[ControlMapping]:
 		if index < 0 or index >= len(self.custommappings.mappings):
 			if warn:
 				self._LogEvent('Index out of range: {} (mappings: {})'.format(index, len(self.custommappings.mappings)))
@@ -121,7 +132,7 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 		if not self._GetMapping(index, warn=True):
 			return
 		del self.custommappings.mappings[index]
-		self._Rebuild(clearselected=index == self.ownerComp.par.Selectedmapping)
+		self._Rebuild(clearselected=index == self._SelectedIndex)
 
 	@loggedmethod
 	def AddOrReplaceMappingForParam(
@@ -177,10 +188,6 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 		for mapping in self.custommappings.mappings:
 			mapping.AddToTable(dat)
 
-	@loggedmethod
-	def UpdateSelectedMapping(self, **attrs):
-		self._UpdateMapping(self.ownerComp.par.Selectedmapping.eval(), **attrs)
-
 	def _UpdateMapping(self, index, **attrs):
 		mapping = self._GetMapping(index, warn=True)
 		if not mapping:
@@ -189,10 +196,15 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 			if key not in ControlMapping.tablekeys:
 				self._LogEvent('Unsupported mapping attribute: {}'.format(key))
 				return
+		anychanged = False
 		for key, val in attrs.items():
+			if val == getattr(mapping, key, None):
+				continue
 			setattr(mapping, key, val)
+			anychanged = True
 		# TODO: make this more efficient by only updating the target mapping
-		self._Rebuild()
+		if anychanged:
+			self._Rebuild(clearselected=False)
 
 	def _InitializeChannelProcessing(self):
 		ctrlnames = []
@@ -242,127 +254,91 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 	@loggedmethod
 	def _BuildMappingMarkers(self):
 		dest = self.ownerComp.op('mappings_panel')
-		for o in dest.ops('map__*'):
-			o.destroy()
+		for o in dest.ops('map__*', 'onclick__*'):
+			if o.valid:
+				o.destroy()
+		onclicktemplate = dest.op('on_marker_click_template')
 		if not self.custommappings or not self.custommappings.mappings:
 			return
 		uibuilder = self.UiBuilder
 		for i, mapping in enumerate(self.custommappings.mappings):
-			uibuilder.CreateMappingMarker(
+			nodey = 400 + -200 * i
+			marker = uibuilder.CreateMappingMarker(
 				dest=dest,
 				name='map__{}'.format(i),
 				mapping=mapping,
 				attrs=opattrs(
 					order=i,
-					nodepos=[200, -400 + 150 * i],
+					nodepos=[200, nodey],
 					parvals={
 						'hmode': 'fill',
 					}))
+			onclick = common.CreateFromTemplate(
+				template=onclicktemplate,
+				dest=dest,
+				name='onclick__{}'.format(i),
+				attrs=opattrs(
+					nodepos=[400, nodey],
+					parvals={
+						'panel': marker.name,
+						'active': True,
+					}))
+			onclick.dock = marker
 
 	def _UpdateEditor(self):
-		index = self.ownerComp.par.Selectedmapping.eval()
+		index = self._SelectedIndex
 		mapping = self._GetMapping(index, warn=False)
 		editor = self.ownerComp.op('editor_panel')
 		if not mapping:
 			editor.par.display = False
-			pass
+			editor.par.Modpath = ''
+			editor.par.Param = ''
+			editor.par.Control = ''
+			editor.par.Enabled = False
+			editor.par.Rangelow = 0
+			editor.par.Rangehigh = 1
 		else:
 			editor.par.display = True
-			pass
+			editor.par.Modpath = mapping.path or ''
+			editor.par.Param = mapping.param or ''
+			editor.par.Control = mapping.control or ''
+			editor.par.Enabled = mapping.enable
+			editor.par.Rangelow = mapping.rangelow if mapping.rangelow is not None else 0
+			editor.par.Rangehigh = mapping.rangehigh if mapping.rangehigh is not None else 1
 
 	@loggedmethod
 	def OnSelectedMappingChange(self):
 		self._UpdateEditor()
 
-
-class MappingEditor(common.ExtensionBase, common.ActionsExt):
-	def __init__(self, ownerComp):
-		common.ExtensionBase.__init__(self, ownerComp)
-		common.ActionsExt.__init__(self, ownerComp, actions={
-			'Savemapping': self.SaveMapping,
-			'Loadmapping': self.LoadMapping,
-			'Deletemapping': self._DeleteMapping,
-		})
-		self._AutoInitActionParams()
-
-	@property
-	def AppHost(self):
-		apphost = getattr(self.ownerComp.parent, 'AppHost', None)  # type: AppHost
-		return apphost
-
-	@property
-	def _ControlMapper(self):
-		apphost = self.AppHost
-		return apphost.ControlMapper if apphost else None
-
-	@property
-	def _Mapping(self):
-		mapidval = self.ownerComp.par.Mapid.eval()
-		if mapidval == '':
-			mapidval = None
-		else:
-			mapidval = str(mapidval)
-		return ControlMapping(
-			path=self.ownerComp.par.Modpath.eval(),
-			param=self.ownerComp.par.Param.eval(),
-			enable=self.ownerComp.par.Enabled.eval(),
-			rangelow=self.ownerComp.par.Rangelow.eval(),
-			rangehigh=self.ownerComp.par.Rangehigh.eval(),
-			mapid=mapidval)
-
-	@_Mapping.setter
-	def _Mapping(self, mapping):
-		mapping = mapping or ControlMapping()
-		self.ownerComp.par.Modpath = mapping.path or ''
-		self.ownerComp.par.Param = mapping.param or ''
-		self.ownerComp.par.Enabled = bool(mapping.enable)
-		self.ownerComp.par.Control = mapping.control or ''
-		self.ownerComp.par.Rangelow = mapping.rangelow
-		self.ownerComp.par.Rangehigh = mapping.rangehigh
-		self.ownerComp.par.Mapid = mapping.mapid or ''
-		# TODO: reconcile this stuff
-		self.ownerComp.op('enable_toggle').par.Value1 = bool(mapping.enable)
-
 	@loggedmethod
-	def SaveMapping(self):
-		controlmapper = self._ControlMapper
-		if not controlmapper:
+	def OnMarkerClick(self, panelValue):
+		source = panelValue.owner
+		if 'vjz4mappingmarker' not in source.tags:
+			if 'vjz4mappingmarker' in source.parent().tags:
+				source = source.parent()
+			else:
+				return
+		index = source.digits
+		if index is None:
 			return
-		mapping = self._Mapping
-		controlmapper.UpdateMapping(mapping)
-		self.ownerComp.par.Mapid = str(mapping.mapid or '')
+		if panelValue.name == 'lselect':
+			if index == self._SelectedIndex:
+				self._SelectedIndex = None
+			else:
+				self._SelectedIndex = index
 
-	@loggedmethod
-	def LoadMapping(self):
-		controlmapper = self._ControlMapper
-		if not controlmapper:
+	_editorparamstoattrs = {
+		'Modpath': 'path',
+		'Param': 'param',
+		'Control': 'control',
+		'Enabled': 'enable',
+		'Rangelow': 'rangelow',
+		'Rangehigh': 'rangehigh'
+	}
+
+	def OnEditorParChange(self, par):
+		attrname = self._editorparamstoattrs.get(par.name)
+		if not attrname:
+			self._LogEvent('editor param not supported: {}'.format(par.name))
 			return
-		mapping = controlmapper.GetMapping(self.ownerComp.par.Mapid.eval()) or ControlMapping()
-		self._Mapping = mapping
-
-	@loggedmethod
-	def _DeleteMapping(self):
-		controlmapper = self._ControlMapper
-		if not controlmapper:
-			return
-		mapping = self._Mapping
-		td.run('op({!r}).DeleteMapping({!r})'.format(controlmapper.path, mapping.mapid), delayFrames=1)
-
-	def _GetContextMenuItems(self):
-		return [
-			menu.Item(
-				'Delete mapping',
-				callback=lambda: self._DeleteMapping()
-			)
-		]
-
-	def ShowContextMenu(self):
-		menu.fromMouse().Show(
-			items=self._GetContextMenuItems(),
-			autoClose=True)
-
-
-class MappingSet:
-	def __init__(self):
-		pass
-
+		self._UpdateMapping(self._SelectedIndex, **{attrname: par.eval()})
