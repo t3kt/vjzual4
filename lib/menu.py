@@ -161,7 +161,7 @@ class MenuField(common.ExtensionBase):
 		labels = self._MenuLabels
 		index = targetpar.menuIndex
 		parval = targetpar.eval()
-		if not names or not labels or index < 0:
+		if not names or not labels:
 			return parval
 		if index is None:
 			if parval in names:

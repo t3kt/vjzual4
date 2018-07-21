@@ -116,7 +116,9 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 		return self._GetMapping(index, warn=False)
 
 	def _GetMapping(self, index, warn=True) -> Optional[ControlMapping]:
-		if index < 0 or index >= len(self.custommappings.mappings):
+		if index < 0:
+			return None
+		if index >= len(self.custommappings.mappings):
 			if warn:
 				self._LogEvent('Index out of range: {} (mappings: {})'.format(index, len(self.custommappings.mappings)))
 			return None
@@ -300,7 +302,10 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 		else:
 			editor.par.display = True
 			editor.par.Modpath = mapping.path or ''
-			editor.par.Param = mapping.param or ''
+			if mapping.path and mapping.param:
+				editor.par.Param = mapping.path + ':' + mapping.param
+			else:
+				editor.par.Param = mapping.param or ''
 			editor.par.Control = mapping.control or ''
 			editor.par.Enabled = mapping.enable
 			editor.par.Rangelow = mapping.rangelow if mapping.rangelow is not None else 0
@@ -341,4 +346,10 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 		if not attrname:
 			self._LogEvent('editor param not supported: {}'.format(par.name))
 			return
-		self._UpdateMapping(self._SelectedIndex, **{attrname: par.eval()})
+		value = par.eval()
+		if par.name == 'Param' and value and ':' in value:
+			path, param = value.split(':')
+			self._UpdateMapping(self._SelectedIndex, param=param, path=path)
+			par.owner.par.Modpath = path
+		else:
+			self._UpdateMapping(self._SelectedIndex, **{attrname: value})
