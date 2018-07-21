@@ -1,6 +1,6 @@
 import datetime
 import json
-from typing import Any, Callable, Dict, List, Iterable, Set, Union, Optional
+from typing import Any, Callable, Dict, List, NamedTuple, Iterable, Set, Union, Optional
 
 print('vjz4/common.py loading')
 
@@ -704,3 +704,58 @@ class AttrBasedIdentity:
 
 	def __hash__(self):
 		return hash(self._IdentityAttrs())
+
+
+class _OPExternalDataStorage:
+	"""
+	Stores key/value data associated with OPs, without actually using OP storage.
+	Since OP storage is serialized into the .toe/.tox files, it can cause issues
+	when storing temporary data or things that cannot be properly
+	serialized/deserialized.
+	Storing those values outside of the OP storage avoids those problems.
+	There is a potential drawback of leftover data accumulating for OPs that have
+	been deleted, so this storage should be cleaned at points when a number of OPs
+	have been removed.
+	"""
+	def __init__(self):
+		self.entries = {}  # type: Dict[str, _OPStorageEntry]
+
+	def CleanOrphans(self):
+		for path, entry in list(self.entries.items()):
+			o = op(path)
+			if not o or not o.valid or o.id != entry.opid or not entry.data:
+				del self.entries[path]
+
+	def ClearAll(self):
+		self.entries.clear()
+
+	def _GetEntry(self, o: OP, autocreate=False):
+		if not o or not o.valid:
+			return None
+		entry = self.entries.get(o.path)
+		if entry is not None and entry.opid == o.id:
+			return entry
+		if autocreate:
+			self.entries[o.path] = entry = _OPStorageEntry(o.id, {})
+			return entry
+		return None
+
+	def Store(self, o: OP, key: str, value):
+		if not o or not o.valid:
+			return
+		entry = self._GetEntry(o, autocreate=value is not None)
+		if entry is None:
+			return
+		entry.data[key] = value
+
+	def Fetch(self, o: OP, key: str):
+		if not o or not o.valid:
+			return None
+		entry = self._GetEntry(o, autocreate=False)
+		if entry is None:
+			return None
+		return entry.data.get(key)
+
+_OPStorageEntry = NamedTuple('_OPStorageEntry', [('opid', int), ('data', Dict[str, Any])])
+
+OPExternalStorage = _OPExternalDataStorage()

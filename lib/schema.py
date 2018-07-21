@@ -309,6 +309,18 @@ class ParamPartSchema(BaseDataObject):
 		'helptext',
 	]
 
+	extratablekeys = ['key', 'param', 'paramkey', 'modpath', 'style', 'vecindex']
+
+	def GetExtraTableAttrs(self, param: 'ParamSchema', vecIndex: int, modpath: str):
+		return {
+			'key': modpath + ':' + self.name,
+			'param': param.name,
+			'paramkey': modpath + ':' + param.name,
+			'modpath': modpath,
+			'style': param.style,
+			'vecindex': vecIndex,
+		}
+
 	def ToJsonDict(self):
 		return cleandict(mergedicts(self.otherattrs, {
 			'name': self.name,
@@ -391,6 +403,14 @@ class ParamSchema(BaseDataObject, common.AttrBasedIdentity):
 		'helptext',
 		'groupname',
 	]
+
+	extratablekeys = ['key', 'modpath']
+
+	def GetExtraTableAttrs(self, modpath: str):
+		return {
+			'key': modpath + ':' + self.name,
+			'modpath': modpath,
+		}
 
 	def ToJsonDict(self):
 		return cleandict(mergedicts(self.otherattrs, {
@@ -891,7 +911,6 @@ class ControlMapping(BaseDataObject):
 			rangelow=None,
 			rangehigh=None,
 			control=None,
-			mapid=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.path = path
@@ -900,7 +919,6 @@ class ControlMapping(BaseDataObject):
 		self.rangelow = rangelow if rangelow is not None else 0
 		self.rangehigh = rangehigh if rangehigh is not None else 1
 		self.control = control
-		self.mapid = mapid
 
 	@property
 	def parampath(self):
@@ -909,7 +927,6 @@ class ControlMapping(BaseDataObject):
 		return self.path + ':' + self.param
 
 	tablekeys = [
-		'mapid',
 		'path',
 		'param',
 		'enable',
@@ -920,7 +937,6 @@ class ControlMapping(BaseDataObject):
 
 	def ToJsonDict(self):
 		return cleandict(mergedicts(self.otherattrs, {
-			'mapid': self.mapid,
 			'path': self.path,
 			'param': self.param,
 			'enable': self.enable,
@@ -928,6 +944,45 @@ class ControlMapping(BaseDataObject):
 			'rangehigh': self.rangehigh,
 			'control': self.control,
 		}))
+
+class ControlMappingSet(BaseDataObject):
+	def __init__(
+			self,
+			name=None,
+			enable=True,
+			generatedby: str=None,
+			mappings=None,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.name = name
+		self.enable = enable
+		self.generatedby = generatedby
+		self.mappings = mappings or []  # type: List[ControlMapping]
+
+	def GetMappingsForParam(self, modpath: str, paramname: str, devicename: str) -> List[ControlMapping]:
+		prefix = (devicename + ':') if devicename else None
+		results = []
+		for mapping in self.mappings:
+			if mapping.path != modpath or mapping.param != paramname:
+				continue
+			if mapping.control and prefix and not mapping.control.startswith(prefix):
+				continue
+			results.append(mapping)
+		return results
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'name': self.name,
+			'enable': self.enable,
+			'generatedby': self.generatedby,
+			'mappings': ControlMapping.ToJsonDicts(self.mappings),
+		}))
+
+	@classmethod
+	def FromJsonDict(cls, obj):
+		return cls(
+			mappings=ControlMapping.FromJsonDicts(obj.get('mappings')),
+			**excludekeys(obj, ['mappings']))
 
 class SchemaProvider:
 	def GetAppSchema(self) -> AppSchema:

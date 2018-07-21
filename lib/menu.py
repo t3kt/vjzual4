@@ -104,30 +104,90 @@ def fromButton(buttonComp, h='Left', v='Bottom', matchWidth=False, offset=(0, 0)
 	return _MenuOpener(_applyPosition)
 
 
-def HandleMenuFieldClick(field):
-	ctrl = field.parent()
-	targetpar = ctrl.par.Targetpar.eval()
-	if targetpar is None:
-		return
-	rawnames = ctrl.par.Menunames.eval()
-	rawlabels = ctrl.par.Menulabels.eval()
-	names = _preparelist(rawnames) or targetpar.menuNames
-	labels = _preparelist(rawlabels) or targetpar.menuLabels
-	if not names and not labels:
-		return
+class MenuField(common.ExtensionBase):
+	def __init__(self, ownerComp):
+		super().__init__(ownerComp)
 
-	def _valueitem(name, label):
-		def _callback():
-			targetpar.val = name or label
-		return Item(
-			text=label or name,
-			callback=_callback)
+	@property
+	def _DefaultTargetPar(self):
+		return self.ownerComp.op('stub').par.Value
 
-	items = [
-		_valueitem(name, label)
-		for name, label in zip_longest(names, labels, fillvalue=None)
-	]
-	fromButton(buttonComp=field).Show(items=items)
+	@property
+	def _TargetPar(self):
+		targetpar = self.ownerComp.par.Targetpar.eval()
+		if targetpar in (None, ''):
+			return self._DefaultTargetPar
+		if isinstance(targetpar, Par):
+			return targetpar
+		if not isinstance(targetpar, Par):
+			self.ownerComp.addScriptError('Invalid target parameter: {!r}'.format(targetpar))
+			return self._DefaultTargetPar
+		return targetpar
+
+	@property
+	def _MenuNames(self) -> List[str]:
+		rawnames = self.ownerComp.par.Menunames.eval()
+		return _preparelist(rawnames) or self._TargetPar.menuNames
+
+	@property
+	def _MenuLabels(self):
+		rawlabels = self.ownerComp.par.Menulabels.eval()
+		return _preparelist(rawlabels) or self._TargetPar.menuLabels
+
+	@common.loggedmethod
+	def OnClick(self, field):
+		names = self._MenuNames
+		labels = self._MenuLabels
+		if not names or not labels:
+			return
+
+		targetpar = self._TargetPar
+
+		def _valueitem(name, label):
+			def _callback():
+				targetpar.val = name or label
+			return Item(
+				text=label or name,
+				callback=_callback)
+		items = [
+			_valueitem(name, label)
+			for name, label in zip_longest(names, labels, fillvalue=None)
+		]
+		fromButton(buttonComp=field).Show(items=items)
+
+	def _GetDisplayValue(self):
+		targetpar = self._TargetPar
+		names = self._MenuNames
+		labels = self._MenuLabels
+		index = targetpar.menuIndex
+		parval = targetpar.eval()
+		if not names or not labels:
+			return parval
+		if index is None:
+			if parval in names:
+				index = names.index(parval)
+			else:
+				return parval
+		if index >= len(names) or index >= len(labels):
+			return parval
+		elif index == 0 and parval != names[index]:
+			# for StrMenu parameters when the value doesn't match the menuNames, it still has a menuIndex of 0
+			if parval in names:
+				index = names.index(parval)
+				if index < len(labels):
+					return labels[index]
+				else:
+					return parval
+			else:
+				return parval
+		else:
+			return labels[index]
+
+	def BuildAttrTable(self, dat):
+		dat.clear()
+		value = self._TargetPar.eval()
+		display = self._GetDisplayValue()
+		dat.appendCol([value, display])
 
 def _preparelist(rawval) -> List[str]:
 	if not rawval:
