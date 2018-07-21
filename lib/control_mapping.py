@@ -19,12 +19,14 @@ try:
 except ImportError:
 	common = mod.common
 loggedmethod = common.loggedmethod
+opattrs = common.opattrs
 
 try:
 	import schema
 except ImportError:
 	schema = mod.schema
 ControlMapping = schema.ControlMapping
+ControlMappingSet = schema.ControlMappingSet
 
 try:
 	import menu
@@ -72,11 +74,16 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 			'Clearmappings': self.ClearMappings,
 		})
 		self._AutoInitActionParams()
-		self.mappings = OrderedDict()  # type: Dict[str, ControlMapping]
-		self.editors = {}  # type: Dict[str, MappingEditor]
-		self.nextid = 1
+		self.custommappings = ControlMappingSet()
+		self._Rebuild()
+
+	def _Rebuild(self, clearselected=True):
+		if clearselected or not self._SelectedMapping:
+			self.ownerComp.par.Selectedmapping = -1
 		self._BuildMappingTable()
+		self._BuildMappingMarkers()
 		self._InitializeChannelProcessing()
+		self._UpdateEditor()
 
 	@property
 	def AppHost(self):
@@ -92,43 +99,29 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 		if hasattr(op, 'UiBuilder'):
 			return op.UiBuilder
 
-	def GetMapping(self, mapid):
-		return self.mappings.get(str(mapid))
+	@property
+	def _SelectedMapping(self):
+		index = self.ownerComp.par.Selectedmapping.eval()
+		return self._GetMapping(index, warn=False)
 
-	def GetMappingsForParam(self, modpath: str, paramname: str, devicename: str) -> List[schema.ControlMapping]:
-		prefix = (devicename + ':') if devicename else None
-		results = []
-		for mapping in self.mappings.values():
-			if mapping.path != modpath or mapping.param != paramname:
-				continue
-			if mapping.control and prefix and not mapping.control.startswith(prefix):
-				continue
-			results.append(mapping)
-		return results
+	def _GetMapping(self, index, warn=True):
+		if index < 0 or index >= len(self.custommappings.mappings):
+			if warn:
+				self._LogEvent('Index out of range: {} (mappings: {})'.format(index, len(self.custommappings.mappings)))
+			return None
+		return self.custommappings.mappings[index]
 
 	@loggedmethod
 	def ClearMappings(self):
-		self.mappings.clear()
-		self._BuildMappingTable()
-		self._ClearMappingEditors()
-		self._InitializeChannelProcessing()
+		self.custommappings.clear()
+		self._Rebuild()
 
 	@loggedmethod
-	def DeleteMapping(self, mapid):
-		if mapid is None:
+	def DeleteMapping(self, index):
+		if not self._GetMapping(index, warn=True):
 			return
-		mapid = str(mapid)
-		if not mapid or mapid not in self.mappings:
-			return
-		del self.mappings[mapid]
-		editor = self.editors.get(mapid)
-		if editor:
-			editor.destroy()
-			del self.editors[mapid]
-		maptable = self._MappingTable
-		if maptable.row(mapid):
-			maptable.deleteRow(mapid)
-		self._InitializeChannelProcessing()
+		del self.custommappings.mappings[index]
+		self._Rebuild(clearselected=index == self.ownerComp.par.Selectedmapping)
 
 	@loggedmethod
 	def AddOrReplaceMappingForParam(
@@ -136,7 +129,8 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 			modpath: str,
 			paramname: str,
 			control: schema.DeviceControlInfo=None):
-		existingmappings = self.GetMappingsForParam(modpath, paramname, devicename=control.devname)
+		existingmappings = self.custommappings.GetMappingsForParam(
+			modpath, paramname, devicename=control.devname if control else None)
 		if not control:
 			if existingmappings:
 				self._LogEvent('Clearing existing mappings: {}'.format(existingmappings))
@@ -144,10 +138,6 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 					if mapping.control:
 						mapping.control = None
 						mapping.enable = False
-						editor = self.editors.get(str(mapping.id))
-						if editor:
-							editor.LoadMapping()
-			return
 		else:
 			if existingmappings:
 				self._LogEvent('Updating existing mappings: {}'.format(existingmappings))
@@ -166,30 +156,13 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 					)
 				self._LogEvent('Adding new mapping: {}'.format(mapping))
 				self.AddMappings([mapping])
-		self._InitializeChannelProcessing()
+		self._Rebuild()
 
 	@loggedmethod
-	def AddMappings(self, mappings: List[ControlMapping], overwrite=False):
+	def AddMappings(self, mappings: List[ControlMapping]):
 		for mapping in mappings:
-			self._AddMapping(mapping, overwrite=overwrite)
-		self._BuildMappingTable()
-		for mapping in mappings:
-			self._AddMappingEditor(mapping)
-		self._InitializeChannelProcessing()
-
-	def _AddMapping(self, mapping: ControlMapping, overwrite=False):
-		if mapping.mapid:
-			if mapping.mapid in self.mappings:
-				if not overwrite:
-					mapping.mapid = self.nextid
-					self.nextid += 1
-			else:
-				if mapping.mapid >= self.nextid:
-					self.nextid = mapping.mapid + 1
-		else:
-			mapping.mapid = self.nextid
-			self.nextid += 1
-		self.mappings[str(mapping.mapid)] = mapping
+			self.custommappings.mappings.append(mapping)
+		self._Rebuild()
 
 	@property
 	def _MappingTable(self):
@@ -199,24 +172,27 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 		dat = self._MappingTable
 		dat.clear()
 		dat.appendRow(ControlMapping.tablekeys)
-		if not self.mappings:
+		if not self.custommappings.mappings:
 			return
-		for mapping in self.mappings.values():
+		for mapping in self.custommappings.mappings:
 			mapping.AddToTable(dat)
 
 	@loggedmethod
-	def UpdateMapping(self, mapping: ControlMapping):
-		if not mapping.mapid or mapping.mapid not in self.mappings:
-			self._AddMapping(mapping, overwrite=True)
-			mapping.AddToTable(self._MappingTable)
-			self._AddMappingEditor(mapping)
-		else:
-			self.mappings[str(mapping.mapid)] = mapping
-			mapping.UpdateInTable(rowid=str(mapping.mapid), dat=self._MappingTable)
-			editor = self.editors[str(mapping.mapid)]
-			editor.par.Mapid = mapping.mapid
-			editor.LoadMapping()
-		self._InitializeChannelProcessing()
+	def UpdateSelectedMapping(self, **attrs):
+		self._UpdateMapping(self.ownerComp.par.Selectedmapping.eval(), **attrs)
+
+	def _UpdateMapping(self, index, **attrs):
+		mapping = self._GetMapping(index, warn=True)
+		if not mapping:
+			return
+		for key in attrs.keys():
+			if key not in ControlMapping.tablekeys:
+				self._LogEvent('Unsupported mapping attribute: {}'.format(key))
+				return
+		for key, val in attrs.items():
+			setattr(mapping, key, val)
+		# TODO: make this more efficient by only updating the target mapping
+		self._Rebuild()
 
 	def _InitializeChannelProcessing(self):
 		ctrlnames = []
@@ -224,7 +200,7 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 		lowvalues = []
 		highvalues = []
 		apphost = self.AppHost
-		for mapping in self.mappings.values():
+		for mapping in self.custommappings.mappings:
 			if not mapping.enable or not mapping.control:
 				continue
 			parampath = mapping.parampath
@@ -256,86 +232,47 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 			setranges[parampath][0] = high - low
 
 	@loggedmethod
-	def SetMappingEnabled(self, mapid, enable):
-		mapping = self.mappings.get(mapid)
-		if not mapping:
-			self._LogEvent('ERROR - mapping not found: {}'.format(mapid))
-			return
-		mapping.enable = enable
-		cell = self._MappingTable[str(mapid), 'enable']
-		if cell is None:
-			self._LogEvent('ERROR - mapping not found in table: {}'.format(mapid))
-			return
-		cell.val = 1 if enable else 0
-		self._InitializeChannelProcessing()
+	def SetMappingEnabled(self, index, enable):
+		self._UpdateMapping(index, enable=enable)
 
 	@loggedmethod
-	def SetMappingControl(self, mapid, control):
-		mapping = self.mappings.get(mapid)
-		if not mapping:
-			self._LogEvent('ERROR - mapping not found: {}'.format(mapid))
-			return
-		mapping.control = control
-		cell = self._MappingTable[str(mapid), 'enable']
-		if cell is None:
-			self._LogEvent('ERROR - mapping not found in table: {}'.format(mapid))
-			return
-		cell.val = control or ''
-		self._InitializeChannelProcessing()
+	def SetMappingControl(self, index, control):
+		self._UpdateMapping(index, control=control)
 
 	@loggedmethod
-	def AddEmptyMissingMappingsForModule(self, modschema: schema.ModuleSchema):
-		mappedparamnames = set(
-			m.param
-			for m in self.mappings.values()
-			if m.path == modschema.path
-		)
-		newmappings = [
-			ControlMapping(
-				path=modschema.path,
-				param=param.name,
-				enable=False,
-				rangelow=param.parts[0].minnorm,
-				rangehigh=param.parts[0].maxnorm,
-			)
-			for param in modschema.params
-			if param.mappable and param.name not in mappedparamnames
-		]
-		self.AddMappings(newmappings)
-
-	@loggedmethod
-	def _ClearMappingEditors(self):
-		for o in self.ownerComp.ops('editors_panel/map__*'):
+	def _BuildMappingMarkers(self):
+		dest = self.ownerComp.op('mappings_panel')
+		for o in dest.ops('map__*'):
 			o.destroy()
-		self.editors.clear()
+		if not self.custommappings or not self.custommappings.mappings:
+			return
+		uibuilder = self.UiBuilder
+		for i, mapping in enumerate(self.custommappings.mappings):
+			uibuilder.CreateMappingMarker(
+				dest=dest,
+				name='map__{}'.format(i),
+				mapping=mapping,
+				attrs=opattrs(
+					order=i,
+					nodepos=[200, -400 + 150 * i],
+					parvals={
+						'hmode': 'fill',
+					}))
+
+	def _UpdateEditor(self):
+		index = self.ownerComp.par.Selectedmapping.eval()
+		mapping = self._GetMapping(index, warn=False)
+		editor = self.ownerComp.op('editor_panel')
+		if not mapping:
+			editor.par.display = False
+			pass
+		else:
+			editor.par.display = True
+			pass
 
 	@loggedmethod
-	def _AddMappingEditor(self, mapping):
-		uibuilder = self.UiBuilder
-		if not uibuilder:
-			return
-		dest = self.ownerComp.op('editors_panel')
-		if not mapping.mapid:
-			mapping.mapid = self.nextid
-			self.nextid += 1
-		editor = uibuilder.CreateMappingEditor(
-			dest=dest,
-			name='map__{}'.format(mapping.mapid),
-			mapping=mapping,
-			order=mapping.mapid,
-			nodepos=[
-				200,
-				-400 + 150 * mapping.mapid
-			],
-			parvals={
-				'hmode': 'fill'
-			}
-		)  # type: MappingEditor
-		editor.par.Mapid = mapping.mapid
-		editor.initializeExtensions()
-		editor.LoadMapping()
-		self.editors[str(mapping.mapid)] = editor
-		return editor
+	def OnSelectedMappingChange(self):
+		self._UpdateEditor()
 
 
 class MappingEditor(common.ExtensionBase, common.ActionsExt):

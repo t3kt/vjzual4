@@ -419,6 +419,28 @@ class UiBuilder:
 				attrs,
 				**kwargs))
 
+	def CreateMappingMarker(
+			self, dest, name,
+			mapping: schema.ControlMapping,
+			attrs: opattrs=None, **kwargs):
+		ctrl = CreateFromTemplate(
+			template=self.ownerComp.op('mapping_marker'),
+			dest=dest, name=name,
+			attrs=opattrs.merged(
+				opattrs(
+					parvals={
+						'Modpath': mapping.path or '',
+						'Param': mapping.param or '',
+						'Control': mapping.control or '',
+						'Enabled': bool(mapping.enable),
+						'Rangelow': mapping.rangelow,
+						'Rangehigh': mapping.rangehigh,
+					}),
+				attrs,
+				**kwargs))
+		common.OPExternalStorage.Store(ctrl, 'mapping', mapping)
+		return ctrl
+
 	def CreateControlMarker(
 			self, dest, name,
 			control,  # type: schema.DeviceControlInfo

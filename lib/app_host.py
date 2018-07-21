@@ -140,8 +140,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		if not self.AppSchema:
 			return
 		mapper = self.ControlMapper
-		for modschema in self.AppSchema.modules:
-			mapper.AddEmptyMissingMappingsForModule(modschema)
+		# TODO: initialize mappings
 
 	@property
 	def _ModuleHostTemplate(self):
