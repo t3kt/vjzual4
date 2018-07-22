@@ -1,6 +1,6 @@
 import datetime
 import json
-from typing import Callable, Dict, List, Iterable, Union
+from typing import Any, Callable, Dict, List, NamedTuple, Iterable, Set, Union, Optional
 
 print('vjz4/common.py loading')
 
@@ -34,44 +34,72 @@ class IndentedLogger:
 	def Unindent(self):
 		self._AddIndent(-1)
 
-	def LogEvent(self, path, opid, event):
-		if not path and not opid:
-			Log('%s%s' % (self._indentStr, event), file=self._outFile)
-		elif not opid:
-			Log('%s%s %s' % (self._indentStr, path or '', event), file=self._outFile)
-		else:
-			Log('%s[%s] %s %s' % (self._indentStr, opid or '', path or '', event), file=self._outFile)
+	def LogEvent(self, path, opid, event, indentafter=False, unindentbefore=False):
+		if unindentbefore:
+			self.Unindent()
+		if event:
+			if not path and not opid:
+				Log('%s%s' % (self._indentStr, event), file=self._outFile)
+			elif not opid:
+				Log('%s%s %s' % (self._indentStr, path or '', event), file=self._outFile)
+			else:
+				Log('%s[%s] %s %s' % (self._indentStr, opid or '', path or '', event), file=self._outFile)
+		if indentafter:
+			self.Indent()
 
 	def LogBegin(self, path, opid, event):
-		self.LogEvent(path, opid, event)
-		self.Indent()
+		self.LogEvent(path, opid, event, indentafter=True)
 
 	def LogEnd(self, path, opid, event):
-		self.Unindent()
-		if event:
-			self.LogEvent(path, opid, event)
+		self.LogEvent(path, opid, event, unindentbefore=True)
 
 _logger = IndentedLogger()
 
-class ExtensionBase:
+class LoggableBase:
+	def _GetLogId(self) -> Optional[str]:
+		return None
+
+	def _LogEvent(self, event, indentafter=False, unindentbefore=False):
+		raise NotImplementedError()
+
+	def _LogBegin(self, event):
+		self._LogEvent(event, indentafter=True)
+
+	def _LogEnd(self, event=None):
+		self._LogEvent(event, unindentbefore=True)
+
+class ExtensionBase(LoggableBase):
 	def __init__(self, ownerComp):
 		self.ownerComp = ownerComp  # type: op
 		self.enablelogging = True
+		self.par = ownerComp.par
+		self.path = ownerComp.path
 
 	def _GetLogId(self):
+		if not self.ownerComp.valid or not hasattr(self.ownerComp.par, 'opshortcut'):
+			return None
 		return self.ownerComp.par.opshortcut.eval()
 
-	def _LogEvent(self, event):
+	def _LogEvent(self, event, indentafter=False, unindentbefore=False):
 		if self.enablelogging:
-			_logger.LogEvent(self.ownerComp.path, self._GetLogId(), event)
+			_logger.LogEvent(
+				self.ownerComp.path,
+				self._GetLogId(),
+				event,
+				indentafter=indentafter,
+				unindentbefore=unindentbefore)
 
-	def _LogBegin(self, event):
-		if self.enablelogging:
-			_logger.LogBegin(self.ownerComp.path, self._GetLogId(), event)
+class LoggableSubComponent(LoggableBase):
+	def __init__(self, hostobj: LoggableBase, logprefix: str=None):
+		self.hostobj = hostobj
+		self.logprefix = logprefix if logprefix is not None else self.__class__.__name__
 
-	def _LogEnd(self, event=None):
-		if self.enablelogging:
-			_logger.LogEnd(self.ownerComp.path, self._GetLogId(), event)
+	def _LogEvent(self, event, indentafter=False, unindentbefore=False):
+		if self.hostobj is None:
+			return
+		if self.logprefix and event:
+			event = self.logprefix + ' ' + event
+		self.hostobj._LogEvent(event, indentafter=indentafter, unindentbefore=unindentbefore)
 
 def _defaultformatargs(args, kwargs):
 	if not args:
@@ -111,6 +139,10 @@ def customloggedmethod(
 	return lambda func: _decoratewithlogging(func, formatargs)
 
 class ActionsExt:
+	"""
+	An extension class for a component that has some number of actions which can be invoked using
+	auto-generated pulse parameters on the extension's COMP.
+	"""
 	def __init__(self, ownerComp, actions=None, autoinitparexec=True):
 		self.ownerComp = ownerComp
 		self.Actions = actions or {}
@@ -141,6 +173,11 @@ class ActionsExt:
 				page.appendPulse(name)
 
 class TaskQueueExt:
+	"""
+	An extension class for components that can queue up tasks to be performed, spread over multiple
+	frames, so that TD doesn't block the main thread for too long.
+	If the component includes a progress bar, it is shown and updated as tasks are completed.
+	"""
 	def __init__(self, ownerComp):
 		self.ownerComp = ownerComp
 		self._TaskBatches = []  # type: List[_TaskBatch]
@@ -314,6 +351,12 @@ class Future:
 		return future
 
 	@classmethod
+	def immediateerror(cls, error, onlisten=None, oninvoke=None):
+		future = cls(onlisten=onlisten, oninvoke=oninvoke)
+		future.fail(error)
+		return future
+
+	@classmethod
 	def of(cls, obj):
 		if isinstance(obj, Future):
 			return obj
@@ -406,7 +449,7 @@ def trygetdictval(d: Dict, *keys, default=None, parse=None):
 	return default
 
 def ParseAttrTable(dat):
-	if not dat:
+	if not dat or dat.numRows == 0:
 		return {}
 	cols = [c.val for c in dat.row(0)]
 	return {
@@ -426,6 +469,8 @@ def UpdateAttrTable(dat, attrs: Dict, clear=False):
 		if not rowkey or not rowattrs:
 			continue
 		for k, v in rowattrs.items():
+			if isinstance(v, bool):
+				v = int(v)
 			GetOrAddCell(dat, rowkey, k).val = v
 
 def GetOrAddCell(dat, row, col):
@@ -445,13 +490,16 @@ class opattrs:
 			tags=None,
 			panelparent=None,
 			parvals=None,
-			parexprs=None):
+			parexprs=None,
+			storage=None,
+	):
 		self.order = order
 		self.nodepos = nodepos
-		self.tags = tags
+		self.tags = set(tags) if tags else None  # type: Set[str]
 		self.panelparent = panelparent
-		self.parvals = parvals
-		self.parexprs = parexprs
+		self.parvals = parvals  # type: Dict[str, Any]
+		self.parexprs = parexprs  # type: Dict[str, str]
+		self.storage = storage  # type: Dict[str, Any]
 
 	def override(self, other: 'opattrs'):
 		if not other:
@@ -464,6 +512,11 @@ class opattrs:
 				self.tags.update(other.tags)
 			else:
 				self.tags = set(other.tags)
+		if other.storage:
+			if self.storage:
+				self.storage.update(other.storage)
+			else:
+				self.storage = dict(other.storage)
 		self.panelparent = other.panelparent or self.panelparent
 		self.parvals = mergedicts(self.parvals, other.parvals)
 		self.parexprs = mergedicts(self.parexprs, other.parexprs)
@@ -485,13 +538,26 @@ class opattrs:
 			comp.tags.update(self.tags)
 		if self.panelparent:
 			self.panelparent.outputCOMPConnectors[0].connect(comp)
+		if self.storage:
+			for key, val in self.storage.items():
+				if val is None:
+					comp.unstore(key)
+				else:
+					comp.store(key, val)
 		return comp
 
 	@classmethod
 	def merged(cls, *attrs, **kwargs):
 		result = cls()
 		for a in attrs:
-			result.override(a)
+			if not a:
+				continue
+			if isinstance(a, (list, tuple, set)):
+				for suba in a:
+					if suba:
+						result.override(suba)
+			else:
+				result.override(a)
 		if kwargs:
 			result.override(cls(**kwargs))
 		return result
@@ -612,6 +678,8 @@ class BaseDataObject:
 			val = attrs.get(col.val, '')
 			if isinstance(val, bool):
 				val = 1 if val else 0
+			elif isinstance(val, (list, set, tuple)):
+				val = ' '.join(val)
 			vals.append(val)
 		dat.appendRow(vals)
 
@@ -627,6 +695,8 @@ class BaseDataObject:
 				val = attrs.get(col.val, '')
 				if isinstance(val, bool):
 					val = 1 if val else 0
+				elif isinstance(val, (list, set, tuple)):
+					val = ' '.join(val)
 				cell.val = val
 
 class AttrBasedIdentity:
@@ -642,3 +712,58 @@ class AttrBasedIdentity:
 
 	def __hash__(self):
 		return hash(self._IdentityAttrs())
+
+
+class _OPExternalDataStorage:
+	"""
+	Stores key/value data associated with OPs, without actually using OP storage.
+	Since OP storage is serialized into the .toe/.tox files, it can cause issues
+	when storing temporary data or things that cannot be properly
+	serialized/deserialized.
+	Storing those values outside of the OP storage avoids those problems.
+	There is a potential drawback of leftover data accumulating for OPs that have
+	been deleted, so this storage should be cleaned at points when a number of OPs
+	have been removed.
+	"""
+	def __init__(self):
+		self.entries = {}  # type: Dict[str, _OPStorageEntry]
+
+	def CleanOrphans(self):
+		for path, entry in list(self.entries.items()):
+			o = op(path)
+			if not o or not o.valid or o.id != entry.opid or not entry.data:
+				del self.entries[path]
+
+	def ClearAll(self):
+		self.entries.clear()
+
+	def _GetEntry(self, o: OP, autocreate=False):
+		if not o or not o.valid:
+			return None
+		entry = self.entries.get(o.path)
+		if entry is not None and entry.opid == o.id:
+			return entry
+		if autocreate:
+			self.entries[o.path] = entry = _OPStorageEntry(o.id, {})
+			return entry
+		return None
+
+	def Store(self, o: OP, key: str, value):
+		if not o or not o.valid:
+			return
+		entry = self._GetEntry(o, autocreate=value is not None)
+		if entry is None:
+			return
+		entry.data[key] = value
+
+	def Fetch(self, o: OP, key: str):
+		if not o or not o.valid:
+			return None
+		entry = self._GetEntry(o, autocreate=False)
+		if entry is None:
+			return None
+		return entry.data.get(key)
+
+_OPStorageEntry = NamedTuple('_OPStorageEntry', [('opid', int), ('data', Dict[str, Any])])
+
+OPExternalStorage = _OPExternalDataStorage()
