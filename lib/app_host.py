@@ -7,6 +7,7 @@ print('vjz4/app_host.py loading')
 if False:
 	from _stubs import *
 	from highlighting import HighlightManager
+	from remote import CommandMessage
 
 try:
 	import ui_builder
@@ -57,7 +58,6 @@ try:
 	import app_state
 except ImportError:
 	app_state = mod.app_state
-AppState = app_state.AppState
 
 class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, common.TaskQueueExt):
 	def __init__(self, ownerComp):
@@ -68,9 +68,12 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			'Showappschema': self.ShowAppSchema,
 			'Savestate': lambda: self.SaveStateFile(),
 			'Savestateas': lambda: self.SaveStateFile(prompt=True),
+			'Storeremotestate': lambda: self.StoreRemoteState(),
+			'Loadremotestate': lambda: self.LoadRemoteStoredState(),
 		})
 		self._AutoInitActionParams()
 		self.AppSchema = None  # type: schema.AppSchema
+		self.serverinfo = None  # type: schema.ServerInfo
 		self._ShowSchemaJson(None)
 		self.nodeMarkersByPath = {}  # type: Dict[str, List[str]]
 		self.previewMarkers = []  # type: List[op]
@@ -81,9 +84,6 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	@property
 	def _RemoteClient(self) -> remote_client.RemoteClient:
 		return self.ownerComp.par.Remoteclient.eval()
-
-	def GetAppSchema(self):
-		return self.AppSchema
 
 	def GetModuleSchema(self, modpath) -> 'Optional[schema.ModuleSchema]':
 		return self.AppSchema and self.AppSchema.modulesbypath.get(modpath)
@@ -115,6 +115,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def ClearModuleAutoMapStatuses(self):
 		for modhost in self.modulehostsbypath.values():
 			modhost.par.Automap = False
+
+	@loggedmethod
+	def OnConnected(self, serverinfo: schema.ServerInfo):
+		self.serverinfo = serverinfo
 
 	@loggedmethod
 	def OnAppSchemaLoaded(self, appschema: schema.AppSchema):
@@ -265,7 +269,15 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 					callback=lambda: self.SaveStateFile()),
 				menu.Item(
 					'Save State As',
-					callback=lambda: self.SaveStateFile(prompt=True))
+					callback=lambda: self.SaveStateFile(prompt=True)),
+				menu.Item(
+					'Save State on Server',
+					disabled=not self.serverinfo or not self.serverinfo.allowlocalstatestorage,
+					callback=lambda: self.StoreRemoteState()),
+				menu.Item(
+					'Load State from Server',
+					disabled=not self.serverinfo or not self.serverinfo.allowlocalstatestorage,
+					callback=lambda: self.LoadRemoteStoredState()),
 			]
 		elif name == 'view_menu':
 			items = self._GetSidePanelModeMenuItems()
@@ -286,12 +298,19 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 				_viewItem('Param Parts', 'param_parts'),
 				_viewItem('Data Nodes', 'data_nodes'),
 				menu.Item(
+					'Client Info',
+					callback=lambda: self._ShowSchemaJson(self._RemoteClient.BuildClientInfo())),
+				menu.Item(
+					'Server Info',
+					disabled=self.serverinfo is None,
+					callback=lambda: self._ShowSchemaJson(self.serverinfo)),
+				menu.Item(
 					'App State',
 					callback=lambda: self._ShowSchemaJson(self.BuildState()),
 					dividerafter=True),
 				menu.Item(
 					'Reload code',
-					callback=lambda: op.Vjz4.op('RELOAD_CODE').run())
+					callback=lambda: op.Vjz4.op('RELOAD_CODE').run()),
 			]
 		else:
 			return
@@ -476,7 +495,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			for modhost in self._AllModuleHosts:
 				if modhost.ModuleConnector:
 					modstates[modhost.ModuleConnector.modpath] = modhost.BuildState()
-		return AppState(
+		return schema.AppState(
 			client=self._RemoteClient.BuildClientInfo(),
 			modstates=modstates,
 			presets=self.PresetManager.GetPresets())
@@ -497,9 +516,54 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		state.WriteJsonTo(filename)
 		ui.status = 'Saved state to {}'.format(filename)
 
+	@loggedmethod
+	def StoreRemoteState(self):
+		appstate = self.BuildState()
+
+		def _success(response: 'CommandMessage'):
+			self._LogEvent('StoredRemoteState() - success({})'.format(response.ToBriefStr()))
+			ui.status = response.arg
+
+		def _failure(response: 'CommandMessage'):
+			self._LogBegin('StoredRemoteState() - failure({})'.format(response.ToBriefStr()))
+			try:
+				raise Exception(response.arg)
+			finally:
+				self._LogEnd()
+
+		self._RemoteClient.StoreRemoteAppState(appstate).then(
+			success=_success,
+			failure=_failure)
+
+	@loggedmethod
+	def LoadRemoteStoredState(self):
+		def _success(response: 'CommandMessage'):
+			self._LogBegin('LoadRemoteStoredState() - success({})'.format(response.ToBriefStr()))
+			try:
+				if not response.arg:
+					self._LogEvent('No app state!')
+					return
+				stateobj, info = response.arg['state'], response.arg['info']
+				appstate = schema.AppState.FromJsonDict(stateobj)
+				ui.status = info
+				self.LoadState(appstate)
+			finally:
+				self._LogEnd()
+
+		def _failure(response: 'CommandMessage'):
+			self._LogBegin('LoadRemoteStoredState() - failure({})'.format(response.ToBriefStr()))
+			try:
+				raise Exception(response.arg)
+			finally:
+				self._LogEnd()
+
+		self._RemoteClient.RetrieveRemoteStoredAppState().then(
+			success=_success,
+			failure=_failure)
+
 	@simpleloggedmethod
-	def LoadState(self, state: AppState):
-		state = state or AppState()
+	def LoadState(self, state: schema.AppState):
+		state = state or schema.AppState()
 
 		if state.client:
 			self._LogEvent('Ignoring client info in app state (for now...)')
@@ -523,7 +587,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			return
 		self.statefilename = filename
 		self._LogEvent('Loading app state from {}'.format(filename))
-		state = AppState.ReadJsonFrom(filename)
+		state = schema.AppState.ReadJsonFrom(filename)
 		self.LoadState(state)
 
 def _ParseAddress(text: str, defaulthost='localhost', defaultport=9500) -> Tuple[str, int]:

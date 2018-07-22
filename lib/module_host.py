@@ -31,7 +31,6 @@ try:
 	import app_state
 except ImportError:
 	app_state = mod.app_state
-ModuleState = app_state.ModuleState
 
 try:
 	import common
@@ -178,14 +177,14 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			m.LoadUIState()
 
 	def BuildState(self):
-		return ModuleState(
+		return schema.ModuleState(
 			collapsed=self.ownerComp.par.Collapsed.eval(),
 			uimode=self.ownerComp.par.Uimode.eval(),
 			params=self.ModuleConnector and self.ModuleConnector.GetParVals()
 		)
 
 	@loggedmethod
-	def LoadState(self, modstate: app_state.ModuleState):
+	def LoadState(self, modstate: schema.ModuleState):
 		if not modstate:
 			return
 		if modstate.collapsed is not None:

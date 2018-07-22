@@ -6,8 +6,6 @@ if False:
 	from _stubs import *
 	from _stubs.PopDialogExt import PopDialogExt
 	from module_host import ModuleHostConnector
-	from control_mapping import MappingEditor
-	from app_state import ModulePreset
 
 try:
 	import common
@@ -443,7 +441,7 @@ class UiBuilder:
 				**kwargs)
 		)
 		common.OPExternalStorage.Store(ctrl, 'controlinfo', control)
-		return ctrl  # type: MappingEditor
+		return ctrl
 
 	def CreateNodeMarker(
 			self, dest, name,
@@ -472,7 +470,7 @@ class UiBuilder:
 
 	def CreatePresetMarker(
 			self, dest, name,
-			preset,  # type: ModulePreset
+			preset,  # type: schema.ModulePreset
 			attrs: opattrs=None, **kwargs):
 		return CreateFromTemplate(
 			template=self.ownerComp.op('module_preset_marker'),

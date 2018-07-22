@@ -351,6 +351,12 @@ class Future:
 		return future
 
 	@classmethod
+	def immediateerror(cls, error, onlisten=None, oninvoke=None):
+		future = cls(onlisten=onlisten, oninvoke=oninvoke)
+		future.fail(error)
+		return future
+
+	@classmethod
 	def of(cls, obj):
 		if isinstance(obj, Future):
 			return obj
