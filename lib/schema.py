@@ -585,12 +585,20 @@ class BaseModuleSchema(BaseDataObject):
 		self.parampartsbyname = OrderedDict()  # type: Dict[str, ParamPartSchema]
 		self.hasbypass = False
 		self.hasadvanced = False
+		self.hasmappable = False
+		self.hasnonbypasspars = False
+		self.bypasspar = None  # type: Optional[ParamSchema]
 		for par in self.params:
 			self.paramsbyname[par.name] = par
 			if par.advanced:
 				self.hasadvanced = True
+			if par.mappable:
+				self.hasmappable = True
 			if par.specialtype == ParamSpecialTypes.bypass:
 				self.hasbypass = True
+				self.bypasspar = par
+			else:
+				self.hasnonbypasspars = True
 			for part in par.parts:
 				self.parampartsbyname[part.name] = part
 		self.paramgroups = paramgroups or []
@@ -607,6 +615,7 @@ class BaseModuleSchema(BaseDataObject):
 			'tags': list(sorted(self.tags)),
 			'hasbypass': self.hasbypass,
 			'hasadvanced': self.hasadvanced,
+			'hasmappable': self.hasmappable,
 			'params': BaseDataObject.ToJsonDicts(self.params),
 			'paramgroups': BaseDataObject.ToJsonDicts(self.paramgroups),
 		}))
@@ -670,6 +679,7 @@ class ModuleTypeSchema(BaseModuleSchema):
 		'label',
 		'hasbypass',
 		'hasadvanced',
+		'hasmappable',
 		'derivedfrompath',
 		'tags',
 	]
@@ -736,6 +746,7 @@ class ModuleSchema(BaseModuleSchema):
 		'masterispartialmatch',
 		'hasbypass',
 		'hasadvanced',
+		'hasmappable',
 		'primarynode',
 	]
 
@@ -871,6 +882,7 @@ class DeviceControlInfo(BaseDataObject):
 			name,
 			fullname,
 			devname,
+			group=None,
 			ctrltype=None,
 			inputcc=None,
 			outputcc=None,
@@ -882,14 +894,20 @@ class DeviceControlInfo(BaseDataObject):
 		self.ctrltype = ctrltype
 		self.inputcc = inputcc
 		self.outputcc = outputcc
+		self.group = group
+		self.inchan = 'ch1c{}'.format(inputcc) if inputcc is not None else None
+		self.outchan = 'ch1c{}'.format(outputcc) if outputcc is not None else None
 
 	tablekeys = [
 		'name',
 		'fullname',
 		'devname',
+		'group',
 		'ctrltype',
 		'inputcc',
 		'outputcc',
+		'inchan',
+		'outchan',
 	]
 
 	def ToJsonDict(self):
@@ -897,9 +915,12 @@ class DeviceControlInfo(BaseDataObject):
 			'name': self.name,
 			'fullname': self.fullname,
 			'devname': self.devname,
+			'group': self.group,
 			'ctrltype': self.ctrltype,
 			'inputcc': self.inputcc,
 			'outputcc': self.outputcc,
+			'inchan': self.inchan,
+			'outchan': self.outchan,
 		}))
 
 class ControlMapping(BaseDataObject):

@@ -1,5 +1,4 @@
-from collections import OrderedDict
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 print('vjz4/control_mapping.py loading')
 
@@ -7,6 +6,8 @@ if False:
 	from _stubs import *
 	from app_host import AppHost
 	from ui_builder import UiBuilder
+	from module_host import ModuleHost
+	from control_devices import MidiDevice
 
 try:
 	import td
@@ -33,40 +34,6 @@ try:
 except ImportError:
 	menu = mod.menu
 
-class ModuleControlMap:
-	def __init__(self, enable=True):
-		self.mappings = OrderedDict()  # type: Dict[str, ControlMapping]
-		self.Enable = enable
-
-	def GetAllMappings(self):
-		return self.mappings.items()
-
-	def SetMapping(
-			self,
-			parname,
-			control=None, rangelow=0, rangehigh=1, enable=True):
-		self.mappings[parname] = ControlMapping(
-			control=control, rangelow=rangelow, rangehigh=rangehigh, enable=enable)
-
-	def RemoveMapping(self, parname):
-		if parname in self.mappings:
-			del self.mappings[parname]
-
-	def ClearMappings(self):
-		self.mappings.clear()
-
-	def BuildMappingTable(self, dat):
-		dat.clear()
-		dat.appendRow(['param', 'control', 'enable', 'rangelow', 'rangehigh'])
-		for parname, mapping in self.mappings.items():
-			dat.appendRow([
-				parname,
-				mapping.control or '',
-				int(mapping.enable),
-				mapping.rangelow,
-				mapping.rangehigh,
-			])
-
 class ControlMapper(common.ExtensionBase, common.ActionsExt):
 	def __init__(self, ownerComp):
 		common.ExtensionBase.__init__(self, ownerComp)
@@ -75,6 +42,7 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 		})
 		self._AutoInitActionParams()
 		self.custommappings = ControlMappingSet()
+		self.automappings = None  # type: Optional[ControlMappingSet]
 		self._Rebuild()
 
 	def _Rebuild(self, clearselected=True):
@@ -84,6 +52,14 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 		self._BuildMappingMarkers()
 		self._InitializeChannelProcessing()
 		self._UpdateEditor()
+
+	@property
+	def AutoMapDeviceName(self):
+		return self.ownerComp.par.Automapdevice.eval()
+
+	@AutoMapDeviceName.setter
+	def AutoMapDeviceName(self, value):
+		self.ownerComp.par.Automapdevice = value or ''
 
 	@property
 	def AppHost(self):
@@ -98,6 +74,11 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 			return uibuilder
 		if hasattr(op, 'UiBuilder'):
 			return op.UiBuilder
+
+	@property
+	def _DeviceManager(self):
+		apphost = self.AppHost
+		return apphost.DeviceManager if apphost else None
 
 	@property
 	def _SelectedIndex(self):
@@ -184,11 +165,14 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 	def _BuildMappingTable(self):
 		dat = self._MappingTable
 		dat.clear()
-		dat.appendRow(ControlMapping.tablekeys)
-		if not self.custommappings.mappings:
-			return
+		dat.appendRow(ControlMapping.tablekeys + ['generatedby'])
 		for mapping in self.custommappings.mappings:
 			mapping.AddToTable(dat)
+		if self.automappings:
+			for mapping in self.automappings.mappings:
+				mapping.AddToTable(dat, attrs={
+					'generatedby': self.automappings.generatedby
+				})
 
 	def _UpdateMapping(self, index, **attrs):
 		mapping = self._GetMapping(index, warn=True)
@@ -214,7 +198,10 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 		lowvalues = []
 		highvalues = []
 		apphost = self.AppHost
-		for mapping in self.custommappings.mappings:
+		allmappings = list(self.custommappings.mappings)
+		if self.automappings:
+			allmappings += self.automappings.mappings
+		for mapping in allmappings:
 			if not mapping.enable or not mapping.control:
 				continue
 			parampath = mapping.parampath
@@ -353,3 +340,71 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 			par.owner.par.Modpath = path
 		else:
 			self._UpdateMapping(self._SelectedIndex, **{attrname: value})
+
+	@loggedmethod
+	def SetAutoMapDevice(self, devname: Optional[str]):
+		self._DeviceManager.ClearDeviceAutoMapStatuses()
+		self.ownerComp.par.Automapdevice = devname or ''
+		self._UpdateAutoMap()
+
+	@loggedmethod
+	def SetAutoMapModule(self, modpath: Optional[str]):
+		self.ownerComp.par.Automapmodpath = modpath or ''
+		self._UpdateAutoMap()
+
+	def ToggleAutoMapModule(self, modpath: Optional[str]):
+		if not modpath or modpath == self.ownerComp.par.Automapmodpath:
+			self.SetAutoMapModule(None)
+		else:
+			self.SetAutoMapModule(modpath)
+
+	def _UpdateAutoMap(self):
+		devname = self.ownerComp.par.Automapdevice.eval()
+		modpath = self.ownerComp.par.Automapmodpath.eval()
+		apphost = self.AppHost
+		devmanager = self._DeviceManager
+		if devmanager:
+			devmanager.ClearDeviceAutoMapStatuses()
+		if apphost:
+			apphost.ClearModuleAutoMapStatuses()
+		device = devmanager.GetDevice(devname) if devmanager and devname else None
+		modhost = apphost.GetModuleHost(modpath) if apphost and modpath else None
+		if not device or not modhost or not modhost.ModuleConnector:
+			self.automappings = None
+		else:
+			self.automappings = device.GenerateAutoMappings(modhost.ModuleConnector)
+			device.par.Automap = True
+			modhost.par.Automap = True
+		self._Rebuild()
+
+	def GetDeviceAdditionalMenuItems(self, device: 'MidiDevice'):
+		if not device:
+			return []
+		devname = device.DeviceName
+		devisauto = devname == self.ownerComp.par.Automapdevice
+
+		def _toggleauto():
+			if devisauto:
+				self.SetAutoMapDevice(None)
+			else:
+				self.SetAutoMapDevice(devname)
+
+		return [
+			menu.Item(
+				text='Auto-map',
+				checked=devisauto,
+				callback=_toggleauto),
+		]
+
+	def GetModuleAdditionalMenuItems(self, modhost: 'ModuleHost'):
+		if not modhost or not modhost.ModuleConnector:
+			return []
+		modpath = modhost.ModuleConnector.modpath
+		modisauto = modpath == self.ownerComp.par.Automapmodpath
+
+		return [
+			menu.Item(
+				text='Auto-map',
+				checked=modisauto,
+				callback=lambda: self.ToggleAutoMapModule(modpath)),
+		]

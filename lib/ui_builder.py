@@ -398,27 +398,6 @@ class UiBuilder:
 			return None
 		return _register(ctrl)
 
-	def CreateMappingEditor(
-			self, dest, name,
-			mapping: schema.ControlMapping,
-			attrs: opattrs=None, **kwargs):
-		return CreateFromTemplate(
-			template=self.ownerComp.op('mapping_editor'),
-			dest=dest, name=name,
-			attrs=opattrs.merged(
-				opattrs(
-					parvals={
-						'Mapid': mapping.mapid or '',
-						'Modpath': mapping.path or '',
-						'Param': mapping.param or '',
-						'Control': mapping.control or '',
-						'Enabled': bool(mapping.enable),
-						'Rangelow': mapping.rangelow,
-						'Rangehigh': mapping.rangehigh,
-					}),
-				attrs,
-				**kwargs))
-
 	def CreateMappingMarker(
 			self, dest, name,
 			mapping: schema.ControlMapping,
