@@ -871,6 +871,7 @@ class DeviceControlInfo(BaseDataObject):
 			name,
 			fullname,
 			devname,
+			group=None,
 			ctrltype=None,
 			inputcc=None,
 			outputcc=None,
@@ -882,14 +883,20 @@ class DeviceControlInfo(BaseDataObject):
 		self.ctrltype = ctrltype
 		self.inputcc = inputcc
 		self.outputcc = outputcc
+		self.group = group
+		self.inchan = 'ch1c{}'.format(inputcc) if inputcc is not None else None
+		self.outchan = 'ch1c{}'.format(outputcc) if outputcc is not None else None
 
 	tablekeys = [
 		'name',
 		'fullname',
 		'devname',
+		'group',
 		'ctrltype',
 		'inputcc',
 		'outputcc',
+		'inchan',
+		'outchan',
 	]
 
 	def ToJsonDict(self):
@@ -897,9 +904,12 @@ class DeviceControlInfo(BaseDataObject):
 			'name': self.name,
 			'fullname': self.fullname,
 			'devname': self.devname,
+			'group': self.group,
 			'ctrltype': self.ctrltype,
 			'inputcc': self.inputcc,
 			'outputcc': self.outputcc,
+			'inchan': self.inchan,
+			'outchan': self.outchan,
 		}))
 
 class ControlMapping(BaseDataObject):
