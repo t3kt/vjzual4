@@ -387,6 +387,12 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 		self.ownerComp.par.Automapmodpath = modpath or ''
 		self._UpdateAutoMap()
 
+	def ToggleAutoMapModule(self, modpath: Optional[str]):
+		if not modpath or modpath == self.ownerComp.par.Automapmodpath:
+			self.SetAutoMapModule(None)
+		else:
+			self.SetAutoMapModule(modpath)
+
 	def _UpdateAutoMap(self):
 		devname = self.ownerComp.par.Automapdevice.eval()
 		modpath = self.ownerComp.par.Automapmodpath.eval()
@@ -431,15 +437,9 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 		modpath = modhost.ModuleConnector.modpath
 		modisauto = modpath == self.ownerComp.par.Automapmodpath
 
-		def _toggleauto():
-			if modisauto:
-				self.SetAutoMapModule(None)
-			else:
-				self.SetAutoMapModule(modpath)
-
 		return [
 			menu.Item(
 				text='Auto-map',
 				checked=modisauto,
-				callback=_toggleauto),
+				callback=lambda: self.ToggleAutoMapModule(modpath)),
 		]

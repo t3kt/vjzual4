@@ -585,11 +585,14 @@ class BaseModuleSchema(BaseDataObject):
 		self.parampartsbyname = OrderedDict()  # type: Dict[str, ParamPartSchema]
 		self.hasbypass = False
 		self.hasadvanced = False
+		self.hasmappable = False
 		self.bypasspar = None  # type: Optional[ParamSchema]
 		for par in self.params:
 			self.paramsbyname[par.name] = par
 			if par.advanced:
 				self.hasadvanced = True
+			if par.mappable:
+				self.hasmappable = True
 			if par.specialtype == ParamSpecialTypes.bypass:
 				self.hasbypass = True
 				self.bypasspar = par
@@ -609,6 +612,7 @@ class BaseModuleSchema(BaseDataObject):
 			'tags': list(sorted(self.tags)),
 			'hasbypass': self.hasbypass,
 			'hasadvanced': self.hasadvanced,
+			'hasmappable': self.hasmappable,
 			'params': BaseDataObject.ToJsonDicts(self.params),
 			'paramgroups': BaseDataObject.ToJsonDicts(self.paramgroups),
 		}))
@@ -672,6 +676,7 @@ class ModuleTypeSchema(BaseModuleSchema):
 		'label',
 		'hasbypass',
 		'hasadvanced',
+		'hasmappable',
 		'derivedfrompath',
 		'tags',
 	]
@@ -738,6 +743,7 @@ class ModuleSchema(BaseModuleSchema):
 		'masterispartialmatch',
 		'hasbypass',
 		'hasadvanced',
+		'hasmappable',
 		'primarynode',
 	]
 

@@ -253,9 +253,11 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		header = self.ownerComp.op('module_header')
 		bypassbutton = header.op('bypass_button')
 		previewbutton = header.op('preview_button')
+		automapbutton = header.op('automap_button')
 		bypassbutton.par.display = False
 		bypassbutton.par.Value1.expr = ''
 		previewbutton.par.display = False
+		automapbutton.par.display = False
 		title = header.op('panel_title/bg')
 		titlehelp = header.op('panel_title/help')
 		title.par.text = titlehelp.text = ''
@@ -279,6 +281,8 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 				bodypanel.par.opacity.expr = '0.5 if {} else 1'.format(bypassexpr)
 			if connector.modschema.primarynode:
 				previewbutton.par.display = True
+			if connector.modschema.hasmappable:
+				automapbutton.par.display = True
 			apphost = self.AppHost
 			if apphost:
 				apphost.RegisterModuleHost(self)
@@ -672,6 +676,14 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			modpath=self.ModuleConnector.modpath,
 			paramname=parampart.name,
 			control=controlinfo)
+
+	@loggedmethod
+	def ToggleAutoMap(self):
+		apphost = self.AppHost
+		if not apphost or not self.ModuleConnector:
+			return
+		mapper = apphost.ControlMapper
+		mapper.ToggleAutoMapModule(self.ModuleConnector.modpath)
 
 
 class ModuleHostConnector:
