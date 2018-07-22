@@ -1,5 +1,5 @@
 from operator import attrgetter
-from typing import Dict, Iterable, List
+from typing import Dict, Iterable, List, Set
 
 print('vjz4/control_devices.py loading')
 
@@ -146,6 +146,8 @@ class MidiDevice(common.ExtensionBase, common.ActionsExt):
 		})
 		self._AutoInitActionParams()
 		self.Controls = []  # type: List[DeviceControlInfo]
+		self.markers = {}  # type: Dict[str, OP]
+		self.highlightedmarker = None  # type: OP
 		self._InitializeControls([])
 		self.ownerComp.tags.add('vjz4device')
 
@@ -174,10 +176,13 @@ class MidiDevice(common.ExtensionBase, common.ActionsExt):
 		], key=attrgetter('inputcc')))
 		midiin.par.controlind = _MakeCcRanges(map(attrgetter('inputcc'), controls))
 		selinputs.par.channames = '*'
-		selinputs.par.renamefrom = ' '.join(map(attrgetter('inchan'), controls))
+		# selinputs.par.renamefrom = ' '.join(map(attrgetter('inchan'), controls))
+		selinputs.par.renamefrom = '*'
 		inputnames = ' '.join(map(attrgetter('fullname'), controls))
 		selinputs.par.renameto = inputnames
 		inputdefaults.par.name0 = inputnames
+		midiin.bypass = True
+		mod.td.run('op({!r}).bypass = False'.format(midiin.path), delayFrames=1)
 
 	def _InitializeOutputProcessing(self):
 		seloutputs = self.ownerComp.op('sel_output_vals')
@@ -200,16 +205,28 @@ class MidiDevice(common.ExtensionBase, common.ActionsExt):
 		dest = self.ownerComp.op('controls_panel')
 		for o in dest.ops('ctrl__*'):
 			o.destroy()
+		self.markers.clear()
+		self.highlightedmarker = None
 		uibuilder = self.UiBuilder
 		if not uibuilder:
 			return
 		for i, control in enumerate(self.Controls):
-			uibuilder.CreateControlMarker(
+			marker = uibuilder.CreateControlMarker(
 				dest=dest,
 				name='ctrl__' + control.name,
 				control=control,
 				order=i,
 				nodepos=[100, -150 * i])
+			self.markers[control.fullname] = marker
+		self.SetHighlight(None)
+
+	def SetHighlight(self, name):
+		for marker in self.markers.values():
+			marker.par.Highlight = False
+		if name and name in self.markers:
+			self.highlightedmarker = self.markers[name]
+			self.highlightedmarker.par.Highlight = True
+			self.ownerComp.op('input_active_timer').par.start.pulse()
 
 	def GenerateAutoMappings(
 			self,
