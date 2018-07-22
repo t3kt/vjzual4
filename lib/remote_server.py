@@ -1,4 +1,6 @@
+import json
 from operator import attrgetter
+import os
 import re
 from typing import Optional, List
 
@@ -54,6 +56,8 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 				'queryModState': self.SendModuleState,
 				'setPrimaryVideoSrc': lambda cmd: self.SetPrimaryVideoSource(cmd.arg),
 				'setSecondaryVideoSrc': lambda cmd: self.SetSecondaryVideoSource(cmd.arg),
+				'storeAppState': self._StoreAppState,
+				'retrieveAppState': self._RetrieveStoredAppState,
 			})
 		self._AutoInitActionParams()
 		self.AppRoot = None
@@ -268,6 +272,42 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 			}
 		finally:
 			self._LogEnd()
+
+	@common.simpleloggedmethod
+	def _StoreAppState(self, request: remote.CommandMessage):
+		if not self.ownerComp.par.Allowlocalstatestorage:
+			self.Connection.SendErrorResponse(request.cmdid, 'Local state storage is not allowed')
+			return
+		filename = self.ownerComp.par.Localstatefile.eval() or self.ownerComp.par.Localstatefile.default
+		absfile = os.path.abspath(filename)
+		try:
+			with open(absfile, mode='w') as outfile:
+				json.dump(request.arg, outfile, indent='  ', sort_keys=True)
+		except IOError as e:
+			self.Connection.SendErrorResponse(
+				request.cmdid, 'Error writing local state to {!r}: {}'.format(absfile, e))
+			return
+		self.Connection.SendResponse(request.cmd, request.cmdid, 'App state stored in {!r}'.format(absfile))
+
+	@loggedmethod
+	def _RetrieveStoredAppState(self, request: remote.CommandMessage):
+		if not self.ownerComp.par.Allowlocalstatestorage:
+			self.Connection.SendErrorResponse(request.cmdid, 'Local state storage is not allowed')
+			return
+		filename = self.ownerComp.par.Localstatefile.eval() or self.ownerComp.par.Localstatefile.default
+		absfile = os.path.abspath(filename)
+		if not os.path.exists(absfile):
+			self.Connection.SendErrorResponse(request.cmdid, 'Local state file not found: {!r}'.format(absfile))
+		try:
+			with open(absfile, mode='r') as infile:
+				stateobj = json.load(infile)
+		except IOError as e:
+			self.Connection.SendErrorResponse(request.cmdid, 'Error loading local state from {!r}: {}'.format(absfile, e))
+			return
+		self.Connection.SendResponse(request.cmd, request.cmdid, {
+			'state': stateobj,
+			'info': 'App state loaded from {!r}'.format(absfile)
+		})
 
 	def HandleOscEvent(self, address, args):
 		if not self.Connected or ':' not in address or not args:

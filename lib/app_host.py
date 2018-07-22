@@ -7,6 +7,7 @@ print('vjz4/app_host.py loading')
 if False:
 	from _stubs import *
 	from highlighting import HighlightManager
+	from remote import CommandMessage
 
 try:
 	import ui_builder
@@ -67,6 +68,8 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			'Showappschema': self.ShowAppSchema,
 			'Savestate': lambda: self.SaveStateFile(),
 			'Savestateas': lambda: self.SaveStateFile(prompt=True),
+			'Storeremotestate': lambda: self.StoreRemoteState(),
+			'Loadremotestate': lambda: self.LoadRemoteStoredState(),
 		})
 		self._AutoInitActionParams()
 		self.AppSchema = None  # type: schema.AppSchema
@@ -266,7 +269,15 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 					callback=lambda: self.SaveStateFile()),
 				menu.Item(
 					'Save State As',
-					callback=lambda: self.SaveStateFile(prompt=True))
+					callback=lambda: self.SaveStateFile(prompt=True)),
+				menu.Item(
+					'Save State on Server',
+					disabled=not self.serverinfo or not self.serverinfo.allowlocalstatestorage,
+					callback=lambda: self.StoreRemoteState()),
+				menu.Item(
+					'Load State from Server',
+					disabled=not self.serverinfo or not self.serverinfo.allowlocalstatestorage,
+					callback=lambda: self.LoadRemoteStoredState()),
 			]
 		elif name == 'view_menu':
 			items = self._GetSidePanelModeMenuItems()
@@ -504,6 +515,51 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		state = self.BuildState()
 		state.WriteJsonTo(filename)
 		ui.status = 'Saved state to {}'.format(filename)
+
+	@loggedmethod
+	def StoreRemoteState(self):
+		appstate = self.BuildState()
+
+		def _success(response: 'CommandMessage'):
+			self._LogEvent('StoredRemoteState() - success({})'.format(response.ToBriefStr()))
+			ui.status = response.arg
+
+		def _failure(response: 'CommandMessage'):
+			self._LogBegin('StoredRemoteState() - failure({})'.format(response.ToBriefStr()))
+			try:
+				raise Exception(response.arg)
+			finally:
+				self._LogEnd()
+
+		self._RemoteClient.StoreRemoteAppState(appstate).then(
+			success=_success,
+			failure=_failure)
+
+	@loggedmethod
+	def LoadRemoteStoredState(self):
+		def _success(response: 'CommandMessage'):
+			self._LogBegin('LoadRemoteStoredState() - success({})'.format(response.ToBriefStr()))
+			try:
+				if not response.arg:
+					self._LogEvent('No app state!')
+					return
+				stateobj, info = response.arg['state'], response.arg['info']
+				appstate = schema.AppState.FromJsonDict(stateobj)
+				ui.status = info
+				self.LoadState(appstate)
+			finally:
+				self._LogEnd()
+
+		def _failure(response: 'CommandMessage'):
+			self._LogBegin('LoadRemoteStoredState() - failure({})'.format(response.ToBriefStr()))
+			try:
+				raise Exception(response.arg)
+			finally:
+				self._LogEnd()
+
+		self._RemoteClient.RetrieveRemoteStoredAppState().then(
+			success=_success,
+			failure=_failure)
 
 	@simpleloggedmethod
 	def LoadState(self, state: schema.AppState):

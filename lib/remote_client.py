@@ -60,7 +60,6 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 				'Connect': self.Connect,
 			},
 			handlers={
-				'confirmConnect': self._OnConfirmConnect,
 				'appInfo': self._OnReceiveAppInfo,
 				'modInfo': self._OnReceiveModuleInfo,
 			})
@@ -70,6 +69,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 		self.rawModuleInfos = []  # type: List[schema.RawModuleInfo]
 		self.rawModuleTypeInfos = []  # type: List[schema.RawModuleInfo]
 		self.AppSchema = None  # type: schema.AppSchema
+		self.ServerInfo = None  # type: schema.ServerInfo
 
 	def GetModuleSchema(self, modpath) -> schema.ModuleSchema:
 		return self.AppSchema and self.AppSchema.modulesbypath.get(modpath)
@@ -107,6 +107,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 			self.rawAppInfo = None
 			self.rawModuleInfos = []
 			self.AppSchema = None
+			self.ServerInfo = None
 			self._BuildAppInfoTable()
 			self._ClearModuleTable()
 			self._ClearParamTables()
@@ -188,6 +189,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 		if serverinfo.version is not None and serverinfo.version != self._Version:
 			raise Exception('Client/server version mismatch! client: {}, server: {}'.format(
 				self._Version, serverinfo.version))
+		self.ServerInfo = serverinfo
 		self.AppHost.OnConnected(serverinfo)
 		self.QueryApp()
 
@@ -418,6 +420,22 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 					par.val = val
 		finally:
 			self._LogEnd()
+
+	@common.simpleloggedmethod
+	def StoreRemoteAppState(self, appstate: schema.AppState):
+		if not self.Connected:
+			return Future.immediateerror('Not connected')
+		if not self.ServerInfo or not self.ServerInfo.allowlocalstatestorage:
+			return Future.immediateerror('Remove server does not allow local state storage')
+		return self.Connection.SendRequest('storeAppState', appstate.ToJsonDict())
+
+	@loggedmethod
+	def RetrieveRemoteStoredAppState(self):
+		if not self.Connected:
+			return Future.immediateerror('Not connected')
+		if not self.ServerInfo or not self.ServerInfo.allowlocalstatestorage:
+			return Future.immediateerror('Remove server does not allow local state storage')
+		return self.Connection.SendRequest('retrieveAppState')
 
 	def HandleOscEvent(self, address, args):
 		if not self.Connected or ':' not in address or not args:
