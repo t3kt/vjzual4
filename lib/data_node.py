@@ -3,6 +3,11 @@ print('vjz4/data_node.py loading')
 if False:
 	from _stubs import *
 
+try:
+	import schema
+except ImportError:
+	schema = mod.schema
+
 def HandleDataNodeDrop(
 		selector,
 		dropName, xPos, yPos, index, totalDragged, dropExt, baseName, destPath):
@@ -17,11 +22,11 @@ def HandleDataNodeDrop(
 	if not sourcenodemarker:
 		return
 	selectortype = selector.par.Nodetype.eval()
-	if selectortype == 'node.v':
+	if selectortype == schema.ParamSpecialTypes.videonode:
 		value = sourcenodemarker.par.Video.eval()
-	elif selectortype == 'node.a':
+	elif selectortype == schema.ParamSpecialTypes.audionode:
 		value = sourcenodemarker.par.Audio.eval()
-	elif selectortype == 'node.t':
+	elif selectortype == schema.ParamSpecialTypes.texbufnode:
 		value = sourcenodemarker.par.Texbuf.eval()
 	else:
 		value = sourcenodemarker.par.Path.eval()

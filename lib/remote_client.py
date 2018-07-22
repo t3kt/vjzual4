@@ -24,6 +24,11 @@ except ImportError:
 	schema = mod.schema
 
 try:
+	import schema_utils
+except ImportError:
+	schema_utils = mod.schema_utils
+
+try:
 	import module_proxy
 except ImportError:
 	module_proxy = mod.module_proxy
@@ -35,6 +40,17 @@ except ImportError:
 
 
 class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt):
+	"""
+	Client which connects to a TD project that includes a RemoteServer, queries it for information about the project,
+	and facilitates communication between the two TD instances.
+
+	Commands/requests/responses are sent/received over TCP.
+	Control data (for non-text parameters) is sent/received over OSC using CHOPs.
+	Control data for text parameters is sent/received over OSC using DATs on separate ports from those used for numeric
+	data.
+	Video data is received over Syphon/Spout. This may later be changed to something that can run over a network, like
+	NDI.
+	"""
 	def __init__(self, ownerComp):
 		remote.RemoteBase.__init__(
 			self,
@@ -223,10 +239,10 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 	def _ClearParamTables(self):
 		dat = self._ParamTable
 		dat.clear()
-		dat.appendRow(['key', 'modpath'] + schema.ParamSchema.tablekeys)
+		dat.appendRow(schema.ParamSchema.extratablekeys + schema.ParamSchema.tablekeys)
 		dat = self._ParamPartTable
 		dat.clear()
-		dat.appendRow(['key', 'param', 'modpath', 'style', 'vecindex'] + schema.ParamPartSchema.tablekeys)
+		dat.appendRow(schema.ParamPartSchema.extratablekeys + schema.ParamPartSchema.tablekeys)
 
 	def _AddParamsToTable(self, modpath, params: List[schema.ParamSchema]):
 		if not params:
@@ -236,20 +252,11 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 		for param in params:
 			param.AddToTable(
 				paramsdat,
-				attrs={
-					'key': modpath + ':' + param.name,
-					'modpath': modpath,
-				})
+				attrs=param.GetExtraTableAttrs(modpath=modpath))
 			for i, part in enumerate(param.parts):
 				part.AddToTable(
 					partsdat,
-					attrs={
-						'key': modpath + ':' + part.name,
-						'param': param.name,
-						'modpath': modpath,
-						'style': param.style,
-						'vecindex': i,
-					})
+					attrs=part.GetExtraTableAttrs(param=param, vecIndex=i, modpath=modpath))
 
 	def _ClearDataNodesTable(self):
 		dat = self._DataNodesTable
@@ -320,10 +327,10 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 
 	@loggedmethod
 	def _OnAllModuleTypesReceived(self):
-		self.AppSchema = schema.AppSchema.FromRawAppAndModuleInfo(
+		self.AppSchema = schema_utils.AppSchemaBuilder(
 			appinfo=self.rawAppInfo,
 			modules=self.rawModuleInfos,
-			moduletypes=self.rawModuleTypeInfos)
+			moduletypes=self.rawModuleTypeInfos).Build()
 		moduletable = self._ModuleTable
 		for modschema in self.AppSchema.modules:
 			modschema.AddToTable(moduletable)

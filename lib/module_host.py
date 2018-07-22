@@ -1,5 +1,4 @@
-from typing import Dict, List, Optional
-from operator import attrgetter
+from typing import Dict, Optional
 
 print('vjz4/module_host.py loading')
 
@@ -77,9 +76,8 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			'Saveuistate': self.SaveUIState,
 		})
 		self.ModuleConnector = None  # type: ModuleHostConnector
-		self.controlsByParam = {}
-		self.paramsByControl = {}
-		self.Mappings = control_mapping.ModuleControlMap()
+		self.controlsbyparam = {}  # type: Dict[str, COMP]
+		self.parampartsbycontrolpath = {}  # type: Dict[str, schema.ParamPartSchema]
 		self.UiModeNames = DependList([])
 		self._AutoInitActionParams()
 		self.ownerComp.tags.add('vjz4modhost')
@@ -104,10 +102,6 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 	@property
 	def _NodeMarkersBuilt(self):
 		return not self._Params or any(self.ownerComp.ops('nodes_panel/node__*'))
-
-	@property
-	def _MappingEditorsBuilt(self):
-		return not self._Params or any(self.ownerComp.ops('mappings_panel/map__*'))
 
 	def OnTDPreSave(self):
 		for o in self.ownerComp.ops('controls_panel/par__*', 'sub_modules_panel/mod__*'):
@@ -254,25 +248,26 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		header = self.ownerComp.op('module_header')
 		bypassbutton = header.op('bypass_button')
 		previewbutton = header.op('preview_button')
+		automapbutton = header.op('automap_button')
 		bypassbutton.par.display = False
 		bypassbutton.par.Value1.expr = ''
 		previewbutton.par.display = False
+		automapbutton.par.display = False
 		title = header.op('panel_title/bg')
 		titlehelp = header.op('panel_title/help')
 		title.par.text = titlehelp.text = ''
 		bodypanel = self.ownerComp.op('body_panel')
 		bodypanel.par.opacity = 1
 		header.par.Previewactive = False
-		self.UiModeNames.clear()
+		uimodenames = []
 		if connector:
 			title.par.text = titlehelp.text = connector.modschema.label
-			if self._Params:
-				self.UiModeNames.append('ctrl')
+			if connector.modschema.hasnonbypasspars:
+				uimodenames.append('ctrl')
 			if self._DataNodes:
-				self.UiModeNames.append('nodes')
-			self.UiModeNames.append('map')
+				uimodenames.append('nodes')
 			if connector.modschema.childmodpaths:
-				self.UiModeNames.append('submods')
+				uimodenames.append('submods')
 			if connector.modschema.hasbypass:
 				bypassexpr = connector.GetParExpr('Bypass')
 				bypassbutton.par.display = True
@@ -280,8 +275,26 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 				bodypanel.par.opacity.expr = '0.5 if {} else 1'.format(bypassexpr)
 			if connector.modschema.primarynode:
 				previewbutton.par.display = True
-		else:
-			self.UiModeNames.append('nodes')
+			if connector.modschema.hasmappable:
+				automapbutton.par.display = True
+			apphost = self.AppHost
+			if apphost:
+				apphost.RegisterModuleHost(self)
+		if not uimodenames:
+			uimodenames.append('nodes')
+		labelsbyname = {
+			'ctrl': 'Controls',
+			'nodes': 'Data Nodes',
+			'submods': 'Sub-Modules',
+		}
+		uimodelabels = [labelsbyname[m] for m in uimodenames]
+		uimodepar = self.ownerComp.par.Uimode
+		uimodepar.menuNames = uimodenames
+		uimodepar.menuLabels = uimodelabels
+		for mode in ['submods', 'ctrl', 'nodes']:
+			if mode in uimodenames:
+				uimodepar.val = mode
+				break
 
 		hostcore = self.ownerComp.op('host_core')
 		self._BuildParamTable(hostcore.op('set_param_table'))
@@ -296,9 +309,14 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		hostcore = self.ownerComp.op('host_core')
 		ctrltable = hostcore.op('set_param_control_table')
 		ctrltable.clear()
-		ctrltable.appendRow(['name', 'ctrl'])
-		for name, ctrl in self.controlsByParam.items():
-			ctrltable.appendRow([name, ctrl])
+		ctrltable.appendRow(['name', 'ctrl', 'mappable', 'isgroup'])
+		for name, ctrl in self.controlsbyparam.items():
+			ctrltable.appendRow([
+				name,
+				ctrl.path,
+				1 if 'vjz4mappable' in ctrl.tags else 0,
+				1 if name not in self.ModuleConnector.modschema.parampartsbyname else 0,
+			])
 
 	def _BuildDataNodeTable(self, dat):
 		dat.clear()
@@ -347,11 +365,12 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		uibuilder = self.UiBuilder
 		for ctrl in dest.ops('par__*'):
 			ctrl.destroy()
-		self.controlsByParam = {}
-		self.paramsByControl = {}
+		self.controlsbyparam = {}
+		self.parampartsbycontrolpath = {}
 		if not self.ModuleConnector or not uibuilder:
 			self._RebuildParamControlTable()
 			return
+		dropscript = self.ownerComp.op('control_drop')
 		for i, parinfo in enumerate(self._Params):
 			if parinfo.hidden or parinfo.specialtype.startswith('switch.'):
 				continue
@@ -361,14 +380,16 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 				parinfo=parinfo,
 				order=i,
 				nodepos=[100, -200 * i],
+				dropscript=dropscript if parinfo.mappable else None,
 				parexprs=mergedicts(
 					parinfo.advanced and {'display': 'parent.ModuleHost.par.Showadvanced'}
 				),
-				addtocontrolmap=self.controlsByParam,
+				addtocontrolmap=self.controlsbyparam,
 				modhostconnector=self.ModuleConnector)
-		self.paramsByControl = {
-			name: ctrl
-			for name, ctrl in self.controlsByParam.items()
+		self.parampartsbycontrolpath = {
+			ctrl.path: self.ModuleConnector.modschema.parampartsbyname[name]
+			for name, ctrl in self.controlsbyparam.items()
+			if name in self.ModuleConnector.modschema.parampartsbyname
 		}
 		self._RebuildParamControlTable()
 		dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
@@ -392,37 +413,6 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 				nodepos=[100, -200 * i])
 		dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
 
-	def BuildMappingEditors(self, dest):
-		uibuilder = self.UiBuilder
-		for edit in dest.ops('map__*'):
-			edit.destroy()
-		if not self.ModuleConnector or not uibuilder:
-			return
-		for i, (parname, mapping) in enumerate(self.Mappings.GetAllMappings()):
-			uibuilder.CreateMappingEditor(
-				dest=dest,
-				name='map__' + parname,
-				paramname=parname,
-				ctrltype='slider', #TODO: FIX THIS
-				order=i,
-				nodepos=[100, -100 * i],
-				parvals=mergedicts(
-					{
-						'Control': mapping.control,
-						'Enabled': mapping.enable,
-					}),
-				parexprs=mergedicts(
-					{
-						# TODO: BIND WITH EXPRESSIONS!!
-					}
-				))
-		dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
-
-	def BuildMappingEditorsIfNeeded(self):
-		if self.ownerComp.par.Uimode == 'map' and not self.ownerComp.par.Collapsed and not self._MappingEditorsBuilt:
-			panel = self.ownerComp.op('mappings_panel')
-			self.BuildMappingEditors(panel)
-
 	@loggedmethod
 	def UpdateModuleHeight(self):
 		if not self.ownerComp.par.Autoheight:
@@ -431,7 +421,7 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		if self.ownerComp.par.Collapsed:
 			panels = self.ownerComp.ops('module_header')
 		else:
-			panels = self.ownerComp.ops('module_header', 'nodes_panel', 'controls_panel', 'sub_modules_panel', 'mappings_panel')
+			panels = self.ownerComp.ops('module_header', 'nodes_panel', 'controls_panel', 'sub_modules_panel')
 		h = self.HeightOfVisiblePanels(panels)
 		if 0 < maxheight < h:
 			h = maxheight
@@ -506,9 +496,6 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			return uibuilder
 		if hasattr(op, 'UiBuilder'):
 			return op.UiBuilder
-
-	def BuildMappingTable(self, dat):
-		self.Mappings.BuildMappingTable(dat)
 
 	def _ClearControls(self):
 		for o in self.ownerComp.ops('controls_panel/par__*'):
@@ -640,8 +627,42 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			parvals=params,
 			resetmissing=not partial)
 
+	@loggedmethod
+	def HandleControlDrop(self, ctrl: COMP, dropName, baseName):
+		if not self.ModuleConnector or not self.AppHost:
+			return
+		sourceparent = op(baseName)
+		if not sourceparent:
+			return
+		sourceop = sourceparent.op(dropName)
+		if not sourceop:
+			return
+		controlinfo = common.OPExternalStorage.Fetch(sourceop, 'controlinfo')  # type: schema.DeviceControlInfo
+		if 'vjz4mappable' not in ctrl.tags or ctrl.path not in self.parampartsbycontrolpath or not controlinfo:
+			self._LogEvent('Control does not support mapping: {}'.format(ctrl))
+			return
+		parampart = self.parampartsbycontrolpath[ctrl.path]
+		if 'vjz4ctrlmarker' not in sourceop.tags:
+			self._LogEvent('Unsupported drop source: {}'.format(sourceop))
+			return
+		self.AppHost.ControlMapper.AddOrReplaceMappingForParam(
+			modpath=self.ModuleConnector.modpath,
+			paramname=parampart.name,
+			control=controlinfo)
+
+	@loggedmethod
+	def ToggleAutoMap(self):
+		apphost = self.AppHost
+		if not apphost or not self.ModuleConnector:
+			return
+		mapper = apphost.ControlMapper
+		mapper.ToggleAutoMapModule(self.ModuleConnector.modpath)
+
 
 class ModuleHostConnector:
+	"""
+	Interface used by ModuleHost to get information about and interact with the hosted module.
+	"""
 	def __init__(
 			self,
 			modschema: schema.ModuleSchema):
@@ -651,6 +672,11 @@ class ModuleHostConnector:
 	def GetPar(self, name): return None
 
 	def GetParExpr(self, name):
+		"""
+		Creates an expression (as a string) that can be used to reference a TD parameter of the hosted module.
+		The expressions are of the form: `op("____").par.____`
+		This can be used to create bindings in UI controls.
+		"""
 		par = self.GetPar(name)
 		if par is None:
 			return None

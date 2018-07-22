@@ -1,11 +1,12 @@
 import json
 from operator import itemgetter
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 print('vjz4/app_host.py loading')
 
 if False:
 	from _stubs import *
+	from highlighting import HighlightManager
 
 try:
 	import ui_builder
@@ -73,6 +74,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		self._ShowSchemaJson(None)
 		self.nodeMarkersByPath = {}  # type: Dict[str, List[str]]
 		self.previewMarkers = []  # type: List[op]
+		self.modulehostsbypath = {}  # type: Dict[str, module_host.ModuleHost]
 		self.statefilename = None
 		self.OnDetach()
 
@@ -83,11 +85,40 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def GetAppSchema(self):
 		return self.AppSchema
 
-	def GetModuleSchema(self, modpath):
+	def GetModuleSchema(self, modpath) -> 'Optional[schema.ModuleSchema]':
 		return self.AppSchema and self.AppSchema.modulesbypath.get(modpath)
+
+	def GetParamSchema(self, modpath, name) -> 'Optional[schema.ParamSchema]':
+		modschema = self.GetModuleSchema(modpath)
+		if not modschema:
+			return None
+		return modschema.paramsbyname.get(name)
+
+	def GetParamPartSchema(self, modpath, name) -> 'Optional[schema.ParamPartSchema]':
+		modschema = self.GetModuleSchema(modpath)
+		if not modschema:
+			return None
+		return modschema.parampartsbyname.get(name)
+
+	def GetModuleTypeSchema(self, typepath) -> 'Optional[schema.ModuleTypeSchema]':
+		return self.AppSchema.moduletypesbypath.get(typepath) if self.AppSchema else None
+
+	@loggedmethod
+	def RegisterModuleHost(self, modhost: 'module_host.ModuleHost'):
+		if not modhost or not modhost.ModuleConnector:
+			return
+		self.modulehostsbypath[modhost.ModuleConnector.modpath] = modhost
+
+	def GetModuleHost(self, modpath) -> 'Optional[module_host.ModuleHost]':
+		return self.modulehostsbypath.get(modpath)
+
+	def ClearModuleAutoMapStatuses(self):
+		for modhost in self.modulehostsbypath.values():
+			modhost.par.Automap = False
 
 	@loggedmethod
 	def OnAppSchemaLoaded(self, appschema: schema.AppSchema):
+		self.HighlightManager.ClearAllHighlights()
 		self.AppSchema = appschema
 		self._ShowSchemaJson(None)
 		self._BuildSubModuleHosts().then(
@@ -105,12 +136,16 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		for o in self.ownerComp.ops('app_info', 'modules', 'params', 'param_parts', 'data_nodes'):
 			o.closeViewer()
 		self._ShowSchemaJson(None)
+		self.HighlightManager.ClearAllComponents()
 		for o in self.ownerComp.ops('nodes/node__*'):
 			o.destroy()
 		self.AppSchema = None
 		self.nodeMarkersByPath.clear()
+		self.modulehostsbypath.clear()
 		self._BuildNodeMarkerTable()
 		self.SetPreviewSource(None)
+		common.OPExternalStorage.CleanOrphans()
+		mod.td.run('op({!r}).SetAutoMapModule(None)'.format(self.ControlMapper.path), delayFrames=1)
 
 	def OnTDPreSave(self):
 		for o in self.ownerComp.ops('modules_panel/mod__*'):
@@ -121,8 +156,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		if not self.AppSchema:
 			return
 		mapper = self.ControlMapper
-		for modschema in self.AppSchema.modules:
-			mapper.AddEmptyMissingMappingsForModule(modschema)
+		# TODO: initialize mappings
 
 	@property
 	def _ModuleHostTemplate(self):
@@ -162,7 +196,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			host.par.alignorder = i
 			host.nodeX = 100
 			host.nodeY = -100 * i
-			connector = self._RemoteClient.ProxyManager.GetModuleProxyHost(modschema, self.AppSchema)
+			connector = self.ProxyManager.GetModuleProxyHost(modschema, self.AppSchema)
 			hostconnectorpairs.append([host, connector])
 
 		def _makeInitTask(h, c):
@@ -286,7 +320,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			autoClose=True)
 
 	def GetModuleAdditionalMenuItems(self, modhost: module_host.ModuleHost):
-		return [
+		items = [
 			menu.Item(
 				'View Schema',
 				disabled=not modhost.ModuleConnector,
@@ -300,6 +334,11 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 				disabled=not modhost.ModuleConnector or not modhost.ModuleConnector.modschema.masterpath,
 				callback=lambda: self.PresetManager.SavePresetFromModule(modhost))
 		]
+		items += self.ControlMapper.GetModuleAdditionalMenuItems(modhost)
+		return items
+
+	def GetDeviceAdditionalMenuItems(self, device: control_devices.MidiDevice):
+		return self.ControlMapper.GetDeviceAdditionalMenuItems(device)
 
 	@loggedmethod
 	def _RegisterNodeMarkers(self):
@@ -412,7 +451,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		return self.ownerComp.op('modules_panel').findChildren(tags=['vjz4modhost'], maxDepth=None)
 
 	@property
-	def _DeviceManager(self) -> 'control_devices.DeviceManager':
+	def DeviceManager(self) -> 'control_devices.DeviceManager':
 		return self.ownerComp.op('devices')
 
 	@property
@@ -423,8 +462,13 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def PresetManager(self) -> 'app_state.PresetManager':
 		return self.ownerComp.op('presets')
 
-	def GetModuleTypeSchema(self, typepath) -> 'schema.ModuleTypeSchema':
-		return self.AppSchema.moduletypesbypath.get(typepath) if self.AppSchema else None
+	@property
+	def ProxyManager(self):
+		return self._RemoteClient.ProxyManager
+
+	@property
+	def HighlightManager(self) -> 'HighlightManager':
+		return self.ownerComp.op('highlight_manager')
 
 	def BuildState(self):
 		modstates = {}
