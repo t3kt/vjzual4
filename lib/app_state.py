@@ -1,6 +1,6 @@
 import copy
 from operator import attrgetter
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 print('vjz4/app_state.py')
 
@@ -31,110 +31,6 @@ try:
 except ImportError:
 	ui_builder = mod.ui_builder
 
-class AppState(BaseDataObject):
-	"""
-	The full state of the client app, attached to a server, including connection settings, current
-	state of each module, and a collection of module presets.
-	"""
-	def __init__(
-			self,
-			client: schema.ClientInfo=None,
-			modstates: 'Dict[str, ModuleState]'=None,
-			presets: 'List[ModulePreset]'=None,
-			**otherattrs):
-		super().__init__(**otherattrs)
-		self.client = client
-		self.modstates = modstates or {}
-		self.presets = presets or []
-
-	def ToJsonDict(self):
-		return cleandict(mergedicts(
-			self.otherattrs,
-			{
-				'client': self.client.ToJsonDict() if self.client else None,
-				'modstates': ModuleState.ToJsonDictMap(self.modstates),
-				'presets': ModulePreset.ToJsonDicts(self.presets),
-			}))
-
-	@classmethod
-	def FromJsonDict(cls, obj):
-		return cls(
-			client=schema.ClientInfo.FromOptionalJsonDict(obj.get('client')),
-			modstates=ModuleState.FromJsonDictMap(obj.get('modstates')),
-			presets=ModulePreset.FromJsonDicts(obj.get('presets')),
-			**excludekeys(obj, ['client', 'modstates', 'presets']))
-
-	def GetModuleState(self, path, create=False):
-		if path not in self.modstates and create:
-			self.modstates[path] = ModuleState()
-		return self.modstates.get(path)
-
-
-class ModuleState(BaseDataObject):
-	"""
-	The state of a hosted module, including the value of all of its parameters, as well as the UI
-	state of the module host.
-	"""
-	def __init__(
-			self,
-			collapsed=None,
-			uimode=None,
-			params: Dict=None,
-			**otherattrs):
-		super().__init__(**otherattrs)
-		self.collapsed = collapsed
-		self.uimode = uimode
-		self.params = params or {}
-
-	def ToJsonDict(self):
-		return cleandict(mergedicts(
-			self.otherattrs,
-			{
-				'collapsed': self.collapsed,
-				'uimode': self.uimode,
-				'params': dict(self.params) if self.params else None,
-			}))
-
-	def UpdateParams(self, params, clean=False):
-		if clean:
-			self.params.clear()
-		if params:
-			self.params.update(params)
-
-
-class ModulePreset(BaseDataObject):
-	"""
-	A set of parameter values that can be applied to a specific type of module.
-	"""
-	def __init__(
-			self,
-			name,
-			typepath,
-			params=None,
-			ispartial=False,
-			**otherattrs):
-		super().__init__(**otherattrs)
-		self.name = name
-		self.typepath = typepath
-		self.params = params or {}
-		self.ispartial = bool(ispartial)
-
-	tablekeys = [
-		'name',
-		'typepath',
-		'ispartial',
-	]
-
-	def ToJsonDict(self):
-		return cleandict(mergedicts(
-			self.otherattrs,
-			{
-				'name': self.name,
-				'typepath': self.typepath,
-				'params': dict(self.params) if self.params else None,
-				'ispartial': self.ispartial,
-			}))
-
 
 class PresetManager(common.ExtensionBase, common.ActionsExt):
 	"""
@@ -147,7 +43,7 @@ class PresetManager(common.ExtensionBase, common.ActionsExt):
 			'Clearpresets': self.ClearPresets,
 		}, autoinitparexec=True)
 		self._AutoInitActionParams()
-		self.presets = []  # type: List[ModulePreset]
+		self.presets = []  # type: List[schema.ModulePreset]
 		self._BuildPresetTable()
 		self._BuildPresetMarkers()
 
@@ -165,11 +61,11 @@ class PresetManager(common.ExtensionBase, common.ActionsExt):
 		if hasattr(op, 'UiBuilder'):
 			return op.UiBuilder
 
-	def GetPresets(self) -> List[ModulePreset]:
+	def GetPresets(self) -> List[schema.ModulePreset]:
 		return copy.deepcopy(self.presets)
 
 	@simpleloggedmethod
-	def AddPresets(self, presets: List[ModulePreset]):
+	def AddPresets(self, presets: List[schema.ModulePreset]):
 		dat = self._PresetsTable
 		for preset in presets:
 			self.presets.append(preset)
@@ -209,7 +105,7 @@ class PresetManager(common.ExtensionBase, common.ActionsExt):
 	def _BuildPresetTable(self):
 		dat = self._PresetsTable
 		dat.clear()
-		dat.appendRow(ModulePreset.tablekeys)
+		dat.appendRow(schema.ModulePreset.tablekeys)
 		for preset in self.presets:
 			preset.AddToTable(dat)
 
@@ -219,12 +115,12 @@ class PresetManager(common.ExtensionBase, common.ActionsExt):
 			name,
 			typepath,
 			params: dict,
-			ispartial=False) -> Optional[ModulePreset]:
+			ispartial=False) -> Optional[schema.ModulePreset]:
 		if not params or not typepath:
 			return None
 		if not name:
 			name = self._GenerateNewName(typepath)
-		preset = ModulePreset(
+		preset = schema.ModulePreset(
 			name=name,
 			typepath=typepath,
 			params=dict(params),

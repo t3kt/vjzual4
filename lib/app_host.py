@@ -57,7 +57,6 @@ try:
 	import app_state
 except ImportError:
 	app_state = mod.app_state
-AppState = app_state.AppState
 
 class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, common.TaskQueueExt):
 	def __init__(self, ownerComp):
@@ -476,7 +475,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			for modhost in self._AllModuleHosts:
 				if modhost.ModuleConnector:
 					modstates[modhost.ModuleConnector.modpath] = modhost.BuildState()
-		return AppState(
+		return schema.AppState(
 			client=self._RemoteClient.BuildClientInfo(),
 			modstates=modstates,
 			presets=self.PresetManager.GetPresets())
@@ -498,8 +497,8 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		ui.status = 'Saved state to {}'.format(filename)
 
 	@simpleloggedmethod
-	def LoadState(self, state: AppState):
-		state = state or AppState()
+	def LoadState(self, state: schema.AppState):
+		state = state or schema.AppState()
 
 		if state.client:
 			self._LogEvent('Ignoring client info in app state (for now...)')
@@ -523,7 +522,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			return
 		self.statefilename = filename
 		self._LogEvent('Loading app state from {}'.format(filename))
-		state = AppState.ReadJsonFrom(filename)
+		state = schema.AppState.ReadJsonFrom(filename)
 		self.LoadState(state)
 
 def _ParseAddress(text: str, defaulthost='localhost', defaultport=9500) -> Tuple[str, int]:
