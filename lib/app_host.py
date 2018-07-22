@@ -429,6 +429,8 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			activepar=client.par.Secondaryvideoreceiveactive,
 			command='setSecondaryVideoSrc')
 		self.ownerComp.op('nodes/preview_panel').par.display = hassource
+		if hassource:
+			self.ownerComp.par.Sidepanelmode = 'nodes'
 		for marker in self.previewMarkers:
 			if hasattr(marker.par, 'Previewactive'):
 				marker.par.Previewactive = False
