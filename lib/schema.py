@@ -586,6 +586,7 @@ class BaseModuleSchema(BaseDataObject):
 		self.hasbypass = False
 		self.hasadvanced = False
 		self.hasmappable = False
+		self.hasnonbypasspars = False
 		self.bypasspar = None  # type: Optional[ParamSchema]
 		for par in self.params:
 			self.paramsbyname[par.name] = par
@@ -596,6 +597,8 @@ class BaseModuleSchema(BaseDataObject):
 			if par.specialtype == ParamSpecialTypes.bypass:
 				self.hasbypass = True
 				self.bypasspar = par
+			else:
+				self.hasnonbypasspars = True
 			for part in par.parts:
 				self.parampartsbyname[part.name] = part
 		self.paramgroups = paramgroups or []

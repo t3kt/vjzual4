@@ -1,5 +1,4 @@
-from collections import OrderedDict
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 print('vjz4/control_mapping.py loading')
 
@@ -7,7 +6,7 @@ if False:
 	from _stubs import *
 	from app_host import AppHost
 	from ui_builder import UiBuilder
-	from module_host import ModuleHostConnector, ModuleHost
+	from module_host import ModuleHost
 	from control_devices import MidiDevice
 
 try:
@@ -34,40 +33,6 @@ try:
 	import menu
 except ImportError:
 	menu = mod.menu
-
-class ModuleControlMap:
-	def __init__(self, enable=True):
-		self.mappings = OrderedDict()  # type: Dict[str, ControlMapping]
-		self.Enable = enable
-
-	def GetAllMappings(self):
-		return self.mappings.items()
-
-	def SetMapping(
-			self,
-			parname,
-			control=None, rangelow=0, rangehigh=1, enable=True):
-		self.mappings[parname] = ControlMapping(
-			control=control, rangelow=rangelow, rangehigh=rangehigh, enable=enable)
-
-	def RemoveMapping(self, parname):
-		if parname in self.mappings:
-			del self.mappings[parname]
-
-	def ClearMappings(self):
-		self.mappings.clear()
-
-	def BuildMappingTable(self, dat):
-		dat.clear()
-		dat.appendRow(['param', 'control', 'enable', 'rangelow', 'rangehigh'])
-		for parname, mapping in self.mappings.items():
-			dat.appendRow([
-				parname,
-				mapping.control or '',
-				int(mapping.enable),
-				mapping.rangelow,
-				mapping.rangehigh,
-			])
 
 class ControlMapper(common.ExtensionBase, common.ActionsExt):
 	def __init__(self, ownerComp):
