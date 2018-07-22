@@ -585,12 +585,14 @@ class BaseModuleSchema(BaseDataObject):
 		self.parampartsbyname = OrderedDict()  # type: Dict[str, ParamPartSchema]
 		self.hasbypass = False
 		self.hasadvanced = False
+		self.bypasspar = None  # type: Optional[ParamSchema]
 		for par in self.params:
 			self.paramsbyname[par.name] = par
 			if par.advanced:
 				self.hasadvanced = True
 			if par.specialtype == ParamSpecialTypes.bypass:
 				self.hasbypass = True
+				self.bypasspar = par
 			for part in par.parts:
 				self.parampartsbyname[part.name] = part
 		self.paramgroups = paramgroups or []

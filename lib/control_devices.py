@@ -1,11 +1,12 @@
 from operator import attrgetter
-from typing import Dict, Iterable, List, Set
+from typing import Dict, Iterable, List
 
 print('vjz4/control_devices.py loading')
 
 if False:
 	from _stubs import *
 	from ui_builder import UiBuilder
+	from app_host import AppHost
 
 try:
 	import common
@@ -20,11 +21,6 @@ try:
 except ImportError:
 	schema = mod.schema
 DeviceControlInfo = schema.DeviceControlInfo
-
-try:
-	import control_mapping
-except ImportError:
-	control_mapping = mod.control_mapping
 
 try:
 	import module_host
@@ -50,6 +46,11 @@ class DeviceManager(common.ExtensionBase, common.ActionsExt):
 		self.controls = []  # type: List[DeviceControlInfo]
 		self.controlsbyname = {}  # type: Dict[str, DeviceControlInfo]
 		self.AttachDevices()
+
+	@property
+	def AppHost(self):
+		apphost = getattr(self.ownerComp.parent, 'AppHost', None)  # type: AppHost
+		return apphost
 
 	@loggedmethod
 	def AttachDevices(self):
@@ -80,6 +81,7 @@ class DeviceManager(common.ExtensionBase, common.ActionsExt):
 				seldevpar.val = seldevpar.menuNames[0]
 			else:
 				seldevpar.val = ''
+		self.ClearDeviceAutoMapStatuses()
 
 	@loggedmethod
 	def DetachDevices(self):
@@ -123,7 +125,17 @@ class DeviceManager(common.ExtensionBase, common.ActionsExt):
 			self.controls.append(control)
 			self.controlsbyname[control.fullname] = control
 
-	def ShowContextMenu(self, button):
+	def OnDeviceHeaderClick(self, source, eventtype):
+		if eventtype == 'lselect':
+			self._ShowDeviceSelectorMenu(source)
+		elif eventtype == 'rselect':
+			if 'vjz4device' in source.tags:
+				device = source
+			else:
+				device = source.parent.Device
+			self._ShowDeviceContextMenu(source, device)
+
+	def _ShowDeviceSelectorMenu(self, source):
 		def _devitem(name, label):
 			def _callback():
 				self.ownerComp.par.Selecteddevice = name
@@ -135,9 +147,26 @@ class DeviceManager(common.ExtensionBase, common.ActionsExt):
 			_devitem(device.DeviceName, device.DeviceLabel)
 			for device in self.devices
 		]
-		menu.fromButton(button).Show(
+		menu.fromButton(source).Show(
 			items=items,
 			autoClose=True)
+
+	def _ShowDeviceContextMenu(self, source, device: 'MidiDevice'):
+		if not device:
+			return
+		items = []
+		apphost = self.AppHost
+		if apphost:
+			items += apphost.GetDeviceAdditionalMenuItems(device)
+		menu.fromButton(source).Show(items=items, autoClose=True)
+
+	def ClearDeviceAutoMapStatuses(self):
+		for device in self.devices:
+			device.par.Automap = False
+
+	def GetDevice(self, devname) -> 'Optional[MidiDevice]':
+		return self.devicesbyname.get(devname)
+
 
 class MidiDevice(common.ExtensionBase, common.ActionsExt):
 	def __init__(self, ownerComp):
@@ -158,6 +187,10 @@ class MidiDevice(common.ExtensionBase, common.ActionsExt):
 	@property
 	def DeviceLabel(self):
 		return self.ownerComp.par.Label.eval() or self.DeviceName
+
+	@property
+	def _DeviceManager(self) -> DeviceManager:
+		return self.ownerComp.parent.DeviceManager
 
 	def _InitializeControls(self, controls: List[DeviceControlInfo]):
 		self.Controls = controls or []
@@ -228,12 +261,25 @@ class MidiDevice(common.ExtensionBase, common.ActionsExt):
 			self.highlightedmarker.par.Highlight = True
 			self.ownerComp.op('input_active_timer').par.start.pulse()
 
+	@loggedmethod
 	def GenerateAutoMappings(
 			self,
-			modconnector: module_host.ModuleHostConnector,
-			mappings: control_mapping.ModuleControlMap):
-		mappings.ClearMappings()
-		return
+			modconnector: module_host.ModuleHostConnector) -> schema.ControlMappingSet:
+		builder = _AutoMapBuilder(
+			hostobj=self,
+			devname=self.DeviceName,
+			modconnector=modconnector)
+		if modconnector:
+			builder.sliders = [control for control in self.Controls if control.ctrltype == 'slider']
+			builder.buttons = [control for control in self.Controls if control.ctrltype == 'button']
+			builder.AddMappingsForParam(modconnector.modschema.bypasspar)
+			for param in modconnector.modschema.params:
+				if param.specialtype == schema.ParamSpecialTypes.bypass:
+					continue
+				builder.AddMappingsForParam(param)
+		else:
+			self._LogEvent('No module connector')
+		return builder.Build()
 
 	@property
 	def UiBuilder(self):
@@ -267,6 +313,7 @@ def _MakeCcRanges(ccvals: Iterable[int]):
 			ranges.append('{}-{}'.format(currentseries[0], currentseries[-1]))
 	return ' '.join(ranges)
 
+
 class BcrMidiDevice(MidiDevice):
 	def __init__(self, ownerComp):
 		super().__init__(ownerComp)
@@ -280,61 +327,6 @@ class BcrMidiDevice(MidiDevice):
 			_CreateControlSeries('s', devname, 17, 89, 'slider', 8) +
 			_CreateControlSeries('s', devname, 25, 97, 'slider', 8)
 		)
-
-	def GenerateAutoMappings(
-			self,
-			modconnector: module_host.ModuleHostConnector,
-			mappings: control_mapping.ModuleControlMap):
-		mappings.ClearMappings()
-		if not modconnector:
-			return False
-		slidernames = [
-			control.fullname
-			for control in self.Controls
-			if control.ctrltype == 'slider'
-		]
-		buttonnames = [
-			control.fullname
-			for control in self.Controls
-			if control.ctrltype == 'button'
-		]
-		modschema = modconnector.modschema
-		if modschema.hasbypass:
-			bypasspar = modschema.paramsbyname.get('Bypass')
-			if bypasspar is not None and bypasspar.mappable:
-				mappings.SetMapping(
-					'Bypass',
-					control=buttonnames.pop(0))
-
-		def _addButton(parname):
-			if not buttonnames:
-				return
-			mappings.SetMapping(
-				parname,
-				control=buttonnames.pop(0))
-
-		def _addSlider(parname, rangelow, rangehigh):
-			if not slidernames:
-				return
-			mappings.SetMapping(
-				parname,
-				control=slidernames.pop(0),
-				rangelow=rangelow,
-				rangehigh=rangehigh)
-
-		for parinfo in modschema.params:
-			if not parinfo.mappable or parinfo.advanced or parinfo.hidden:
-				continue
-			if parinfo.specialtype == schema.ParamSpecialTypes.bypass:
-				continue
-			if parinfo.style == 'Toggle':
-				_addButton(parinfo.name)
-			elif parinfo.style in ('RGB', 'RGBA'):
-				continue  # don't auto-map color params
-			elif parinfo.style in ('Float', 'Int', 'XY', 'XYZ', 'UV', 'UVW', 'WH'):
-				for part in parinfo.parts:
-					_addSlider(part.name, part.normMin, part.normMax)
-		return True
 
 class MFTwisterMidiDevice(MidiDevice):
 	def __init__(self, ownerComp):
@@ -376,3 +368,61 @@ def _CreateControlSeries(
 			outputcc=cc if includeoutput else None
 		))
 	return controls
+
+class _AutoMapBuilder(common.LoggableSubComponent):
+	def __init__(
+			self,
+			hostobj: MidiDevice,
+			devname: str,
+			modconnector: module_host.ModuleHostConnector,
+			sliders=None,
+			buttons=None):
+		super().__init__(hostobj=hostobj)
+		self.modconnector = modconnector
+		self.modpath = modconnector.modpath if modconnector else None
+		self.devname = devname
+		self.mappings = []  # type: List[schema.ControlMapping]
+		self.sliders = list(sliders or [])  # type: List[DeviceControlInfo]
+		self.buttons = list(buttons or [])  # type: List[DeviceControlInfo]
+
+	def _AddButton(self, part: schema.ParamPartSchema):
+		if not self.buttons:
+			return
+		self.mappings.append(
+			schema.ControlMapping(
+				path=self.modpath,
+				param=part.name,
+				enable=True,
+				control=self.buttons.pop(0).fullname))
+
+	def _AddSlider(self, part: schema.ParamPartSchema):
+		if not self.sliders:
+			return
+		self.mappings.append(
+			schema.ControlMapping(
+				path=self.modpath,
+				param=part.name,
+				enable=True,
+				rangelow=part.minnorm,
+				rangehigh=part.maxnorm,
+				control=self.sliders.pop(0).fullname))
+
+	def AddMappingsForParam(self, param: schema.ParamSchema):
+		if not self.modconnector:
+			return
+		if not param or not param.mappable or param.advanced or param.hidden:
+			return
+		if param.style == 'Toggle':
+			self._AddButton(param.parts[0])
+		elif param.style in ('Float', 'Int', 'XY', 'XYZ', 'UV', 'UVW', 'WH'):
+			for part in param.parts:
+				self._AddSlider(part)
+
+	@loggedmethod
+	def Build(self):
+		self._LogEvent('mappings: {}'.format(len(self.mappings)))
+		return schema.ControlMappingSet(
+			name=self.devname + '-auto',
+			enable=self.modconnector is not None,
+			generatedby=self.devname,
+			mappings=list(self.mappings))

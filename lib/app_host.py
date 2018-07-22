@@ -74,6 +74,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		self._ShowSchemaJson(None)
 		self.nodeMarkersByPath = {}  # type: Dict[str, List[str]]
 		self.previewMarkers = []  # type: List[op]
+		self.modulehostsbypath = {}  # type: Dict[str, module_host.ModuleHost]
 		self.statefilename = None
 		self.OnDetach()
 
@@ -103,6 +104,19 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		return self.AppSchema.moduletypesbypath.get(typepath) if self.AppSchema else None
 
 	@loggedmethod
+	def RegisterModuleHost(self, modhost: 'module_host.ModuleHost'):
+		if not modhost or not modhost.ModuleConnector:
+			return
+		self.modulehostsbypath[modhost.ModuleConnector.modpath] = modhost
+
+	def GetModuleHost(self, modpath) -> 'Optional[module_host.ModuleHost]':
+		return self.modulehostsbypath.get(modpath)
+
+	def ClearModuleAutoMapStatuses(self):
+		for modhost in self.modulehostsbypath.values():
+			modhost.par.Automap = False
+
+	@loggedmethod
 	def OnAppSchemaLoaded(self, appschema: schema.AppSchema):
 		self.HighlightManager.ClearAllHighlights()
 		self.AppSchema = appschema
@@ -127,9 +141,11 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			o.destroy()
 		self.AppSchema = None
 		self.nodeMarkersByPath.clear()
+		self.modulehostsbypath.clear()
 		self._BuildNodeMarkerTable()
 		self.SetPreviewSource(None)
 		common.OPExternalStorage.CleanOrphans()
+		mod.td.run('op({!r}).SetAutoMapModule(None)'.format(self.ControlMapper.path), delayFrames=1)
 
 	def OnTDPreSave(self):
 		for o in self.ownerComp.ops('modules_panel/mod__*'):
@@ -304,7 +320,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			autoClose=True)
 
 	def GetModuleAdditionalMenuItems(self, modhost: module_host.ModuleHost):
-		return [
+		items = [
 			menu.Item(
 				'View Schema',
 				disabled=not modhost.ModuleConnector,
@@ -318,6 +334,11 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 				disabled=not modhost.ModuleConnector or not modhost.ModuleConnector.modschema.masterpath,
 				callback=lambda: self.PresetManager.SavePresetFromModule(modhost))
 		]
+		items += self.ControlMapper.GetModuleAdditionalMenuItems(modhost)
+		return items
+
+	def GetDeviceAdditionalMenuItems(self, device: control_devices.MidiDevice):
+		return self.ControlMapper.GetDeviceAdditionalMenuItems(device)
 
 	@loggedmethod
 	def _RegisterNodeMarkers(self):
@@ -430,7 +451,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		return self.ownerComp.op('modules_panel').findChildren(tags=['vjz4modhost'], maxDepth=None)
 
 	@property
-	def _DeviceManager(self) -> 'control_devices.DeviceManager':
+	def DeviceManager(self) -> 'control_devices.DeviceManager':
 		return self.ownerComp.op('devices')
 
 	@property

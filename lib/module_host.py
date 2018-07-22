@@ -279,6 +279,9 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 				bodypanel.par.opacity.expr = '0.5 if {} else 1'.format(bypassexpr)
 			if connector.modschema.primarynode:
 				previewbutton.par.display = True
+			apphost = self.AppHost
+			if apphost:
+				apphost.RegisterModuleHost(self)
 		else:
 			self.UiModeNames.append('nodes')
 
