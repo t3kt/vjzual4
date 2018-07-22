@@ -858,10 +858,6 @@ class ClientInfo(BaseDataObject):
 		self.primaryvidrecv = primaryvidrecv
 		self.secondaryvidrecv = secondaryvidrecv
 
-	@classmethod
-	def FromJsonDict(cls, obj):
-		return cls(**obj)
-
 	def ToJsonDict(self):
 		return cleandict(mergedicts(self.otherattrs, {
 			'version': self.version,
@@ -874,6 +870,28 @@ class ClientInfo(BaseDataObject):
 			'osceventrecv': self.osceventrecv,
 			'primaryvidrecv': self.primaryvidrecv,
 			'secondaryvidrecv': self.secondaryvidrecv,
+		}))
+
+class ServerInfo(BaseDataObject):
+	def __init__(
+			self,
+			version=None,
+			address=None,
+			allowlocalstatestorage: bool=None,
+			localstatefile: str=None,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.version = version
+		self.address = address
+		self.allowlocalstatestorage = allowlocalstatestorage
+		self.localstatefile = localstatefile
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'version': self.version,
+			'address': self.address,
+			'allowlocalstatestorage': self.allowlocalstatestorage,
+			'localstatefile': self.localstatefile,
 		}))
 
 class DeviceControlInfo(BaseDataObject):
@@ -1110,9 +1128,6 @@ class ModulePreset(BaseDataObject):
 			}))
 
 class SchemaProvider:
-	def GetAppSchema(self) -> AppSchema:
-		raise NotImplementedError()
-
 	def GetModuleSchema(self, modpath) -> Optional[ModuleSchema]:
 		raise NotImplementedError()
 

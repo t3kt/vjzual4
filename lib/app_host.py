@@ -70,6 +70,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		})
 		self._AutoInitActionParams()
 		self.AppSchema = None  # type: schema.AppSchema
+		self.serverinfo = None  # type: schema.ServerInfo
 		self._ShowSchemaJson(None)
 		self.nodeMarkersByPath = {}  # type: Dict[str, List[str]]
 		self.previewMarkers = []  # type: List[op]
@@ -80,9 +81,6 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	@property
 	def _RemoteClient(self) -> remote_client.RemoteClient:
 		return self.ownerComp.par.Remoteclient.eval()
-
-	def GetAppSchema(self):
-		return self.AppSchema
 
 	def GetModuleSchema(self, modpath) -> 'Optional[schema.ModuleSchema]':
 		return self.AppSchema and self.AppSchema.modulesbypath.get(modpath)
@@ -114,6 +112,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def ClearModuleAutoMapStatuses(self):
 		for modhost in self.modulehostsbypath.values():
 			modhost.par.Automap = False
+
+	@loggedmethod
+	def OnConnected(self, serverinfo: schema.ServerInfo):
+		self.serverinfo = serverinfo
 
 	@loggedmethod
 	def OnAppSchemaLoaded(self, appschema: schema.AppSchema):
@@ -285,12 +287,19 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 				_viewItem('Param Parts', 'param_parts'),
 				_viewItem('Data Nodes', 'data_nodes'),
 				menu.Item(
+					'Client Info',
+					callback=lambda: self._ShowSchemaJson(self._RemoteClient.BuildClientInfo())),
+				menu.Item(
+					'Server Info',
+					disabled=self.serverinfo is None,
+					callback=lambda: self._ShowSchemaJson(self.serverinfo)),
+				menu.Item(
 					'App State',
 					callback=lambda: self._ShowSchemaJson(self.BuildState()),
 					dividerafter=True),
 				menu.Item(
 					'Reload code',
-					callback=lambda: op.Vjz4.op('RELOAD_CODE').run())
+					callback=lambda: op.Vjz4.op('RELOAD_CODE').run()),
 			]
 		else:
 			return

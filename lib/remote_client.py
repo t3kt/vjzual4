@@ -4,6 +4,7 @@ print('vjz4/remote_client.py loading')
 
 if False:
 	from _stubs import *
+	from app_host import AppHost
 
 try:
 	import common
@@ -70,14 +71,6 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 		self.rawModuleTypeInfos = []  # type: List[schema.RawModuleInfo]
 		self.AppSchema = None  # type: schema.AppSchema
 
-	@property
-	def _Callbacks(self):
-		dat = self.ownerComp.par.Callbacks.eval()
-		return dat.module if dat else None
-
-	def GetAppSchema(self):
-		return self.AppSchema
-
 	def GetModuleSchema(self, modpath) -> schema.ModuleSchema:
 		return self.AppSchema and self.AppSchema.modulesbypath.get(modpath)
 
@@ -100,6 +93,11 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 	def ProxyManager(self) -> module_proxy.ModuleProxyManager:
 		return self.ownerComp.op('proxy')
 
+	@property
+	def AppHost(self):
+		apphost = getattr(self.ownerComp.parent, 'AppHost', None)  # type: AppHost
+		return apphost
+
 	def Detach(self):
 		self._LogBegin('Detach()')
 		try:
@@ -115,9 +113,9 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 			self._ClearDataNodesTable()
 			self.ProxyManager.par.Rootpath = ''
 			self.ProxyManager.ClearProxies()
-			callbacks = self._Callbacks
-			if callbacks and hasattr(callbacks, 'OnDetach'):
-				callbacks.OnDetach()
+			apphost = self.AppHost
+			if apphost:
+				apphost.OnDetach()
 		finally:
 			self._LogEnd()
 
@@ -140,10 +138,14 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 		finally:
 			self._LogEnd()
 
+	@property
+	def _Version(self):
+		return 1
+
 	def BuildClientInfo(self):
 		connpar = self.Connection.par
 		return schema.ClientInfo(
-				version=1,
+				version=self._Version,
 				address=self.ownerComp.par.Localaddress.eval() or self.ownerComp.par.Localaddress.default,
 				cmdsend=self.ownerComp.par.Commandsendport.eval(),
 				cmdrecv=self.ownerComp.par.Commandreceiveport.eval(),
@@ -176,26 +178,29 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 		else:
 			return Future.immediate()
 
-	def _OnConfirmConnect(self, _):
+	def _OnConfirmConnect(self, cmdmesg: remote.CommandMessage):
 		self.Connected.val = True
-		callbacks = self._Callbacks
-		if callbacks and hasattr(callbacks, 'OnConnected'):
-			callbacks.OnConnected()
+		if not cmdmesg.arg:
+			self._LogEvent('No server info!')
+			serverinfo = schema.ServerInfo()
+		else:
+			serverinfo = schema.ServerInfo.FromJsonDict(cmdmesg.arg)  # type: schema.ServerInfo
+		if serverinfo.version is not None and serverinfo.version != self._Version:
+			raise Exception('Client/server version mismatch! client: {}, server: {}'.format(
+				self._Version, serverinfo.version))
+		self.AppHost.OnConnected(serverinfo)
 		self.QueryApp()
 
 	def _OnConnectFailure(self, cmdmesg: remote.CommandMessage):
 		self._LogEvent('_OnConnectFailure({})'.format(cmdmesg))
 
+	@loggedmethod
 	def QueryApp(self):
-		self._LogBegin('QueryApp()')
-		try:
-			if not self.Connected:
-				return
-			self.Connection.SendRequest('queryApp').then(
-				success=self._OnReceiveAppInfo,
-				failure=self._OnQueryAppFailure)
-		finally:
-			self._LogEnd()
+		if not self.Connected:
+			return
+		self.Connection.SendRequest('queryApp').then(
+			success=self._OnReceiveAppInfo,
+			failure=self._OnQueryAppFailure)
 
 	def _OnReceiveAppInfo(self, cmdmesg: remote.CommandMessage):
 		self._LogBegin('_OnReceiveAppInfo({!r})'.format(cmdmesg.arg))
@@ -359,17 +364,9 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 		finally:
 			self._LogEnd()
 
+	@loggedmethod
 	def NotifyAppSchemaLoaded(self):
-		self._LogBegin('NotifyAppSchemaLoaded()')
-		try:
-			callbacks = self._Callbacks
-			if callbacks and hasattr(callbacks, 'OnAppSchemaLoaded'):
-				self._LogEvent('Calling OnAppSchemaLoaded callback')
-				callbacks.OnAppSchemaLoaded(self.AppSchema)
-			else:
-				self._LogEvent('No OnAppSchemaLoaded callback')
-		finally:
-			self._LogEnd()
+		self.AppHost.OnAppSchemaLoaded(self.AppSchema)
 
 	def QueryModuleState(self, modpath, params=None):
 		# params == None means all

@@ -155,9 +155,18 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 
 			# TODO: apply connection settings (OSC)
 			self.Connected.val = True
-			self.Connection.SendResponse(request.cmd, request.cmdid)
+			serverinfo = self._BuildServerInfo()
+			self.Connection.SendResponse(request.cmd, request.cmdid, serverinfo.ToJsonDict())
 		finally:
 			self._LogEnd()
+
+	def _BuildServerInfo(self):
+		return schema.ServerInfo(
+			version=1,
+			address=self.Connection.par.Localaddress.eval() or self.Connection.par.Localaddress.default,
+			allowlocalstatestorage=self.ownerComp.par.Allowlocalstatestorage.eval(),
+			localstatefile=self.ownerComp.par.Localstatefile.eval() or self.ownerComp.par.Localstatefile.default,
+		)
 
 	def SetPrimaryVideoSource(self, path):
 		self._LogBegin('SetPrimaryVideoSource({})'.format(path))
