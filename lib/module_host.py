@@ -288,9 +288,13 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			'submods': 'Sub-Modules',
 		}
 		uimodelabels = [labelsbyname[m] for m in uimodenames]
-		self.ownerComp.par.Uimode.menuNames = uimodenames
-		self.ownerComp.par.Uimode.menuLabels = uimodelabels
-		header.par.Modenames = repr(uimodenames)
+		uimodepar = self.ownerComp.par.Uimode
+		uimodepar.menuNames = uimodenames
+		uimodepar.menuLabels = uimodelabels
+		for mode in ['submods', 'ctrl', 'nodes']:
+			if mode in uimodenames:
+				uimodepar.val = mode
+				break
 
 		hostcore = self.ownerComp.op('host_core')
 		self._BuildParamTable(hostcore.op('set_param_table'))
