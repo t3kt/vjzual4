@@ -23,6 +23,11 @@ try:
 except ImportError:
 	schema = mod.schema
 
+try:
+	import menu
+except ImportError:
+	menu = mod.menu
+
 
 class _LfoMode(common.BaseDataObject):
 	def __init__(
@@ -209,5 +214,29 @@ class ModulationManager(common.ExtensionBase, common.ActionsExt):
 			schema.ModulationSourceSpec(
 				name=name,
 				sourcetype='lfo'))
+
+	def ShowSourcesHeaderContextMenu(self):
+		previewpar = self.ownerComp.par.Showpreview
+
+		def _togglepreviews():
+			previewpar.val = not previewpar
+
+		items = [
+			menu.Item(
+				'Show previews',
+				checked=previewpar.eval(),
+				dividerafter=True,
+				callback=_togglepreviews),
+			menu.Item(
+				'Add LFO',
+				callback=lambda: self.AddLfo()),
+			menu.Item(
+				'Clear sources',
+				disabled=not self.sourcespecs,
+				callback=self.ClearSources),
+		]
+		menu.fromMouse().Show(
+			items=items,
+			autoClose=True)
 
 
