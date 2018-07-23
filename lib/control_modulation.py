@@ -184,6 +184,11 @@ class ModulationSourceManager(common.ExtensionBase, common.ActionsExt):
 		for spec in self.sourcespecs:
 			self.AddSource(spec)
 
+	def GetSourceSpec(self, name):
+		for spec in self.sourcespecs:
+			if spec.name == name:
+				return spec
+
 	@property
 	def _ModulationManager(self) -> ModulationManager:
 		return self.ownerComp.parent.ModulationManager
@@ -209,7 +214,7 @@ class ModulationSourceManager(common.ExtensionBase, common.ActionsExt):
 
 	@loggedmethod
 	def _BuildSourceGenerators(self):
-		dest = self.ownerComp.op('sources')
+		dest = self.ownerComp.op('sources_panel')
 		for o in dest.ops('gen__*', 'genheadclick__*'):
 			o.destroy()
 		self.sourcegens.clear()
@@ -234,7 +239,7 @@ class ModulationSourceManager(common.ExtensionBase, common.ActionsExt):
 					order=i,
 					nodepos=[200, 400 + -200 * i],
 					parexprs={
-						'Showpreview': 'parent.ModulationManager.par.Showpreview',
+						'Showpreview': 'parent.SourceManager.par.Showpreview',
 					}
 				))
 		else:
@@ -268,7 +273,7 @@ class ModulationSourceManager(common.ExtensionBase, common.ActionsExt):
 			raise Exception('Duplicate spec name: {}'.format(spec.name))
 		self.sourcespecs.append(spec)
 		spec.AddToTable(self._SourcesTable)
-		gen = self._BuildSourceGenerator(spec, len(self.sourcespecs) -1)
+		gen = self._BuildSourceGenerator(spec, len(self.sourcespecs) - 1)
 		if gen:
 			self.sourcegens[spec.name] = gen
 			self._SourcesTable[spec.name, 'genpath'] = gen.path
@@ -348,6 +353,7 @@ class ModulationMapper(common.ExtensionBase, common.ActionsExt):
 		})
 		self._AutoInitActionParams()
 		self.mappings = schema.ModulationMappingSet()
+		self._BuildMappingsTable()
 
 	def GetMappings(self):
 		return copy.deepcopy(self.mappings)
@@ -379,14 +385,106 @@ class ModulationMapper(common.ExtensionBase, common.ActionsExt):
 	def ClearMappings(self):
 		self.mappings.mappings.clear()
 		self._BuildMappingsTable()
+		self.InitializeChannelProcessing()
 
 	@loggedmethod
 	def AddMapping(self, mapping: schema.ModulationMapping):
 		self.mappings.mappings.append(mapping)
 		self._BuildMappingsTable()
+		self.InitializeChannelProcessing()
+
+	@loggedmethod
+	def InitializeChannelProcessing(self):
+		apphost = self.AppHost
+		addsettings = MappingProcessorSettings()
+		multsettings = MappingProcessorSettings()
+		oversettings = MappingProcessorSettings()
+		sourcemanager = self._ModulationManager.SourceManager
+		if self.mappings.enable and apphost and apphost.AppSchema:
+			for mapping in self.mappings.mappings:
+				if not mapping.enable or not mapping.path or not mapping.param or not mapping.source:
+					continue
+				sourcespec = sourcemanager.GetSourceSpec(mapping.source)
+				if not sourcespec:
+					continue
+				parampart = apphost.GetParamPartSchema(mapping.path, mapping.param)
+				if not parampart:
+					continue
+				paramschema = parampart.parent
+				if not paramschema.mappable or paramschema.style not in (
+						'Float', 'Int', 'UV', 'UVW', 'XY', 'XYZ', 'RGB', 'RGBA'):
+					continue
+				if mapping.mode == schema.ModulationMappingModes.add:
+					addsettings.Add(mapping)
+				elif mapping.mode == schema.ModulationMappingModes.multiply:
+					multsettings.Add(mapping)
+				elif mapping.mode == schema.ModulationMappingModes.override:
+					oversettings.Add(mapping)
+				else:
+					continue
+		self.ownerComp.op('add_processor').Initialize(addsettings)
+		self.ownerComp.op('multiply_processor').Initialize(multsettings)
+		self.ownerComp.op('override_processor').Initialize(oversettings)
 
 	def ShowHeaderContextMenu(self):
-		pass
+		menu.fromMouse().Show(
+			items=[
+				menu.Item(
+					'Clear mappings',
+					disabled=not self.mappings.mappings,
+					callback=self.ClearMappings),
+			],
+			autoClose=True)
 
+class MappingProcessorSettings:
+	def __init__(self):
+		self.paramkeys = []
+		self.sources = []
+		self.offsets = []
+		self.ranges = []
+
+	def Add(self, mapping: schema.ModulationMapping):
+		self.paramkeys.append(mapping.path + ':' + mapping.param)
+		self.sources.append(mapping.source)
+		self.offsets.append(mapping.rangelow)
+		self.ranges.append(mapping.rangehigh - mapping.rangelow)
+
+	def __len__(self):
+		return len(self.paramkeys)
+
+	def __bool__(self):
+		return bool(self.paramkeys)
+
+
+class MappingProcessor(common.ExtensionBase):
+	def __init__(self, ownerComp):
+		super().__init__(ownerComp)
+
+	def Initialize(self, settings: MappingProcessorSettings):
+		isolatepars = self.ownerComp.op('isolate_mapped_pars')
+		excludepars = self.ownerComp.op('exclude_mapped_pars')
+		selsources = self.ownerComp.op('sel_source_values')
+		setoffsets = self.ownerComp.op('set_offsets')
+		setranges = self.ownerComp.op('set_ranges')
+		setoffsets.clear()
+		setranges.clear()
+		if not settings:
+			self.ownerComp.par.Bypass = True
+			isolatepars.par.delscope = ''
+			excludepars.par.delscope = ''
+			selsources.par.channames = ''
+			selsources.par.renameto = ''
+		else:
+			self.ownerComp.par.Bypass = False
+			paramkeys = ' '.join(settings.paramkeys)
+			isolatepars.par.delscope = paramkeys
+			excludepars.par.delscope = paramkeys
+			selsources.par.channames = ' '.join(settings.sources)
+			selsources.par.renameto = paramkeys
+			for i, name in enumerate(settings.paramkeys):
+				setoffsets.appendChan(name)
+				setoffsets[name][0] = settings.offsets[i]
+				setranges.appendChan(name)
+				setranges[name][0] = settings.ranges[i]
 
 

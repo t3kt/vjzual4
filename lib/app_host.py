@@ -131,8 +131,8 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 				[
 					lambda: self._BuildNodeMarkers(),
 					lambda: self._RegisterNodeMarkers(),
-					# temporarily disabling the mapping editors
-					# lambda: self._InitializeMappings(),
+					lambda: self.ControlMapper.InitializeChannelProcessing(),
+					lambda: self.ModulationManager.Mapper.InitializeChannelProcessing(),
 				],
 				autostart=True))
 
@@ -155,13 +155,6 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def OnTDPreSave(self):
 		for o in self.ownerComp.ops('modules_panel/mod__*'):
 			o.destroy()
-
-	@loggedmethod
-	def _InitializeMappings(self):
-		if not self.AppSchema:
-			return
-		mapper = self.ControlMapper
-		# TODO: initialize mappings
 
 	@property
 	def _ModuleHostTemplate(self):
