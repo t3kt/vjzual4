@@ -1045,23 +1045,7 @@ class ModulationMapping(BaseMapping):
 			'mode': self.mode,
 		}))
 
-class BaseMappingSet(BaseDataObject):
-	def __init__(
-			self,
-			name=None,
-			enable=True,
-			**otherattrs):
-		super().__init__(**otherattrs)
-		self.name = name
-		self.enable = enable
-
-	def ToJsonDict(self):
-		return cleandict(mergedicts(self.otherattrs, {
-			'name': self.name,
-			'enable': self.enable,
-		}))
-
-class ControlMappingSet(BaseMappingSet):
+class ControlMappingSet(BaseDataObject):
 	def __init__(
 			self,
 			name=None,
@@ -1069,10 +1053,9 @@ class ControlMappingSet(BaseMappingSet):
 			generatedby: str=None,
 			mappings=None,
 			**otherattrs):
-		super().__init__(
-			name=name,
-			enable=enable,
-			**otherattrs)
+		super().__init__(**otherattrs)
+		self.name = name
+		self.enable = enable
 		self.generatedby = generatedby
 		self.mappings = mappings or []  # type: List[ControlMapping]
 
@@ -1088,7 +1071,9 @@ class ControlMappingSet(BaseMappingSet):
 		return results
 
 	def ToJsonDict(self):
-		return cleandict(mergedicts(super().ToJsonDict(), {
+		return cleandict(mergedicts(self.otherattrs, {
+			'name': self.name,
+			'enable': self.enable,
 			'generatedby': self.generatedby,
 			'mappings': ControlMapping.ToJsonDicts(self.mappings),
 		}))
@@ -1099,21 +1084,19 @@ class ControlMappingSet(BaseMappingSet):
 			mappings=ControlMapping.FromJsonDicts(obj.get('mappings')),
 			**excludekeys(obj, ['mappings']))
 
-class ModulationMappingSet(BaseMappingSet):
+class ModulationMappingSet(BaseDataObject):
 	def __init__(
 			self,
-			name=None,
 			enable=True,
 			mappings=None,
 			**otherattrs):
-		super().__init__(
-			name=name,
-			enable=enable,
-			**otherattrs)
+		super().__init__(**otherattrs)
+		self.enable = enable
 		self.mappings = mappings or []  # type: List[ModulationMapping]
 
 	def ToJsonDict(self):
 		return cleandict(mergedicts(super().ToJsonDict(), {
+			'enable': self.enable,
 			'mappings': ModulationMapping.ToJsonDicts(self.mappings),
 		}))
 
