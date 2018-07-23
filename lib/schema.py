@@ -941,7 +941,7 @@ class DeviceControlInfo(BaseDataObject):
 			'outchan': self.outchan,
 		}))
 
-class ControlMapping(BaseDataObject):
+class BaseMapping(BaseDataObject):
 	def __init__(
 			self,
 			path=None,
@@ -949,7 +949,6 @@ class ControlMapping(BaseDataObject):
 			enable=True,
 			rangelow=None,
 			rangehigh=None,
-			control=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.path = path
@@ -957,7 +956,6 @@ class ControlMapping(BaseDataObject):
 		self.enable = enable
 		self.rangelow = rangelow if rangelow is not None else 0
 		self.rangehigh = rangehigh if rangehigh is not None else 1
-		self.control = control
 
 	@property
 	def parampath(self):
@@ -971,7 +969,6 @@ class ControlMapping(BaseDataObject):
 		'enable',
 		'rangelow',
 		'rangehigh',
-		'control',
 	]
 
 	def ToJsonDict(self):
@@ -981,10 +978,90 @@ class ControlMapping(BaseDataObject):
 			'enable': self.enable,
 			'rangelow': self.rangelow,
 			'rangehigh': self.rangehigh,
+		}))
+
+class ControlMapping(BaseMapping):
+	def __init__(
+			self,
+			path=None,
+			param=None,
+			enable=True,
+			rangelow=None,
+			rangehigh=None,
+			control=None,
+			**otherattrs):
+		super().__init__(
+			path=path,
+			param=param,
+			enable=enable,
+			rangelow=rangelow,
+			rangehigh=rangehigh,
+			**otherattrs)
+		self.control = control
+
+	tablekeys = BaseMapping.tablekeys + [
+		'control',
+	]
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(super().ToJsonDict(), {
 			'control': self.control,
 		}))
 
-class ControlMappingSet(BaseDataObject):
+
+class ModulationMappingModes:
+	add = 'add'
+	multiply = 'multiply'
+	override = 'override'
+
+class ModulationMapping(BaseMapping):
+	def __init__(
+			self,
+			path=None,
+			param=None,
+			enable=True,
+			rangelow=None,
+			rangehigh=None,
+			source=None,
+			mode=ModulationMappingModes.add,
+			**otherattrs):
+		super().__init__(
+			path=path,
+			param=param,
+			enable=enable,
+			rangelow=rangelow,
+			rangehigh=rangehigh,
+			**otherattrs)
+		self.source = source
+		self.mode = mode
+
+	tablekeys = BaseMapping.tablekeys + [
+		'source',
+	]
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(super().ToJsonDict(), {
+			'source': self.source,
+			'mode': self.mode,
+		}))
+
+class BaseMappingSet(BaseDataObject):
+	def __init__(
+			self,
+			name=None,
+			enable=True,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.name = name
+		self.enable = enable
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'name': self.name,
+			'enable': self.enable,
+		}))
+
+class ControlMappingSet(BaseMappingSet):
 	def __init__(
 			self,
 			name=None,
@@ -992,9 +1069,10 @@ class ControlMappingSet(BaseDataObject):
 			generatedby: str=None,
 			mappings=None,
 			**otherattrs):
-		super().__init__(**otherattrs)
-		self.name = name
-		self.enable = enable
+		super().__init__(
+			name=name,
+			enable=enable,
+			**otherattrs)
 		self.generatedby = generatedby
 		self.mappings = mappings or []  # type: List[ControlMapping]
 
@@ -1010,9 +1088,7 @@ class ControlMappingSet(BaseDataObject):
 		return results
 
 	def ToJsonDict(self):
-		return cleandict(mergedicts(self.otherattrs, {
-			'name': self.name,
-			'enable': self.enable,
+		return cleandict(mergedicts(super().ToJsonDict(), {
 			'generatedby': self.generatedby,
 			'mappings': ControlMapping.ToJsonDicts(self.mappings),
 		}))
@@ -1022,6 +1098,31 @@ class ControlMappingSet(BaseDataObject):
 		return cls(
 			mappings=ControlMapping.FromJsonDicts(obj.get('mappings')),
 			**excludekeys(obj, ['mappings']))
+
+class ModulationMappingSet(BaseMappingSet):
+	def __init__(
+			self,
+			name=None,
+			enable=True,
+			mappings=None,
+			**otherattrs):
+		super().__init__(
+			name=name,
+			enable=enable,
+			**otherattrs)
+		self.mappings = mappings or []  # type: List[ModulationMapping]
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(super().ToJsonDict(), {
+			'mappings': ModulationMapping.ToJsonDicts(self.mappings),
+		}))
+
+	@classmethod
+	def FromJsonDict(cls, obj):
+		return cls(
+			mappings=ModulationMapping.FromJsonDicts(obj.get('mappings')),
+			**excludekeys(obj, ['mappings']))
+
 
 class AppState(BaseDataObject):
 	"""
