@@ -1127,6 +1127,56 @@ class ModulePreset(BaseDataObject):
 				'ispartial': self.ispartial,
 			}))
 
+
+class ModulationSourceSpec(BaseDataObject):
+	def __init__(
+			self,
+			name,
+			sourcetype='lfo',
+			play=True,
+			sync=True,
+			syncperiod='four',
+			freeperiod=4,
+			shape='ramp',
+			phase=0,
+			bias=0,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.name = name
+		self.sourcetype = sourcetype
+		self.play = play
+		self.sync = sync
+		self.syncperiod = syncperiod
+		self.freeperiod = freeperiod
+		self.shape = shape
+		self.phase = phase
+		self.bias = bias
+
+	tablekeys = [
+		'name',
+		'sourcetype',
+		'play',
+		'sync',
+		'syncperiod',
+		'freeperiod',
+		'shape',
+		'phase',
+		'bias',
+	]
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'name': self.name,
+			'sourcetype': self.sourcetype,
+			'play': self.play,
+			'sync': self.sync,
+			'syncperiod': self.syncperiod,
+			'freeperiod': self.freeperiod,
+			'shape': self.shape,
+			'phase': self.phase,
+			'bias': self.bias,
+		}))
+
 class SchemaProvider:
 	def GetModuleSchema(self, modpath) -> Optional[ModuleSchema]:
 		raise NotImplementedError()

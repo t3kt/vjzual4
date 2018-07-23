@@ -1,7 +1,11 @@
+from typing import Dict, List
+
 print('vjz4/control_modulation.py loading')
 
 if False:
 	from _stubs import *
+	from app_host import AppHost
+	import ui_builder
 
 
 try:
@@ -10,6 +14,8 @@ except ImportError:
 	common = mod.common
 cleandict = common.cleandict
 mergedicts = common.mergedicts
+opattrs = common.opattrs
+loggedmethod = common.loggedmethod
 
 try:
 	import schema
@@ -90,4 +96,106 @@ def BuildLfoModeTable(dat):
 	dat.appendRow(_LfoMode.tablekeys)
 	for mode in lfomodes:
 		mode.AddToTable(dat)
+
+
+class ModulationManager(common.ExtensionBase, common.ActionsExt):
+	def __init__(self, ownerComp):
+		common.ExtensionBase.__init__(self, ownerComp)
+		common.ActionsExt.__init__(self, ownerComp, actions={
+			'Clearsources': self.ClearSources,
+		})
+		self._AutoInitActionParams()
+		self.sourcespecs = []  # type: List[schema.ModulationSourceSpec]
+		self.sourcegens = {}  # type: Dict[str, OP]
+		self._BuildSourcesTable()
+		self._BuildSourceGenerators()
+
+	@property
+	def AppHost(self):
+		apphost = getattr(self.ownerComp.parent, 'AppHost', None)  # type: AppHost
+		return apphost
+
+	@property
+	def UiBuilder(self):
+		apphost = self.AppHost
+		uibuilder = apphost.UiBuilder if apphost else None  # type: ui_builder.UiBuilder
+		if uibuilder:
+			return uibuilder
+		if hasattr(op, 'UiBuilder'):
+			return op.UiBuilder
+
+	@property
+	def _SourcesTable(self):
+		return self.ownerComp.op('set_sources')
+
+	def _BuildSourcesTable(self):
+		dat = self._SourcesTable
+		dat.clear()
+		dat.appendRow(schema.ModulationSourceSpec.tablekeys + ['genpath'])
+		for spec in self.sourcespecs:
+			spec.AddToTable(dat)
+
+	@loggedmethod
+	def _BuildSourceGenerators(self):
+		dest = self.ownerComp.op('sources_panel')
+		for o in dest.ops('gen__*'):
+			o.destroy()
+		self.sourcegens.clear()
+		table = self._SourcesTable
+		for i, spec in enumerate(self.sourcespecs):
+			gen = self._BuildSourceGenerator(spec, i)
+			if gen:
+				self.sourcegens[spec.name] = gen
+			table[spec.name, 'genpath'] = gen.path if gen else ''
+
+	def _BuildSourceGenerator(self, spec: schema.ModulationSourceSpec, i):
+		uibuilder = self.UiBuilder
+		dest = self.ownerComp.op('sources_panel')
+		table = self._SourcesTable
+		table[spec.name, 'genpath'] = ''
+		if spec.sourcetype == 'lfo':
+			return uibuilder.CreateLfoGenerator(
+				dest=dest,
+				name='gen__' + spec.name,
+				spec=spec,
+				attrs=opattrs(
+					order=i,
+					nodepos=[0, 400 + -200 * i],
+					parexprs={
+						'Showpreview': 'parent.ModulationManager.par.Showpreview',
+					}
+				))
+		else:
+			self._LogEvent('Unsupported source type: {!r}'.format(spec.sourcetype))
+			return None
+
+	@loggedmethod
+	def ClearSources(self):
+		self.sourcespecs.clear()
+		self._BuildSourcesTable()
+		self._BuildSourceGenerators()
+
+	@loggedmethod
+	def AddSource(self, spec: schema.ModulationSourceSpec):
+		# TODO: handle duplicate names
+		if not spec.name:
+			raise Exception('Spec does not have a name')
+		if spec.name in self.sourcegens:
+			raise Exception('Duplicate spec name: {}'.format(spec.name))
+		self.sourcespecs.append(spec)
+		spec.AddToTable(self._SourcesTable)
+		gen = self._BuildSourceGenerator(spec, len(self.sourcespecs) -1)
+		if gen:
+			self.sourcegens[spec.name] = gen
+			self._SourcesTable[spec.name, 'genpath'] = gen.path
+
+	@loggedmethod
+	def AddLfo(self, name=None):
+		if not name:
+			name = 'lfo{}'.format(len(self.sourcespecs) + 1)
+		self.AddSource(
+			schema.ModulationSourceSpec(
+				name=name,
+				sourcetype='lfo'))
+
 
