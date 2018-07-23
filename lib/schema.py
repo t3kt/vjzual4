@@ -1033,11 +1033,13 @@ class AppState(BaseDataObject):
 			client: ClientInfo=None,
 			modstates: 'Dict[str, ModuleState]'=None,
 			presets: 'List[ModulePreset]'=None,
+			modsources: 'List[ModulationSourceSpec]'=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.client = client
 		self.modstates = modstates or {}
 		self.presets = presets or []
+		self.modsources = modsources or []
 
 	def ToJsonDict(self):
 		return cleandict(mergedicts(
@@ -1046,6 +1048,7 @@ class AppState(BaseDataObject):
 				'client': self.client.ToJsonDict() if self.client else None,
 				'modstates': ModuleState.ToJsonDictMap(self.modstates),
 				'presets': ModulePreset.ToJsonDicts(self.presets),
+				'modsources': ModulationSourceSpec.ToJsonDicts(self.modsources),
 			}))
 
 	@classmethod
@@ -1054,7 +1057,8 @@ class AppState(BaseDataObject):
 			client=ClientInfo.FromOptionalJsonDict(obj.get('client')),
 			modstates=ModuleState.FromJsonDictMap(obj.get('modstates')),
 			presets=ModulePreset.FromJsonDicts(obj.get('presets')),
-			**excludekeys(obj, ['client', 'modstates', 'presets']))
+			modsources=ModulationSourceSpec.FromJsonDicts(obj.get('modsources')),
+			**excludekeys(obj, ['client', 'modstates', 'presets', 'modsources']))
 
 	def GetModuleState(self, path, create=False):
 		if path not in self.modstates and create:

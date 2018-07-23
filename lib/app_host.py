@@ -8,6 +8,7 @@ if False:
 	from _stubs import *
 	from highlighting import HighlightManager
 	from remote import CommandMessage
+	from control_modulation import ModulationManager
 
 try:
 	import ui_builder
@@ -491,6 +492,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def HighlightManager(self) -> 'HighlightManager':
 		return self.ownerComp.op('highlight_manager')
 
+	@property
+	def ModulationManager(self) -> 'ModulationManager':
+		return self.ownerComp.op('modulation')
+
 	def BuildState(self):
 		modstates = {}
 		if self.AppSchema:
@@ -500,7 +505,8 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		return schema.AppState(
 			client=self._RemoteClient.BuildClientInfo(),
 			modstates=modstates,
-			presets=self.PresetManager.GetPresets())
+			presets=self.PresetManager.GetPresets(),
+			modsources=self.ModulationManager.GetSourceSpecs())
 
 	@loggedmethod
 	def SaveStateFile(self, filename=None, prompt=False):
@@ -576,6 +582,8 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		if state.presets:
 			self.PresetManager.ClearPresets()
 			self.PresetManager.AddPresets(state.presets)
+		self.ModulationManager.ClearSources()
+		self.ModulationManager.AddSources(state.modsources)
 
 	@loggedmethod
 	def LoadStateFile(self, filename=None, prompt=False):

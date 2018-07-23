@@ -1,3 +1,4 @@
+import copy
 from typing import Dict, List
 
 print('vjz4/control_modulation.py loading')
@@ -103,12 +104,23 @@ class ModulationManager(common.ExtensionBase, common.ActionsExt):
 		common.ExtensionBase.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions={
 			'Clearsources': self.ClearSources,
+			'Addlfo': lambda: self.AddLfo(),
 		})
 		self._AutoInitActionParams()
 		self.sourcespecs = []  # type: List[schema.ModulationSourceSpec]
 		self.sourcegens = {}  # type: Dict[str, OP]
 		self._BuildSourcesTable()
 		self._BuildSourceGenerators()
+
+	def GetSourceSpecs(self):
+		return copy.deepcopy(self.sourcespecs)
+
+	@common.simpleloggedmethod
+	def AddSources(self, sourcespecs: List[schema.ModulationSourceSpec]):
+		if not sourcespecs:
+			return
+		for spec in self.sourcespecs:
+			self.AddSource(spec)
 
 	@property
 	def AppHost(self):
