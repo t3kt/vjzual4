@@ -108,6 +108,63 @@ class ModulationManager(common.ExtensionBase, common.ActionsExt):
 	def __init__(self, ownerComp):
 		common.ExtensionBase.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions={
+		})
+		self._AutoInitActionParams()
+		self.mappings = schema.ModulationMappingSet()
+
+	@property
+	def SourceManager(self) -> 'ModulationSourceManager':
+		return self.ownerComp.op('sources')
+
+	@property
+	def Mapper(self) -> 'ModulationMapper':
+		return self.ownerComp.op('mappings')
+
+	def GetSourceSpecs(self):
+		return self.SourceManager.GetSourceSpecs()
+
+	def GetMappings(self):
+		return copy.deepcopy(self.mappings)
+
+	@common.simpleloggedmethod
+	def AddSources(self, sourcespecs: List[schema.ModulationSourceSpec]):
+		self.SourceManager.AddSources(sourcespecs)
+
+	@property
+	def AppHost(self):
+		apphost = getattr(self.ownerComp.parent, 'AppHost', None)  # type: AppHost
+		return apphost
+
+	@property
+	def UiBuilder(self):
+		apphost = self.AppHost
+		uibuilder = apphost.UiBuilder if apphost else None  # type: ui_builder.UiBuilder
+		if uibuilder:
+			return uibuilder
+		if hasattr(op, 'UiBuilder'):
+			return op.UiBuilder
+
+	@loggedmethod
+	def ClearSources(self):
+		self.SourceManager.ClearSources()
+
+	@loggedmethod
+	def AddSource(self, spec: schema.ModulationSourceSpec):
+		self.SourceManager.AddSource(spec)
+
+	@loggedmethod
+	def ClearMappings(self):
+		self.Mapper.ClearMappings()
+
+	@loggedmethod
+	def AddMapping(self, mapping: schema.ModulationMapping):
+		self.Mapper.AddMapping(mapping)
+
+
+class ModulationSourceManager(common.ExtensionBase, common.ActionsExt):
+	def __init__(self, ownerComp):
+		common.ExtensionBase.__init__(self, ownerComp)
+		common.ActionsExt.__init__(self, ownerComp, actions={
 			'Clearsources': self.ClearSources,
 			'Addlfo': lambda: self.AddLfo(),
 		})
@@ -128,18 +185,16 @@ class ModulationManager(common.ExtensionBase, common.ActionsExt):
 			self.AddSource(spec)
 
 	@property
+	def _ModulationManager(self) -> ModulationManager:
+		return self.ownerComp.parent.ModulationManager
+
+	@property
 	def AppHost(self):
-		apphost = getattr(self.ownerComp.parent, 'AppHost', None)  # type: AppHost
-		return apphost
+		return self._ModulationManager.AppHost
 
 	@property
 	def UiBuilder(self):
-		apphost = self.AppHost
-		uibuilder = apphost.UiBuilder if apphost else None  # type: ui_builder.UiBuilder
-		if uibuilder:
-			return uibuilder
-		if hasattr(op, 'UiBuilder'):
-			return op.UiBuilder
+		return self._ModulationManager.UiBuilder
 
 	@property
 	def _SourcesTable(self):
@@ -154,7 +209,7 @@ class ModulationManager(common.ExtensionBase, common.ActionsExt):
 
 	@loggedmethod
 	def _BuildSourceGenerators(self):
-		dest = self.ownerComp.op('sources_panel')
+		dest = self.ownerComp.op('sources')
 		for o in dest.ops('gen__*', 'genheadclick__*'):
 			o.destroy()
 		self.sourcegens.clear()
@@ -248,7 +303,7 @@ class ModulationManager(common.ExtensionBase, common.ActionsExt):
 			table.deleteRow(name)
 		self.sourcespecs.remove(spec)
 
-	def ShowSourcesHeaderContextMenu(self):
+	def ShowHeaderContextMenu(self):
 		previewpar = self.ownerComp.par.Showpreview
 
 		def _togglepreviews():
@@ -283,5 +338,55 @@ class ModulationManager(common.ExtensionBase, common.ActionsExt):
 					callback=lambda: self.RemoveSource(name)),
 			],
 			autoClose=True)
+
+
+class ModulationMapper(common.ExtensionBase, common.ActionsExt):
+	def __init__(self, ownerComp):
+		common.ExtensionBase.__init__(self, ownerComp)
+		common.ActionsExt.__init__(self, ownerComp, actions={
+			'Clearmappings': self.ClearMappings,
+		})
+		self._AutoInitActionParams()
+		self.mappings = schema.ModulationMappingSet()
+
+	def GetMappings(self):
+		return copy.deepcopy(self.mappings)
+
+	@property
+	def _ModulationManager(self) -> ModulationManager:
+		return self.ownerComp.parent.ModulationManager
+
+	@property
+	def AppHost(self):
+		return self._ModulationManager.AppHost
+
+	@property
+	def UiBuilder(self):
+		return self._ModulationManager.UiBuilder
+
+	@property
+	def _MappingsTable(self):
+		return self.ownerComp.op('set_mappings')
+
+	def _BuildMappingsTable(self):
+		dat = self._MappingsTable
+		dat.clear()
+		dat.appendRow(schema.ModulationMapping.tablekeys)
+		for mapping in self.mappings.mappings:
+			mapping.AddToTable(dat)
+
+	@loggedmethod
+	def ClearMappings(self):
+		self.mappings.mappings.clear()
+		self._BuildMappingsTable()
+
+	@loggedmethod
+	def AddMapping(self, mapping: schema.ModulationMapping):
+		self.mappings.mappings.append(mapping)
+		self._BuildMappingsTable()
+
+	def ShowHeaderContextMenu(self):
+		pass
+
 
 
