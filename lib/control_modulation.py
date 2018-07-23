@@ -155,7 +155,7 @@ class ModulationManager(common.ExtensionBase, common.ActionsExt):
 	@loggedmethod
 	def _BuildSourceGenerators(self):
 		dest = self.ownerComp.op('sources_panel')
-		for o in dest.ops('gen__*'):
+		for o in dest.ops('gen__*', 'genheadclick__*'):
 			o.destroy()
 		self.sourcegens.clear()
 		table = self._SourcesTable
@@ -171,13 +171,13 @@ class ModulationManager(common.ExtensionBase, common.ActionsExt):
 		table = self._SourcesTable
 		table[spec.name, 'genpath'] = ''
 		if spec.sourcetype == 'lfo':
-			return uibuilder.CreateLfoGenerator(
+			gen = uibuilder.CreateLfoGenerator(
 				dest=dest,
 				name='gen__' + spec.name,
 				spec=spec,
 				attrs=opattrs(
 					order=i,
-					nodepos=[0, 400 + -200 * i],
+					nodepos=[200, 400 + -200 * i],
 					parexprs={
 						'Showpreview': 'parent.ModulationManager.par.Showpreview',
 					}
@@ -185,6 +185,18 @@ class ModulationManager(common.ExtensionBase, common.ActionsExt):
 		else:
 			self._LogEvent('Unsupported source type: {!r}'.format(spec.sourcetype))
 			return None
+		common.CreateFromTemplate(
+			template=dest.op('__source_gen_header_click_template'),
+			dest=dest,
+			name='genheadclick__' + spec.name,
+			attrs=opattrs(
+				nodepos=[0, 400 + -200 * i],
+				parvals={
+					'active': True,
+					'panel': '{}/panel_title'.format(gen.name)
+				}
+			))
+		return gen
 
 	@loggedmethod
 	def ClearSources(self):
@@ -215,6 +227,27 @@ class ModulationManager(common.ExtensionBase, common.ActionsExt):
 				name=name,
 				sourcetype='lfo'))
 
+	@loggedmethod
+	def RemoveSource(self, name):
+		spec = None
+		for s in self.sourcespecs:
+			if s.name == name:
+				spec = s
+				break
+		if not spec:
+			return
+		onclick = self.ownerComp.op('sources_panel/genheadclick__' + name)
+		if onclick:
+			onclick.destroy()
+		gen = self.sourcegens.get(name)
+		if gen:
+			gen.destroy()
+			del self.sourcegens[name]
+		table = self._SourcesTable
+		if table.row(name) is not None:
+			table.deleteRow(name)
+		self.sourcespecs.remove(spec)
+
 	def ShowSourcesHeaderContextMenu(self):
 		previewpar = self.ownerComp.par.Showpreview
 
@@ -237,6 +270,18 @@ class ModulationManager(common.ExtensionBase, common.ActionsExt):
 		]
 		menu.fromMouse().Show(
 			items=items,
+			autoClose=True)
+
+	def ShowSourceGenHeaderContextMenu(self, gen):
+		if not gen:
+			return
+		name = gen.par.Name.eval()
+		menu.fromMouse().Show(
+			items=[
+				menu.Item(
+					'Remove source',
+					callback=lambda: self.RemoveSource(name)),
+			],
 			autoClose=True)
 
 
