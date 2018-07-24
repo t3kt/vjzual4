@@ -42,12 +42,19 @@ class AppSchemaBuilder:
 		self.modules = OrderedDict()  # type: Dict[str, ModuleSchema]
 		self.moduletypes = OrderedDict()  # type: Dict[str, ModuleTypeSchema]
 		self.implicitmoduletypes = OrderedDict()  # type: Dict[str, ModuleTypeSchema]
+		self.explicitnodesbypath = {}
+		self.explicitnodesbyvideo = {}
+		self.explicitnodesbyaudio = {}
+		self.explicitnodesbytexbuf = {}
+		self.implicitnodes = OrderedDict()  # type: Dict[str, DataNodeInfo]
 
 	def Build(self):
 		self._BuildModuleSchemas()
 		self._BuildModuleTypeSchemas()
 		self._DeriveImplicitModuleTypes()
 		self._StripUnusedModuleTypes()
+		self._RegisterExplicitNodes()
+		self._GenerateImplicitNodes()
 		return AppSchema(
 			name=self.appinfo.name,
 			label=self.appinfo.label,
@@ -118,6 +125,26 @@ class AppSchemaBuilder:
 		if len(nonbypasspars) == 1 and nonbypasspars[0].isnode:
 			return False
 		return True
+
+	def _RegisterExplicitNodes(self):
+		for module in self.modules.values():
+			for node in module.nodes:
+				self.explicitnodesbypath[node.path] = node
+				if node.video and node.video not in self.explicitnodesbyvideo:
+					self.explicitnodesbyvideo[node.video] = node
+				if node.audio and node.audio not in self.explicitnodesbyaudio:
+					self.explicitnodesbyaudio[node.audio] = node
+				if node.texbuf and node.texbuf not in self.explicitnodesbytexbuf:
+					self.explicitnodesbytexbuf[node.texbuf] = node
+
+	def _GenerateImplicitNodes(self):
+		for module in self.modules.values():
+			for param in module.params:
+				if not param.isnode:
+					continue
+				pass
+		pass
+
 
 def _ModuleSchemaAsType(modschema: ModuleSchema, implicit=False):
 	if implicit:
