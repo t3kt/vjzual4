@@ -1,12 +1,11 @@
 from operator import attrgetter
-from typing import Dict, Iterable, List
+from typing import Dict, Iterable, List, Optional
 
 print('vjz4/control_devices.py loading')
 
 if False:
 	from _stubs import *
 	from ui_builder import UiBuilder
-	from app_host import AppHost
 
 try:
 	import common
@@ -32,10 +31,15 @@ try:
 except ImportError:
 	menu = mod.menu
 
+try:
+	import app_components
+except ImportError:
+	app_components = mod.app_components
 
-class DeviceManager(common.ExtensionBase, common.ActionsExt):
+
+class DeviceManager(app_components.ComponentBase, common.ActionsExt):
 	def __init__(self, ownerComp):
-		common.ExtensionBase.__init__(self, ownerComp)
+		app_components.ComponentBase.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions={
 			'Attachdevices': self.AttachDevices,
 			'Detachdevices': self.DetachDevices,
@@ -46,11 +50,6 @@ class DeviceManager(common.ExtensionBase, common.ActionsExt):
 		self.controls = []  # type: List[DeviceControlInfo]
 		self.controlsbyname = {}  # type: Dict[str, DeviceControlInfo]
 		self.AttachDevices()
-
-	@property
-	def AppHost(self):
-		apphost = getattr(self.ownerComp.parent, 'AppHost', None)  # type: AppHost
-		return apphost
 
 	@loggedmethod
 	def AttachDevices(self):
@@ -168,9 +167,9 @@ class DeviceManager(common.ExtensionBase, common.ActionsExt):
 		return self.devicesbyname.get(devname)
 
 
-class MidiDevice(common.ExtensionBase, common.ActionsExt):
+class MidiDevice(app_components.ComponentBase, common.ActionsExt):
 	def __init__(self, ownerComp):
-		common.ExtensionBase.__init__(self, ownerComp)
+		app_components.ComponentBase.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions={
 		})
 		self._AutoInitActionParams()
@@ -280,14 +279,6 @@ class MidiDevice(common.ExtensionBase, common.ActionsExt):
 		else:
 			self._LogEvent('No module connector')
 		return builder.Build()
-
-	@property
-	def UiBuilder(self):
-		uibuilder = self.ownerComp.par.Uibuilder.eval()  # type: UiBuilder
-		if uibuilder:
-			return uibuilder
-		if hasattr(op, 'UiBuilder'):
-			return op.UiBuilder
 
 
 def _MakeCcRanges(ccvals: Iterable[int]):
