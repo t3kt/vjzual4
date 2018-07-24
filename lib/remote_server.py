@@ -1,6 +1,8 @@
+import json
 from operator import attrgetter
+import os
 import re
-from typing import Optional
+from typing import Optional, List
 
 print('vjz4/remote_server.py loading')
 
@@ -13,6 +15,7 @@ except ImportError:
 	common = mod.common
 CreateOP = common.CreateOP
 trygetpar = common.trygetpar
+loggedmethod = common.loggedmethod
 
 try:
 	import remote
@@ -30,6 +33,18 @@ except ImportError:
 	module_settings = mod.module_settings
 
 class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
+	"""
+	Server which can be dropped into a TD project to allow it to be controlled by Vjzual4's app host, through a
+	RemoteClient. The server responds to commands/requests from the client, providing information about the structure of
+	the project, and facilitates communication between the two TD instances.
+
+	Commands/requests/responses are sent/received over TCP.
+	Control data (for non-text parameters) is sent/received over OSC using CHOPs.
+	Control data for text parameters is sent/received over OSC using DATs on separate ports from those used for numeric
+	data.
+	Video data is sent over Syphon/Spout. This may later be changed to something that can run over a network, like
+	NDI.
+	"""
 	def __init__(self, ownerComp):
 		super().__init__(
 			ownerComp,
@@ -41,6 +56,8 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 				'queryModState': self.SendModuleState,
 				'setPrimaryVideoSrc': lambda cmd: self.SetPrimaryVideoSource(cmd.arg),
 				'setSecondaryVideoSrc': lambda cmd: self.SetSecondaryVideoSource(cmd.arg),
+				'storeAppState': self._StoreAppState,
+				'retrieveAppState': self._RetrieveStoredAppState,
 			})
 		self._AutoInitActionParams()
 		self.AppRoot = None
@@ -142,9 +159,18 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 
 			# TODO: apply connection settings (OSC)
 			self.Connected.val = True
-			self.Connection.SendResponse(request.cmd, request.cmdid)
+			serverinfo = self._BuildServerInfo()
+			self.Connection.SendResponse(request.cmd, request.cmdid, serverinfo.ToJsonDict())
 		finally:
 			self._LogEnd()
+
+	def _BuildServerInfo(self):
+		return schema.ServerInfo(
+			version=1,
+			address=self.Connection.par.Localaddress.eval() or self.Connection.par.Localaddress.default,
+			allowlocalstatestorage=self.ownerComp.par.Allowlocalstatestorage.eval(),
+			localstatefile=self.ownerComp.par.Localstatefile.eval() or self.ownerComp.par.Localstatefile.default,
+		)
 
 	def SetPrimaryVideoSource(self, path):
 		self._LogBegin('SetPrimaryVideoSource({})'.format(path))
@@ -178,20 +204,7 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 
 	@staticmethod
 	def _FindSubModules(parentComp, recursive=False, sort=True):
-		if not parentComp:
-			return []
-		submodules = parentComp.findChildren(type=COMP, tags=['vjzmod4', 'tmod'], maxDepth=None if recursive else 1)
-		if sort:
-			if all(hasattr(m.par, 'alignorder') for m in submodules):
-				submodules.sort(key=attrgetter('par.alignorder'))
-			else:
-				distx = abs(max(m.nodeX for m in submodules) - min(m.nodeX for m in submodules))
-				disty = abs(max(m.nodeY for m in submodules) - min(m.nodeY for m in submodules))
-				if distx > disty:
-					submodules.sort(key=attrgetter('nodeX'))
-				else:
-					submodules.sort(key=attrgetter('nodeY'))
-		return submodules
+		return _FindSubModules(parentComp, recursive=recursive, sort=sort)
 
 	def SendAppInfo(self, request: remote.CommandMessage=None):
 		self._LogBegin('SendAppInfo({})'.format(request or ''))
@@ -212,69 +225,15 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 				self._LogEvent('Module not found: {}'.format(modpath))
 				return None
 			settings = module_settings.ExtractSettings(module)
-			modulecore = module.op('core')
-			# TODO: support having the core specify the sub-modules
-			submods = self._FindSubModules(module)
-			nodeops = self._FindDataNodes(module, modulecore)
-			coreparattrsdat = trygetpar(modulecore, 'Parameters')
-			if coreparattrsdat and not settings.parattrs:
-				settings.parattrs = common.ParseAttrTable(coreparattrsdat)
-			nodes = [self._GetNodeInfo(n) for n in nodeops]
-			modinfo = schema.RawModuleInfo(
-				path=modpath,
-				parentpath=module.parent().path,
-				name=module.name,
-				label=str(getattr(module.par, 'Uilabel', None) or getattr(module.par, 'Label', None) or '') or None,
-				masterpath=_GetModuleMasterPath(module),
-				childmodpaths=[c.path for c in submods],
-				partuplets=[
-					[self._BuildParamInfo(p) for p in t]
-					for t in module.customTuplets
-				],
-				parattrs=settings.parattrs,
-				nodes=nodes,
-				primarynode=nodes[0].path if nodes else None,
-			)
-			return modinfo
+			if not settings.parattrs:
+				modulecore = module.op('core')
+				coreparattrsdat = trygetpar(modulecore, 'Parameters')
+				if coreparattrsdat and not settings.parattrs:
+					settings.parattrs = common.ParseAttrTable(coreparattrsdat)
+			builder = _RawModuleInfoBuilder(module, hostobj=self)
+			return builder.Build()
 		finally:
 			self._LogEnd()
-
-	@staticmethod
-	def _FindDataNodes(module, modulecore):
-		nodespar = modulecore and getattr(modulecore.par, 'Nodes', None)
-		nodes = nodespar.eval() if nodespar else None
-		if nodes:
-			if isinstance(nodes, (list, tuple)):
-				return module.ops(*nodes)
-			else:
-				return module.ops(nodes)
-		nodes = module.findChildren(tags=['vjznode', 'tdatanode'], maxDepth=1)
-		if not nodes:
-			for n in module.ops('out_node', 'out1', 'video_out'):
-				return [n]
-		return nodes
-
-	def _GetNodeInfo(self, nodeop):
-		if nodeop.isTOP:
-			return schema.DataNodeInfo(
-				name=nodeop.name, path=nodeop.path,
-				video=nodeop.path if nodeop.depth == 0 else None,
-				texbuf=nodeop.path if nodeop.depth > 0 else None)
-		if nodeop.isCHOP:
-			return schema.DataNodeInfo(
-				name=nodeop.name, path=nodeop.path,
-				audio=nodeop.path)
-		if nodeop.isCOMP:
-			label = trygetpar(nodeop, 'Label')
-			if 'tdatanode' in nodeop.tags or 'vjznode' in nodeop.tags:
-				return schema.DataNodeInfo(
-					name=nodeop.name, label=label, path=nodeop.path,
-					video=trygetpar(nodeop, 'Video', parse=str) if trygetpar(nodeop, 'Hasvideo') in (None, True) else None,
-					audio=trygetpar(nodeop, 'Audio', parse=str) if trygetpar(nodeop, 'Hasaudio') in (None, True) else None,
-					texbuf=trygetpar(nodeop, 'Texbuf', parse=str) if trygetpar(nodeop, 'Hastexbuf') in (None, True) else None)
-			for outnode in nodeop.ops('out_node', 'out1', 'video_out'):
-				return self._GetNodeInfo(outnode)
-		self._LogEvent('_GetNodeInfo({}): unable to determine node info'.format(nodeop))
 
 	def SendModuleInfo(self, request: remote.CommandMessage):
 		modpath = request.arg
@@ -284,27 +243,6 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 			self.Connection.SendResponse(request.cmd, request.cmdid, modinfo.ToJsonDict() if modinfo else None)
 		finally:
 			self._LogEnd()
-
-	@staticmethod
-	def _BuildParamInfo(par):
-		return schema.RawParamInfo(
-			name=par.name,
-			tupletname=par.tupletName,
-			label=par.label,
-			style=par.style,
-			order=par.order,
-			vecindex=par.vecIndex,
-			pagename=par.page.name,
-			pageindex=par.page.index,
-			minlimit=par.min if par.clampMin else None,
-			maxlimit=par.max if par.clampMax else None,
-			minnorm=par.normMin,
-			maxnorm=par.normMax,
-			default=par.default,
-			menunames=par.menuNames,
-			menulabels=par.menuLabels,
-			startsection=par.startSection,
-		)
 
 	def SendModuleState(self, request: remote.CommandMessage):
 		arg = request.arg
@@ -335,6 +273,42 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 		finally:
 			self._LogEnd()
 
+	@common.simpleloggedmethod
+	def _StoreAppState(self, request: remote.CommandMessage):
+		if not self.ownerComp.par.Allowlocalstatestorage:
+			self.Connection.SendErrorResponse(request.cmdid, 'Local state storage is not allowed')
+			return
+		filename = self.ownerComp.par.Localstatefile.eval() or self.ownerComp.par.Localstatefile.default
+		absfile = os.path.abspath(filename)
+		try:
+			with open(absfile, mode='w') as outfile:
+				json.dump(request.arg, outfile, indent='  ', sort_keys=True)
+		except IOError as e:
+			self.Connection.SendErrorResponse(
+				request.cmdid, 'Error writing local state to {!r}: {}'.format(absfile, e))
+			return
+		self.Connection.SendResponse(request.cmd, request.cmdid, 'App state stored in {!r}'.format(absfile))
+
+	@loggedmethod
+	def _RetrieveStoredAppState(self, request: remote.CommandMessage):
+		if not self.ownerComp.par.Allowlocalstatestorage:
+			self.Connection.SendErrorResponse(request.cmdid, 'Local state storage is not allowed')
+			return
+		filename = self.ownerComp.par.Localstatefile.eval() or self.ownerComp.par.Localstatefile.default
+		absfile = os.path.abspath(filename)
+		if not os.path.exists(absfile):
+			self.Connection.SendErrorResponse(request.cmdid, 'Local state file not found: {!r}'.format(absfile))
+		try:
+			with open(absfile, mode='r') as infile:
+				stateobj = json.load(infile)
+		except IOError as e:
+			self.Connection.SendErrorResponse(request.cmdid, 'Error loading local state from {!r}: {}'.format(absfile, e))
+			return
+		self.Connection.SendResponse(request.cmd, request.cmdid, {
+			'state': stateobj,
+			'info': 'App state loaded from {!r}'.format(absfile)
+		})
+
 	def HandleOscEvent(self, address, args):
 		if not self.Connected or ':' not in address or not args:
 			return
@@ -345,6 +319,22 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 			return
 		setattr(m.par, name, args[0])
 
+
+def _FindSubModules(parentComp, recursive=False, sort=True):
+	if not parentComp:
+		return []
+	submodules = parentComp.findChildren(type=COMP, tags=['vjzmod4', 'tmod'], maxDepth=None if recursive else 1)
+	if sort:
+		if all(hasattr(m.par, 'alignorder') for m in submodules):
+			submodules.sort(key=attrgetter('par.alignorder'))
+		else:
+			distx = abs(max(m.nodeX for m in submodules) - min(m.nodeX for m in submodules))
+			disty = abs(max(m.nodeY for m in submodules) - min(m.nodeY for m in submodules))
+			if distx > disty:
+				submodules.sort(key=attrgetter('nodeX'))
+			else:
+				submodules.sort(key=attrgetter('nodeY'))
+	return submodules
 
 def _ApplyParValue(par, override):
 	par.val = override or par.default
@@ -375,3 +365,111 @@ def _GetModuleMasterPath(module):
 			path = match.group(1)
 			return path
 	return None
+
+class _RawModuleInfoBuilder(common.LoggableSubComponent):
+	def __init__(self, module: COMP, hostobj: RemoteServer):
+		super().__init__(hostobj)
+		self.module = module
+		self.settings = module_settings.ExtractSettings(module)
+
+	def _BuildParamTuplets(self) -> List[List[schema.RawParamInfo]]:
+		return [
+			[self._BuildParamInfo(p) for p in t]
+			for t in self.module.customTuplets
+		]
+
+	@staticmethod
+	def _BuildParamInfo(par):
+		return schema.RawParamInfo(
+			name=par.name,
+			tupletname=par.tupletName,
+			label=par.label,
+			style=par.style,
+			order=par.order,
+			vecindex=par.vecIndex,
+			pagename=par.page.name,
+			pageindex=par.page.index,
+			minlimit=par.min if par.clampMin else None,
+			maxlimit=par.max if par.clampMax else None,
+			minnorm=par.normMin,
+			maxnorm=par.normMax,
+			default=par.default,
+			menunames=par.menuNames,
+			menulabels=par.menuLabels,
+			startsection=par.startSection,
+		)
+
+	@staticmethod
+	def _BuildParamGroups() -> List[schema.RawParamGroupInfo]:
+		return []
+
+	def _BuildNodes(self) -> List[schema.DataNodeInfo]:
+		nodes = self.module.findChildren(tags=['vjznode', 'tdatanode'], maxDepth=1)
+		if not nodes:
+			for n in self.module.ops('out_node', 'out1', 'video_out'):
+				nodeinfo = self._GetNodeInfo(n)
+				if nodeinfo:
+					return [nodeinfo]
+			return []
+		results = []
+		for n in nodes:
+			nodeinfo = self._GetNodeInfo(n)
+			if nodeinfo:
+				results.append(nodeinfo)
+		return results
+
+	def _GetNodeInfo(self, nodeop: OP):
+		if nodeop.isTOP:
+			return schema.DataNodeInfo(
+				name=nodeop.name, path=nodeop.path,
+				video=nodeop.path if nodeop.depth == 0 else None,
+				texbuf=nodeop.path if nodeop.depth > 0 else None)
+		if nodeop.isCHOP:
+			return schema.DataNodeInfo(
+				name=nodeop.name, path=nodeop.path,
+				audio=nodeop.path)
+		if nodeop.isCOMP:
+			label = trygetpar(nodeop, 'Label')
+			if 'tdatanode' in nodeop.tags or 'vjznode' in nodeop.tags:
+				return schema.DataNodeInfo(
+					name=nodeop.name, label=label, path=nodeop.path,
+					video=trygetpar(nodeop, 'Video', parse=str) if trygetpar(nodeop, 'Hasvideo') in (None, True) else None,
+					audio=trygetpar(nodeop, 'Audio', parse=str) if trygetpar(nodeop, 'Hasaudio') in (None, True) else None,
+					texbuf=trygetpar(nodeop, 'Texbuf', parse=str) if trygetpar(nodeop, 'Hastexbuf') in (None, True) else None)
+			for outnode in nodeop.ops('out_node', 'out1', 'video_out'):
+				return self._GetNodeInfo(outnode)
+		self._LogEvent('_GetNodeInfo({}): unable to determine node info'.format(nodeop))
+
+	def _GetPrimaryNodePath(self, nodes: List[schema.DataNodeInfo]):
+		if not nodes:
+			return None
+		primarynodename = self.settings.modattrs.get('primarynode')
+		if primarynodename:
+			for node in nodes:
+				if node.name == primarynodename:
+					return node.path
+		return nodes[0].path
+
+	def _FindSubModules(self) -> List[COMP]:
+		return _FindSubModules(self.module, recursive=False, sort=True)
+
+	@loggedmethod
+	def Build(self):
+		nodes = self._BuildNodes()
+		primarynodepath = self._GetPrimaryNodePath(nodes)
+		submods = self._FindSubModules()
+		return schema.RawModuleInfo(
+			path=self.module.path,
+			parentpath=self.module.parent().path if self.module.parent() not in (None, self.module) else None,
+			name=self.module.name,
+			label=trygetpar(self.module, 'Uilabel', 'Label', parse=str),
+			tags=self.module.tags,
+			masterpath=_GetModuleMasterPath(self.module),
+			childmodpaths=[c.path for c in submods],
+			partuplets=self._BuildParamTuplets(),
+			parattrs=self.settings.parattrs,
+			pargroups=self._BuildParamGroups(),
+			nodes=nodes,
+			primarynode=primarynodepath,
+			modattrs=self.settings.modattrs,
+		)

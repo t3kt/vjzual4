@@ -1,11 +1,13 @@
-from collections import OrderedDict
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 print('vjz4/control_mapping.py loading')
 
 if False:
 	from _stubs import *
 	from app_host import AppHost
+	from ui_builder import UiBuilder
+	from module_host import ModuleHost
+	from control_devices import MidiDevice
 
 try:
 	import td
@@ -18,46 +20,19 @@ try:
 except ImportError:
 	common = mod.common
 loggedmethod = common.loggedmethod
+opattrs = common.opattrs
 
 try:
 	import schema
 except ImportError:
 	schema = mod.schema
 ControlMapping = schema.ControlMapping
+ControlMappingSet = schema.ControlMappingSet
 
-class ModuleControlMap:
-	def __init__(self, enable=True):
-		self.mappings = OrderedDict()  # type: Dict[str, ControlMapping]
-		self.Enable = enable
-
-	def GetAllMappings(self):
-		return self.mappings.items()
-
-	def SetMapping(
-			self,
-			parname,
-			control=None, rangelow=0, rangehigh=1, enable=True):
-		self.mappings[parname] = ControlMapping(
-			control=control, rangelow=rangelow, rangehigh=rangehigh, enable=enable)
-
-	def RemoveMapping(self, parname):
-		if parname in self.mappings:
-			del self.mappings[parname]
-
-	def ClearMappings(self):
-		self.mappings.clear()
-
-	def BuildMappingTable(self, dat):
-		dat.clear()
-		dat.appendRow(['param', 'control', 'enable', 'rangelow', 'rangehigh'])
-		for parname, mapping in self.mappings.items():
-			dat.appendRow([
-				parname,
-				mapping.control or '',
-				int(mapping.enable),
-				mapping.rangelow,
-				mapping.rangehigh,
-			])
+try:
+	import menu
+except ImportError:
+	menu = mod.menu
 
 class ControlMapper(common.ExtensionBase, common.ActionsExt):
 	def __init__(self, ownerComp):
@@ -66,10 +41,25 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 			'Clearmappings': self.ClearMappings,
 		})
 		self._AutoInitActionParams()
-		self.mappings = OrderedDict()  # type: Dict[str, ControlMapping]
-		self.editors = {}  # type: Dict[str, MappingEditor]
-		self.nextid = 1
+		self.custommappings = ControlMappingSet()
+		self.automappings = None  # type: Optional[ControlMappingSet]
+		self._Rebuild()
+
+	def _Rebuild(self, clearselected=True):
+		if clearselected or not self._SelectedMapping:
+			self.ownerComp.par.Selectedmapping = -1
 		self._BuildMappingTable()
+		self._BuildMappingMarkers()
+		self.InitializeChannelProcessing()
+		self._UpdateEditor()
+
+	@property
+	def AutoMapDeviceName(self):
+		return self.ownerComp.par.Automapdevice.eval()
+
+	@AutoMapDeviceName.setter
+	def AutoMapDeviceName(self, value):
+		self.ownerComp.par.Automapdevice = value or ''
 
 	@property
 	def AppHost(self):
@@ -85,36 +75,88 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 		if hasattr(op, 'UiBuilder'):
 			return op.UiBuilder
 
-	def GetMapping(self, mapid):
-		return self.mappings.get(str(mapid))
+	@property
+	def _DeviceManager(self):
+		apphost = self.AppHost
+		return apphost.DeviceManager if apphost else None
+
+	@property
+	def _SelectedIndex(self):
+		return self.ownerComp.par.Selectedmapping.eval()
+
+	@_SelectedIndex.setter
+	def _SelectedIndex(self, index):
+		if index is None or index < 0:
+			self.ownerComp.par.Selectedmapping = -1
+		else:
+			self.ownerComp.par.Selectedmapping = index
+
+	@property
+	def _SelectedMapping(self):
+		index = self._SelectedIndex
+		return self._GetMapping(index, warn=False)
+
+	def _GetMapping(self, index, warn=True) -> Optional[ControlMapping]:
+		if index < 0:
+			return None
+		if index >= len(self.custommappings.mappings):
+			if warn:
+				self._LogEvent('Index out of range: {} (mappings: {})'.format(index, len(self.custommappings.mappings)))
+			return None
+		return self.custommappings.mappings[index]
 
 	@loggedmethod
 	def ClearMappings(self):
-		self.mappings.clear()
-		self._BuildMappingTable()
-		self._ClearMappingEditors()
+		self.custommappings.clear()
+		self._Rebuild()
 
 	@loggedmethod
-	def AddMappings(self, mappings: List[ControlMapping], overwrite=False):
-		for mapping in mappings:
-			self._AddMapping(mapping, overwrite=overwrite)
-		self._BuildMappingTable()
-		for mapping in mappings:
-			self._AddMappingEditor(mapping)
+	def DeleteMapping(self, index):
+		if not self._GetMapping(index, warn=True):
+			return
+		del self.custommappings.mappings[index]
+		self._Rebuild(clearselected=index == self._SelectedIndex)
 
-	def _AddMapping(self, mapping: ControlMapping, overwrite=False):
-		if mapping.mapid:
-			if mapping.mapid in self.mappings:
-				if not overwrite:
-					mapping.mapid = self.nextid
-					self.nextid += 1
-			else:
-				if mapping.mapid >= self.nextid:
-					self.nextid = mapping.mapid + 1
+	@loggedmethod
+	def AddOrReplaceMappingForParam(
+			self,
+			modpath: str,
+			paramname: str,
+			control: schema.DeviceControlInfo=None):
+		existingmappings = self.custommappings.GetMappingsForParam(
+			modpath, paramname, devicename=control.devname if control else None)
+		if not control:
+			if existingmappings:
+				self._LogEvent('Clearing existing mappings: {}'.format(existingmappings))
+				for mapping in existingmappings:
+					if mapping.control:
+						mapping.control = None
+						mapping.enable = False
 		else:
-			mapping.mapid = self.nextid
-			self.nextid += 1
-		self.mappings[str(mapping.mapid)] = mapping
+			if existingmappings:
+				self._LogEvent('Updating existing mappings: {}'.format(existingmappings))
+				mapping = existingmappings[0]
+				mapping.control = control.fullname
+				mapping.enable = True
+				for mapping in existingmappings[1:]:
+					mapping.control = None
+					mapping.enable = False
+			else:
+				mapping = ControlMapping(
+						path=modpath,
+						param=paramname,
+						enable=True,
+						control=control.fullname,
+					)
+				self._LogEvent('Adding new mapping: {}'.format(mapping))
+				self.AddMappings([mapping])
+		self._Rebuild()
+
+	@loggedmethod
+	def AddMappings(self, mappings: List[ControlMapping]):
+		for mapping in mappings:
+			self.custommappings.mappings.append(mapping)
+		self._Rebuild()
 
 	@property
 	def _MappingTable(self):
@@ -123,164 +165,247 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 	def _BuildMappingTable(self):
 		dat = self._MappingTable
 		dat.clear()
-		dat.appendRow(ControlMapping.tablekeys)
-		if not self.mappings:
-			return
-		for mapping in self.mappings.values():
+		dat.appendRow(ControlMapping.tablekeys + ['generatedby'])
+		for mapping in self.custommappings.mappings:
 			mapping.AddToTable(dat)
+		if self.automappings:
+			for mapping in self.automappings.mappings:
+				mapping.AddToTable(dat, attrs={
+					'generatedby': self.automappings.generatedby
+				})
 
-	@loggedmethod
-	def UpdateMapping(self, mapping: ControlMapping):
-		if not mapping.mapid or mapping.mapid not in self.mappings:
-			self._AddMapping(mapping, overwrite=True)
-			mapping.AddToTable(self._MappingTable)
-			self._AddMappingEditor(mapping)
-		else:
-			self.mappings[str(mapping.mapid)] = mapping
-			mapping.UpdateInTable(rowid=str(mapping.mapid), dat=self._MappingTable)
-			editor = self.editors[str(mapping.mapid)]
-			editor.par.Mapid = mapping.mapid
-			editor.LoadMapping()
-
-	@loggedmethod
-	def SetMappingEnabled(self, mapid, enable):
-		mapping = self.mappings.get(mapid)
+	def _UpdateMapping(self, index, **attrs):
+		mapping = self._GetMapping(index, warn=True)
 		if not mapping:
-			self._LogEvent('ERROR - mapping not found: {}'.format(mapid))
 			return
-		mapping.enable = enable
-		cell = self._MappingTable[str(mapid), 'enable']
-		if cell is None:
-			self._LogEvent('ERROR - mapping not found in table: {}'.format(mapid))
-			return
-		cell.val = 1 if enable else 0
+		for key in attrs.keys():
+			if key not in ControlMapping.tablekeys:
+				self._LogEvent('Unsupported mapping attribute: {}'.format(key))
+				return
+		anychanged = False
+		for key, val in attrs.items():
+			if val == getattr(mapping, key, None):
+				continue
+			setattr(mapping, key, val)
+			anychanged = True
+		# TODO: make this more efficient by only updating the target mapping
+		if anychanged:
+			self._Rebuild(clearselected=False)
 
 	@loggedmethod
-	def SetMappingControl(self, mapid, control):
-		mapping = self.mappings.get(mapid)
-		if not mapping:
-			self._LogEvent('ERROR - mapping not found: {}'.format(mapid))
-			return
-		mapping.control = control
-		cell = self._MappingTable[str(mapid), 'enable']
-		if cell is None:
-			self._LogEvent('ERROR - mapping not found in table: {}'.format(mapid))
-			return
-		cell.val = control or ''
-
-	@loggedmethod
-	def AddEmptyMissingMappingsForModule(self, modschema: schema.ModuleSchema):
-		mappedparamnames = set(
-			m.param
-			for m in self.mappings.values()
-			if m.path == modschema.path
-		)
-		newmappings = [
-			ControlMapping(
-				path=modschema.path,
-				param=param.name,
-				enable=False,
-				rangelow=param.parts[0].minnorm,
-				rangehigh=param.parts[0].maxnorm,
-			)
-			for param in modschema.params
-			if param.mappable and param.name not in mappedparamnames
-		]
-		self.AddMappings(newmappings)
-
-	@loggedmethod
-	def _ClearMappingEditors(self):
-		for o in self.ownerComp.ops('editors_panel/map__*'):
-			o.destroy()
-		self.editors.clear()
-
-	@loggedmethod
-	def _AddMappingEditor(self, mapping):
-		uibuilder = self.UiBuilder
-		if not uibuilder:
-			return
-		dest = self.ownerComp.op('editors_panel')
-		if not mapping.mapid:
-			mapping.mapid = self.nextid
-			self.nextid += 1
-		editor = uibuilder.CreateMappingEditor(
-			dest=dest,
-			name='map__{}'.format(mapping.mapid),
-			mapping=mapping,
-			order=mapping.mapid,
-			nodepos=[
-				200,
-				-400 + 150 * mapping.mapid
-			],
-			parvals={
-				'hmode': 'fill'
-			}
-		)  # type: MappingEditor
-		editor.par.Mapid = mapping.mapid
-		editor.initializeExtensions()
-		editor.LoadMapping()
-		self.editors[str(mapping.mapid)] = editor
-		return editor
-
-
-class MappingEditor(common.ExtensionBase, common.ActionsExt):
-	def __init__(self, ownerComp):
-		common.ExtensionBase.__init__(self, ownerComp)
-		common.ActionsExt.__init__(self, ownerComp, actions={
-			'Savemapping': self.SaveMapping,
-			'Loadmapping': self.LoadMapping,
-		})
-		self._AutoInitActionParams()
-
-	@property
-	def AppHost(self):
-		apphost = getattr(self.ownerComp.parent, 'AppHost', None)  # type: AppHost
-		return apphost
-
-	@property
-	def _ControlMapper(self):
+	def InitializeChannelProcessing(self):
+		ctrlnames = []
+		parampaths = []
+		lowvalues = []
+		highvalues = []
 		apphost = self.AppHost
-		return apphost.ControlMapper if apphost else None
+		allmappings = list(self.custommappings.mappings)
+		if self.automappings:
+			allmappings += self.automappings.mappings
+		for mapping in allmappings:
+			if not mapping.enable or not mapping.control:
+				continue
+			parampath = mapping.parampath
+			if not parampath:
+				continue
+			partschema = apphost.GetParamPartSchema(mapping.path, mapping.param)
+			if not partschema:
+				continue
+			ctrlnames.append(mapping.control)
+			parampaths.append(parampath)
+			lowvalues.append(partschema.minnorm if partschema.minnorm is not None else 0)
+			highvalues.append(partschema.maxnorm if partschema.maxnorm is not None else 1)
+		prepinputvals = self.ownerComp.op('prepare_input_values')
+		prepinputvals.par.channames = ' '.join(ctrlnames) if ctrlnames else ''
+		prepinputvals.par.renameto = ' '.join(parampaths) if parampaths else ''
+		prepoutputvals = self.ownerComp.op('prepare_output_values')
+		prepoutputvals.par.channames = ' '.join(parampaths) if parampaths else ''
+		prepoutputvals.par.renameto = ' '.join(ctrlnames) if ctrlnames else ''
+		setoffsets = self.ownerComp.op('set_value_offsets')
+		setoffsets.clear()
+		setranges = self.ownerComp.op('set_value_ranges')
+		setranges.clear()
+		for i, parampath in enumerate(parampaths):
+			low = lowvalues[i]
+			high = highvalues[i]
+			setoffsets.appendChan(parampath)
+			setoffsets[parampath][0] = low
+			setranges.appendChan(parampath)
+			setranges[parampath][0] = high - low
 
-	@property
-	def _Mapping(self):
-		mapidval = self.ownerComp.par.Mapid.eval()
-		if mapidval == '':
-			mapidval = None
+	@loggedmethod
+	def SetMappingEnabled(self, index, enable):
+		self._UpdateMapping(index, enable=enable)
+
+	@loggedmethod
+	def SetMappingControl(self, index, control):
+		self._UpdateMapping(index, control=control)
+
+	@loggedmethod
+	def _BuildMappingMarkers(self):
+		dest = self.ownerComp.op('mappings_panel')
+		for o in dest.ops('map__*', 'onclick__*'):
+			if o.valid:
+				o.destroy()
+		onclicktemplate = dest.op('on_marker_click_template')
+		if not self.custommappings or not self.custommappings.mappings:
+			return
+		uibuilder = self.UiBuilder
+		for i, mapping in enumerate(self.custommappings.mappings):
+			nodey = 400 + -200 * i
+			marker = uibuilder.CreateMappingMarker(
+				dest=dest,
+				name='map__{}'.format(i),
+				mapping=mapping,
+				attrs=opattrs(
+					order=i,
+					nodepos=[200, nodey],
+					parvals={
+						'hmode': 'fill',
+					}))
+			onclick = common.CreateFromTemplate(
+				template=onclicktemplate,
+				dest=dest,
+				name='onclick__{}'.format(i),
+				attrs=opattrs(
+					nodepos=[400, nodey],
+					parvals={
+						'panel': marker.name,
+						'active': True,
+					}))
+			onclick.dock = marker
+
+	def _UpdateEditor(self):
+		index = self._SelectedIndex
+		mapping = self._GetMapping(index, warn=False)
+		editor = self.ownerComp.op('editor_panel')
+		if not mapping:
+			editor.par.display = False
+			editor.par.Modpath = ''
+			editor.par.Param = ''
+			editor.par.Control = ''
+			editor.par.Enabled = False
+			editor.par.Rangelow = 0
+			editor.par.Rangehigh = 1
 		else:
-			mapidval = str(mapidval)
-		return ControlMapping(
-			path=self.ownerComp.par.Modpath.eval(),
-			param=self.ownerComp.par.Param.eval(),
-			enable=self.ownerComp.par.Enabled.eval(),
-			rangelow=self.ownerComp.par.Rangelow.eval(),
-			rangehigh=self.ownerComp.par.Rangehigh.eval(),
-			mapid=mapidval)
-
-	@_Mapping.setter
-	def _Mapping(self, mapping):
-		mapping = mapping or ControlMapping()
-		self.ownerComp.par.Modpath = mapping.path or ''
-		self.ownerComp.par.Param = mapping.param or ''
-		self.ownerComp.par.Enabled = mapping.enable
-		self.ownerComp.par.Rangelow = mapping.rangelow
-		self.ownerComp.par.Rangehigh = mapping.rangehigh
-		self.ownerComp.par.Mapid = mapping.mapid or ''
+			editor.par.display = True
+			editor.par.Modpath = mapping.path or ''
+			if mapping.path and mapping.param:
+				editor.par.Param = mapping.path + ':' + mapping.param
+			else:
+				editor.par.Param = mapping.param or ''
+			editor.par.Control = mapping.control or ''
+			editor.par.Enabled = mapping.enable
+			editor.par.Rangelow = mapping.rangelow if mapping.rangelow is not None else 0
+			editor.par.Rangehigh = mapping.rangehigh if mapping.rangehigh is not None else 1
 
 	@loggedmethod
-	def SaveMapping(self):
-		controlmapper = self._ControlMapper
-		if not controlmapper:
-			return
-		mapping = self._Mapping
-		controlmapper.UpdateMapping(mapping)
-		self.ownerComp.par.Mapid = str(mapping.mapid or '')
+	def OnSelectedMappingChange(self):
+		self._UpdateEditor()
 
 	@loggedmethod
-	def LoadMapping(self):
-		controlmapper = self._ControlMapper
-		if not controlmapper:
+	def OnMarkerClick(self, panelValue):
+		source = panelValue.owner
+		if 'vjz4mappingmarker' not in source.tags:
+			if 'vjz4mappingmarker' in source.parent().tags:
+				source = source.parent()
+			else:
+				return
+		index = source.digits
+		if index is None:
 			return
-		mapping = controlmapper.GetMapping(self.ownerComp.par.Mapid.eval()) or ControlMapping()
-		self._Mapping = mapping
+		if panelValue.name == 'lselect':
+			if index == self._SelectedIndex:
+				self._SelectedIndex = None
+			else:
+				self._SelectedIndex = index
 
+	_editorparamstoattrs = {
+		'Modpath': 'path',
+		'Param': 'param',
+		'Control': 'control',
+		'Enabled': 'enable',
+		'Rangelow': 'rangelow',
+		'Rangehigh': 'rangehigh'
+	}
+
+	def OnEditorParChange(self, par):
+		attrname = self._editorparamstoattrs.get(par.name)
+		if not attrname:
+			self._LogEvent('editor param not supported: {}'.format(par.name))
+			return
+		value = par.eval()
+		if par.name == 'Param' and value and ':' in value:
+			path, param = value.split(':')
+			self._UpdateMapping(self._SelectedIndex, param=param, path=path)
+			par.owner.par.Modpath = path
+		else:
+			self._UpdateMapping(self._SelectedIndex, **{attrname: value})
+
+	@loggedmethod
+	def SetAutoMapDevice(self, devname: Optional[str]):
+		self._DeviceManager.ClearDeviceAutoMapStatuses()
+		self.ownerComp.par.Automapdevice = devname or ''
+		self._UpdateAutoMap()
+
+	@loggedmethod
+	def SetAutoMapModule(self, modpath: Optional[str]):
+		self.ownerComp.par.Automapmodpath = modpath or ''
+		self._UpdateAutoMap()
+
+	def ToggleAutoMapModule(self, modpath: Optional[str]):
+		if not modpath or modpath == self.ownerComp.par.Automapmodpath:
+			self.SetAutoMapModule(None)
+		else:
+			self.SetAutoMapModule(modpath)
+
+	def _UpdateAutoMap(self):
+		devname = self.ownerComp.par.Automapdevice.eval()
+		modpath = self.ownerComp.par.Automapmodpath.eval()
+		apphost = self.AppHost
+		devmanager = self._DeviceManager
+		if devmanager:
+			devmanager.ClearDeviceAutoMapStatuses()
+		if apphost:
+			apphost.ClearModuleAutoMapStatuses()
+		device = devmanager.GetDevice(devname) if devmanager and devname else None
+		modhost = apphost.GetModuleHost(modpath) if apphost and modpath else None
+		if not device or not modhost or not modhost.ModuleConnector:
+			self.automappings = None
+		else:
+			self.automappings = device.GenerateAutoMappings(modhost.ModuleConnector)
+			device.par.Automap = True
+			modhost.par.Automap = True
+		self._Rebuild()
+
+	def GetDeviceAdditionalMenuItems(self, device: 'MidiDevice'):
+		if not device:
+			return []
+		devname = device.DeviceName
+		devisauto = devname == self.ownerComp.par.Automapdevice
+
+		def _toggleauto():
+			if devisauto:
+				self.SetAutoMapDevice(None)
+			else:
+				self.SetAutoMapDevice(devname)
+
+		return [
+			menu.Item(
+				text='Auto-map',
+				checked=devisauto,
+				callback=_toggleauto),
+		]
+
+	def GetModuleAdditionalMenuItems(self, modhost: 'ModuleHost'):
+		if not modhost or not modhost.ModuleConnector:
+			return []
+		modpath = modhost.ModuleConnector.modpath
+		modisauto = modpath == self.ownerComp.par.Automapmodpath
+
+		return [
+			menu.Item(
+				text='Auto-map',
+				checked=modisauto,
+				callback=lambda: self.ToggleAutoMapModule(modpath)),
+		]

@@ -22,6 +22,9 @@ except ImportError:
 
 
 class ModuleProxyManager(common.ExtensionBase, common.ActionsExt):
+	"""
+	Builds and manages a set of proxy COMPs that mirror those in a remote project, including matching parameters.
+	"""
 	def __init__(self, ownerComp):
 		common.ExtensionBase.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions={
@@ -263,7 +266,7 @@ class _ProxyModuleHostConnector(module_host.ModuleHostConnector):
 			if not p.isPulse and not p.isMomentary
 		}
 
-	def SetParVals(self, parvals=None):
+	def SetParVals(self, parvals=None, resetmissing=False):
 		if not parvals:
 			return
 		for key, val in parvals.items():
@@ -272,6 +275,10 @@ class _ProxyModuleHostConnector(module_host.ModuleHostConnector):
 			par = getattr(self.proxy.par, key, None)
 			if par is not None:
 				par.val = val
+		if resetmissing:
+			for par in self.proxy.pars('*'):
+				if par.isCustom and parvals.get(par.name) is None:
+					par.val = par.default
 
 	@property
 	def CanOpenParameters(self): return True

@@ -1,5 +1,7 @@
 # trick pycharm
 
+from typing import List
+
 class _Expando:
 	def __init__(self):
 		pass
@@ -14,6 +16,7 @@ PaneType.NETWORKEDITOR = None
 
 class project:
 	name = ''
+	folder = ''
 
 class _Parent:
 	def __call__(self, *args, **kwargs):
@@ -24,6 +27,7 @@ class _Parent:
 
 class op:
 	def __init__(self, arg=None):
+		self.id = 0
 		self.path = ''
 		self.name = ''
 		self.par = _Expando()
@@ -32,6 +36,13 @@ class op:
 		self.op = op
 		self.storage = {}
 		self.isCOMP = False
+		self.isTOP = False
+		self.isCHOP = False
+		self.depth = 0
+		self.tags = set()
+		self.valid = True
+
+	def destroy(self): pass
 
 	def ops(self, *args): return [op()]
 
@@ -41,9 +52,14 @@ class op:
 
 	def closeViewer(self): pass
 
-	def unstore(self, name): pass
+	def store(self, key, value): pass
 
-	def findChildren(self, maxDepth=1, tags=None): return []
+	def unstore(self, keys1, *morekeys): pass
+
+	def findChildren(self, maxDepth=1, tags=None) -> 'List[op]':
+		pass
+
+	def addScriptError(self, msg): pass
 
 	TDResources = _Expando()
 
