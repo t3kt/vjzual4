@@ -50,7 +50,7 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 			self.ownerComp.par.Selectedmapping = -1
 		self._BuildMappingTable()
 		self._BuildMappingMarkers()
-		self._InitializeChannelProcessing()
+		self.InitializeChannelProcessing()
 		self._UpdateEditor()
 
 	@property
@@ -192,7 +192,8 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 		if anychanged:
 			self._Rebuild(clearselected=False)
 
-	def _InitializeChannelProcessing(self):
+	@loggedmethod
+	def InitializeChannelProcessing(self):
 		ctrlnames = []
 		parampaths = []
 		lowvalues = []

@@ -1,6 +1,6 @@
 # trick pycharm
 
-from typing import List
+from typing import List as _List
 
 class _Expando:
 	def __init__(self):
@@ -56,7 +56,7 @@ class op:
 
 	def unstore(self, keys1, *morekeys): pass
 
-	def findChildren(self, maxDepth=1, tags=None) -> 'List[op]':
+	def findChildren(self, maxDepth=1, tags=None) -> '_List[op]':
 		pass
 
 	def addScriptError(self, msg): pass

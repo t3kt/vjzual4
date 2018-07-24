@@ -941,7 +941,7 @@ class DeviceControlInfo(BaseDataObject):
 			'outchan': self.outchan,
 		}))
 
-class ControlMapping(BaseDataObject):
+class BaseMapping(BaseDataObject):
 	def __init__(
 			self,
 			path=None,
@@ -949,7 +949,6 @@ class ControlMapping(BaseDataObject):
 			enable=True,
 			rangelow=None,
 			rangehigh=None,
-			control=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.path = path
@@ -957,7 +956,6 @@ class ControlMapping(BaseDataObject):
 		self.enable = enable
 		self.rangelow = rangelow if rangelow is not None else 0
 		self.rangehigh = rangehigh if rangehigh is not None else 1
-		self.control = control
 
 	@property
 	def parampath(self):
@@ -971,7 +969,6 @@ class ControlMapping(BaseDataObject):
 		'enable',
 		'rangelow',
 		'rangehigh',
-		'control',
 	]
 
 	def ToJsonDict(self):
@@ -981,7 +978,71 @@ class ControlMapping(BaseDataObject):
 			'enable': self.enable,
 			'rangelow': self.rangelow,
 			'rangehigh': self.rangehigh,
+		}))
+
+class ControlMapping(BaseMapping):
+	def __init__(
+			self,
+			path=None,
+			param=None,
+			enable=True,
+			rangelow=None,
+			rangehigh=None,
+			control=None,
+			**otherattrs):
+		super().__init__(
+			path=path,
+			param=param,
+			enable=enable,
+			rangelow=rangelow,
+			rangehigh=rangehigh,
+			**otherattrs)
+		self.control = control
+
+	tablekeys = BaseMapping.tablekeys + [
+		'control',
+	]
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(super().ToJsonDict(), {
 			'control': self.control,
+		}))
+
+
+class ModulationMappingModes:
+	add = 'add'
+	multiply = 'multiply'
+	override = 'override'
+
+class ModulationMapping(BaseMapping):
+	def __init__(
+			self,
+			path=None,
+			param=None,
+			enable=True,
+			rangelow=None,
+			rangehigh=None,
+			source=None,
+			mode=ModulationMappingModes.add,
+			**otherattrs):
+		super().__init__(
+			path=path,
+			param=param,
+			enable=enable,
+			rangelow=rangelow,
+			rangehigh=rangehigh,
+			**otherattrs)
+		self.source = source
+		self.mode = mode
+
+	tablekeys = BaseMapping.tablekeys + [
+		'source',
+	]
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(super().ToJsonDict(), {
+			'source': self.source,
+			'mode': self.mode,
 		}))
 
 class ControlMappingSet(BaseDataObject):
@@ -1023,6 +1084,29 @@ class ControlMappingSet(BaseDataObject):
 			mappings=ControlMapping.FromJsonDicts(obj.get('mappings')),
 			**excludekeys(obj, ['mappings']))
 
+class ModulationMappingSet(BaseDataObject):
+	def __init__(
+			self,
+			enable=True,
+			mappings=None,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.enable = enable
+		self.mappings = mappings or []  # type: List[ModulationMapping]
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(super().ToJsonDict(), {
+			'enable': self.enable,
+			'mappings': ModulationMapping.ToJsonDicts(self.mappings),
+		}))
+
+	@classmethod
+	def FromJsonDict(cls, obj):
+		return cls(
+			mappings=ModulationMapping.FromJsonDicts(obj.get('mappings')),
+			**excludekeys(obj, ['mappings']))
+
+
 class AppState(BaseDataObject):
 	"""
 	The full state of the client app, attached to a server, including connection settings, current
@@ -1033,11 +1117,13 @@ class AppState(BaseDataObject):
 			client: ClientInfo=None,
 			modstates: 'Dict[str, ModuleState]'=None,
 			presets: 'List[ModulePreset]'=None,
+			modsources: 'List[ModulationSourceSpec]'=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.client = client
 		self.modstates = modstates or {}
 		self.presets = presets or []
+		self.modsources = modsources or []
 
 	def ToJsonDict(self):
 		return cleandict(mergedicts(
@@ -1046,6 +1132,7 @@ class AppState(BaseDataObject):
 				'client': self.client.ToJsonDict() if self.client else None,
 				'modstates': ModuleState.ToJsonDictMap(self.modstates),
 				'presets': ModulePreset.ToJsonDicts(self.presets),
+				'modsources': ModulationSourceSpec.ToJsonDicts(self.modsources),
 			}))
 
 	@classmethod
@@ -1054,7 +1141,8 @@ class AppState(BaseDataObject):
 			client=ClientInfo.FromOptionalJsonDict(obj.get('client')),
 			modstates=ModuleState.FromJsonDictMap(obj.get('modstates')),
 			presets=ModulePreset.FromJsonDicts(obj.get('presets')),
-			**excludekeys(obj, ['client', 'modstates', 'presets']))
+			modsources=ModulationSourceSpec.FromJsonDicts(obj.get('modsources')),
+			**excludekeys(obj, ['client', 'modstates', 'presets', 'modsources']))
 
 	def GetModuleState(self, path, create=False):
 		if path not in self.modstates and create:
@@ -1126,6 +1214,56 @@ class ModulePreset(BaseDataObject):
 				'params': dict(self.params) if self.params else None,
 				'ispartial': self.ispartial,
 			}))
+
+
+class ModulationSourceSpec(BaseDataObject):
+	def __init__(
+			self,
+			name,
+			sourcetype='lfo',
+			play=True,
+			sync=True,
+			syncperiod='four',
+			freeperiod=4,
+			shape='ramp',
+			phase=0,
+			bias=0,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.name = name
+		self.sourcetype = sourcetype
+		self.play = play
+		self.sync = sync
+		self.syncperiod = syncperiod
+		self.freeperiod = freeperiod
+		self.shape = shape
+		self.phase = phase
+		self.bias = bias
+
+	tablekeys = [
+		'name',
+		'sourcetype',
+		'play',
+		'sync',
+		'syncperiod',
+		'freeperiod',
+		'shape',
+		'phase',
+		'bias',
+	]
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'name': self.name,
+			'sourcetype': self.sourcetype,
+			'play': self.play,
+			'sync': self.sync,
+			'syncperiod': self.syncperiod,
+			'freeperiod': self.freeperiod,
+			'shape': self.shape,
+			'phase': self.phase,
+			'bias': self.bias,
+		}))
 
 class SchemaProvider:
 	def GetModuleSchema(self, modpath) -> Optional[ModuleSchema]:

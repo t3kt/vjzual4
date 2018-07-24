@@ -491,6 +491,29 @@ class UiBuilder:
 				attrs,
 				**kwargs))
 
+	def CreateLfoGenerator(
+			self, dest, name,
+			spec,  # type: schema.ModulationSourceSpec
+			attrs: opattrs=None, **kwargs):
+		return CreateFromTemplate(
+			template=self.ownerComp.op('lfo_generator'),
+			dest=dest, name=name,
+			attrs=opattrs.merged(
+				opattrs(
+					parvals={
+						'Name': spec.name,
+						'Play': spec.play,
+						'Sync': spec.sync,
+						'Syncperiod': spec.syncperiod,
+						'Freeperiod': spec.freeperiod,
+						'Shape': spec.shape,
+						'Phase': spec.phase,
+						'Bias': spec.bias,
+					},
+					tags=['vjz4lfo', 'vjz4modsource']),
+				attrs,
+				**kwargs))
+
 def _DropScriptParVals(dropscript: 'Optional[DAT]'=None):
 	return dropscript and {
 		'drop': 'legacy',
