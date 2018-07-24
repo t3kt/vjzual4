@@ -8,11 +8,6 @@ if False:
 	from app_host import AppHost
 
 try:
-	import td
-except ImportError:
-	pass
-
-try:
 	import comp_metadata
 except ImportError:
 	comp_metadata = mod.comp_metadata
@@ -36,7 +31,7 @@ try:
 	import common
 except ImportError:
 	common = mod.common
-cleandict, mergedicts, trygetpar = common.cleandict, common.mergedicts, common.trygetpar
+cleandict, mergedicts = common.cleandict, common.mergedicts
 Future = common.Future
 loggedmethod = common.loggedmethod
 
