@@ -770,6 +770,7 @@ class AppSchema(BaseDataObject):
 			modules=None,
 			moduletypes=None,
 			childmodpaths=None,
+			globalnodes=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.name = name
@@ -785,8 +786,9 @@ class AppSchema(BaseDataObject):
 			modschema.path: modschema
 			for modschema in self.moduletypes
 		}
-		self.nodes = []  # type: List[DataNodeInfo]
-		self.modulepathsbyprimarynodepath = {}
+		self.globalnodes = globalnodes or []  # type: List[DataNodeInfo]
+		self.nodes = [] + self.globalnodes  # type: List[DataNodeInfo]
+		self.modulepathsbyprimarynodepath = {}  # type: Dict[str, str]
 		for modschema in self.modules:
 			if modschema.nodes:
 				self.nodes += modschema.nodes
@@ -795,7 +797,7 @@ class AppSchema(BaseDataObject):
 		self.nodesbypath = {
 			nodeinfo.path: nodeinfo
 			for nodeinfo in self.nodes
-		}
+		}  # type: Dict[str, DataNodeInfo]
 		self.childmodpaths = childmodpaths or []
 		self.childmodules = [
 			self.modulesbypath[modpath]
@@ -823,6 +825,7 @@ class AppSchema(BaseDataObject):
 			'modules': BaseDataObject.ToJsonDicts(self.modules),
 			'moduletypes': BaseDataObject.ToJsonDicts(self.moduletypes),
 			'childmodpaths': self.childmodpaths,
+			'globalnodes': BaseDataObject.ToJsonDicts(self.globalnodes),
 		}))
 
 	@classmethod
@@ -830,7 +833,8 @@ class AppSchema(BaseDataObject):
 		return cls(
 			modules=ModuleSchema.FromJsonDicts(obj.get('modules')),
 			moduletypes=ModuleSchema.FromJsonDicts(obj.get('moduletypes')),
-			**excludekeys(obj, ['modules', 'moduletypes']))
+			globalnodes=DataNodeInfo.FromJsonDicts(obj.get('globalnodes')),
+			**excludekeys(obj, ['modules', 'moduletypes', 'globalnodes']))
 
 class ClientInfo(BaseDataObject):
 	def __init__(
