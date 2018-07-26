@@ -7,7 +7,6 @@ print('vjz4/app_state.py')
 
 if False:
 	from _stubs import *
-	from app_host import AppHost
 	import module_host
 
 try:
@@ -31,14 +30,19 @@ try:
 except ImportError:
 	ui_builder = mod.ui_builder
 
+try:
+	import app_components
+except ImportError:
+	app_components = mod.app_components
 
-class PresetManager(common.ExtensionBase, common.ActionsExt):
+
+class PresetManager(app_components.ComponentBase, common.ActionsExt):
 	"""
 	Manages the set of module presets in the current hosted app state, including managing the UI
 	panel that lists the presets.
 	"""
 	def __init__(self, ownerComp):
-		common.ExtensionBase.__init__(self, ownerComp)
+		app_components.ComponentBase.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions={
 			'Clearpresets': self.ClearPresets,
 		}, autoinitparexec=True)
@@ -46,20 +50,6 @@ class PresetManager(common.ExtensionBase, common.ActionsExt):
 		self.presets = []  # type: List[schema.ModulePreset]
 		self._BuildPresetTable()
 		self._BuildPresetMarkers()
-
-	@property
-	def AppHost(self):
-		apphost = getattr(self.ownerComp.parent, 'AppHost', None)  # type: AppHost
-		return apphost
-
-	@property
-	def UiBuilder(self):
-		apphost = self.AppHost
-		uibuilder = apphost.UiBuilder if apphost else None  # type: ui_builder.UiBuilder
-		if uibuilder:
-			return uibuilder
-		if hasattr(op, 'UiBuilder'):
-			return op.UiBuilder
 
 	def GetPresets(self) -> List[schema.ModulePreset]:
 		return copy.deepcopy(self.presets)

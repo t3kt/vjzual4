@@ -1,21 +1,9 @@
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 print('vjz4/module_host.py loading')
 
 if False:
 	from _stubs import *
-	from ui_builder import UiBuilder
-	from app_host import AppHost
-
-try:
-	import comp_metadata
-except ImportError:
-	comp_metadata = mod.comp_metadata
-
-try:
-	import data_node
-except ImportError:
-	data_node = mod.data_node
 
 try:
 	import schema
@@ -23,9 +11,9 @@ except ImportError:
 	schema = mod.schema
 
 try:
-	import app_state
+	import app_components
 except ImportError:
-	app_state = mod.app_state
+	app_components = mod.app_components
 
 try:
 	import common
@@ -34,11 +22,6 @@ except ImportError:
 cleandict, mergedicts = common.cleandict, common.mergedicts
 Future = common.Future
 loggedmethod = common.loggedmethod
-
-try:
-	import control_mapping
-except ImportError:
-	control_mapping = mod.control_mapping
 
 try:
 	import menu
@@ -59,10 +42,10 @@ def _GetOrAdd(d, key, default):
 		d[key] = val = default
 	return val
 
-class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
+class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQueueExt):
 	"""Base class for components that host modules, such as ModuleHost or ModuleEditor."""
 	def __init__(self, ownerComp):
-		common.ExtensionBase.__init__(self, ownerComp)
+		app_components.ComponentBase.__init__(self, ownerComp)
 		common.TaskQueueExt.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions={
 			'Clearuistate': self.ClearUIState,
@@ -72,7 +55,6 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		self.ModuleConnector = None  # type: ModuleHostConnector
 		self.controlsbyparam = {}  # type: Dict[str, COMP]
 		self.parampartsbycontrolpath = {}  # type: Dict[str, schema.ParamPartSchema]
-		self.UiModeNames = DependList([])
 		self._AutoInitActionParams()
 		self.ownerComp.tags.add('vjz4modhost')
 
@@ -194,11 +176,6 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 	def ParentHost(self) -> 'ModuleHost':
 		parent = getattr(self.ownerComp.parent, 'ModuleHost', None)
 		return parent or self.AppHost
-
-	@property
-	def AppHost(self):
-		apphost = getattr(self.ownerComp.parent, 'AppHost', None)  # type: AppHost
-		return apphost
 
 	@property
 	def ModulePath(self):
@@ -482,14 +459,6 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		menu.fromMouse().Show(
 			items=self._GetContextMenuItems(),
 			autoClose=True)
-
-	@property
-	def UiBuilder(self):
-		uibuilder = self.ownerComp.par.Uibuilder.eval()  # type: UiBuilder
-		if uibuilder:
-			return uibuilder
-		if hasattr(op, 'UiBuilder'):
-			return op.UiBuilder
 
 	def _ClearControls(self):
 		for o in self.ownerComp.ops('controls_panel/par__*'):
