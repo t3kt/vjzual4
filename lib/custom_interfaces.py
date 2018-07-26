@@ -13,6 +13,7 @@ except ImportError:
 	common = mod.common
 loggedmethod = common.loggedmethod
 Future = common.Future
+opattrs = common.opattrs
 
 class ModuleCustomInterface(common.ExtensionBase):
 	def __init__(self, ownerComp):
@@ -36,47 +37,64 @@ class ModuleCustomInterface(common.ExtensionBase):
 class SwitcherModuleInterface(ModuleCustomInterface):
 	def __init__(self, ownerComp):
 		super().__init__(ownerComp)
-		self.activetracks = []  # type: List[int]
+		self.alltracks = []  # type: List[_SwitcherTrack]
 
 	def AttachToModuleConnector(self, connector: 'ModuleHostConnector') -> Optional[Future]:
 		super().AttachToModuleConnector(connector)
+		self._InitializeTracks()
 		self.RebuildUI()
 		return None
 
-	def RebuildUI(self):
-		pass
-
-	def _DetermineActiveTracks(self):
-		self.activetracks.clear()
-		total = self._TotalTracks
-		if not total:
+	def _InitializeTracks(self):
+		self.alltracks.clear()
+		if not self.ModuleConnector or not self.ModuleConnector.modschema.hasnonbypasspars:
 			return
-		hideempty = self.ownerComp.par.Hideempty.eval()
-		mintracks = self.ownerComp.par.Mintracks.eval()
-		maxtracks = self.ownerComp.par.Maxtracks.eval()
-		if mintracks > maxtracks:
-			mintracks = maxtracks
-		elif maxtracks < mintracks:
-			maxtracks = mintracks
-		if not hideempty:
-			pass
-		pass
+		modschema = self.ModuleConnector.modschema
+		for i in range(1, 129):
+			sourceparschema = modschema.paramsbyname.get('Source{}'.format(i))
+			if sourceparschema is None:
+				return
+			sourcepar = self.ModuleConnector.GetPar(sourceparschema.name)
+			if sourcepar is None:
+				return
+			labelparschema = modschema.paramsbyname.get('Label{}'.format(i))
+			labelpar = self.ModuleConnector.GetPar(labelparschema.name) if labelparschema else None
+			track = _SwitcherTrack(
+				tracknum=i,
+				sourceparschema=sourceparschema,
+				sourcepar=sourcepar,
+				labelparschema=labelparschema,
+				labelpar=labelpar,
+			)
+			self.alltracks.append(track)
 
-	@property
-	def _TotalTracks(self):
-		if not self.ModuleConnector:
-			return 0
-		count = 0
-		for param in self.ModuleConnector.modschema.params:
-			if not param.name.startswith('Source'):
+	def RebuildUI(self):
+		for o in self.ownerComp.ops('trk__*'):
+			o.destroy()
+		activetrack = self.ModuleConnector.GetPar('Activetrack')
+		if not self.alltracks or activetrack is None:
+			return
+		template = self.ownerComp.op('_track_panel_template')
+		i = 0
+		for track in self.alltracks:
+			if not track.sourcepar.eval():
 				continue
-			try:
-				tracknum = int(param.name.replace('Source', ''))
-			except ValueError:
-				continue
-			if tracknum > count:
-				count = tracknum
-		return count
+			common.CreateFromTemplate(
+				template=template,
+				dest=self.ownerComp,
+				name='trk__{}'.format(track.tracknum),
+				attrs=opattrs(
+					order=track.tracknum,
+					nodepos=[200, 500 + -200 * i],
+					parvals={
+						'Tracknum': track.tracknum,
+						'Label': track.labeltext or '<{}>'.format(track.tracknum),
+						'Source': track.sourcepar.eval(),
+						'Active': track.tracknum == activetrack,
+						'display': True,
+					},
+				))
+			i += 1
 
 class _SwitcherTrack:
 	def __init__(
@@ -91,5 +109,12 @@ class _SwitcherTrack:
 		self.sourcepar = sourcepar  # type: Par
 		self.labelparschema = labelparschema  # type: schema.ParamSchema
 		self.labelpar = labelpar  # type: Par
-		self.visible = False
+
+	@property
+	def labeltext(self):
+		if self.labelpar is not None and self.labelpar.eval():
+			return self.labelpar.eval()
+		if self.sourcepar.eval():
+			return str(self.sourcepar.eval())
+		return ''
 
