@@ -4,8 +4,6 @@ print('vjz4/control_mapping.py loading')
 
 if False:
 	from _stubs import *
-	from app_host import AppHost
-	from ui_builder import UiBuilder
 	from module_host import ModuleHost
 	from control_devices import MidiDevice
 
@@ -34,9 +32,14 @@ try:
 except ImportError:
 	menu = mod.menu
 
-class ControlMapper(common.ExtensionBase, common.ActionsExt):
+try:
+	import app_components
+except ImportError:
+	app_components = mod.app_components
+
+class ControlMapper(app_components.ComponentBase, common.ActionsExt):
 	def __init__(self, ownerComp):
-		common.ExtensionBase.__init__(self, ownerComp)
+		app_components.ComponentBase.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions={
 			'Clearmappings': self.ClearMappings,
 		})
@@ -60,20 +63,6 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 	@AutoMapDeviceName.setter
 	def AutoMapDeviceName(self, value):
 		self.ownerComp.par.Automapdevice = value or ''
-
-	@property
-	def AppHost(self):
-		apphost = getattr(self.ownerComp.parent, 'AppHost', None)  # type: AppHost
-		return apphost
-
-	@property
-	def UiBuilder(self):
-		apphost = self.AppHost
-		uibuilder = apphost.UiBuilder if apphost else None  # type: UiBuilder
-		if uibuilder:
-			return uibuilder
-		if hasattr(op, 'UiBuilder'):
-			return op.UiBuilder
 
 	@property
 	def _DeviceManager(self):

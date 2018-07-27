@@ -74,6 +74,8 @@ class ExtensionBase(LoggableBase):
 		self.enablelogging = True
 		self.par = ownerComp.par
 		self.path = ownerComp.path
+		self.op = ownerComp.op
+		self.ops = ownerComp.ops
 
 	def _GetLogId(self):
 		if not self.ownerComp.valid or not hasattr(self.ownerComp.par, 'opshortcut'):

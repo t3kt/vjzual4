@@ -4,7 +4,6 @@ print('vjz4/remote_client.py loading')
 
 if False:
 	from _stubs import *
-	from app_host import AppHost
 
 try:
 	import common
@@ -39,8 +38,13 @@ try:
 except ImportError:
 	common = mod.common
 
+try:
+	import app_components
+except ImportError:
+	app_components = mod.app_components
 
-class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt):
+
+class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.SchemaProvider, common.TaskQueueExt):
 	"""
 	Client which connects to a TD project that includes a RemoteServer, queries it for information about the project,
 	and facilitates communication between the two TD instances.
@@ -53,6 +57,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 	NDI.
 	"""
 	def __init__(self, ownerComp):
+		app_components.ComponentBase.__init__(self, ownerComp)
 		remote.RemoteBase.__init__(
 			self,
 			ownerComp,
@@ -92,11 +97,6 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 	@property
 	def ProxyManager(self) -> module_proxy.ModuleProxyManager:
 		return self.ownerComp.op('proxy')
-
-	@property
-	def AppHost(self):
-		apphost = getattr(self.ownerComp.parent, 'AppHost', None)  # type: AppHost
-		return apphost
 
 	def Detach(self):
 		self._LogBegin('Detach()')
