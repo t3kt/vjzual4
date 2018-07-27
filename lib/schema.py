@@ -1127,7 +1127,7 @@ class AppState(BaseDataObject):
 	def __init__(
 			self,
 			client: ClientInfo=None,
-			modstates: 'Dict[str, ModuleState]'=None,
+			modstates: 'Dict[str, ModuleHostState]' =None,
 			presets: 'List[ModulePreset]'=None,
 			modsources: 'List[ModulationSourceSpec]'=None,
 			**otherattrs):
@@ -1142,7 +1142,7 @@ class AppState(BaseDataObject):
 			self.otherattrs,
 			{
 				'client': self.client.ToJsonDict() if self.client else None,
-				'modstates': ModuleState.ToJsonDictMap(self.modstates),
+				'modstates': ModuleHostState.ToJsonDictMap(self.modstates),
 				'presets': ModulePreset.ToJsonDicts(self.presets),
 				'modsources': ModulationSourceSpec.ToJsonDicts(self.modsources),
 			}))
@@ -1151,18 +1151,18 @@ class AppState(BaseDataObject):
 	def FromJsonDict(cls, obj):
 		return cls(
 			client=ClientInfo.FromOptionalJsonDict(obj.get('client')),
-			modstates=ModuleState.FromJsonDictMap(obj.get('modstates')),
+			modstates=ModuleHostState.FromJsonDictMap(obj.get('modstates')),
 			presets=ModulePreset.FromJsonDicts(obj.get('presets')),
 			modsources=ModulationSourceSpec.FromJsonDicts(obj.get('modsources')),
 			**excludekeys(obj, ['client', 'modstates', 'presets', 'modsources']))
 
 	def GetModuleState(self, path, create=False):
 		if path not in self.modstates and create:
-			self.modstates[path] = ModuleState()
+			self.modstates[path] = ModuleHostState()
 		return self.modstates.get(path)
 
 
-class ModuleState(BaseDataObject):
+class ModuleHostState(BaseDataObject):
 	"""
 	The state of a hosted module, including the value of all of its parameters, as well as the UI
 	state of the module host.
@@ -1171,12 +1171,12 @@ class ModuleState(BaseDataObject):
 			self,
 			collapsed=None,
 			uimode=None,
-			params: Dict=None,
+			state: 'ModuleState'=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.collapsed = collapsed
 		self.uimode = uimode
-		self.params = params or {}
+		self.state = state or ModuleState()
 
 	def ToJsonDict(self):
 		return cleandict(mergedicts(
@@ -1184,14 +1184,24 @@ class ModuleState(BaseDataObject):
 			{
 				'collapsed': self.collapsed,
 				'uimode': self.uimode,
-				'params': dict(self.params) if self.params else None,
+				'state': self.state.ToJsonDict(),
 			}))
 
-	def UpdateParams(self, params, clean=False):
-		if clean:
-			self.params.clear()
-		if params:
-			self.params.update(params)
+
+class ModuleState(BaseDataObject):
+	def __init__(
+			self,
+			params: Dict=None,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.params = params or {}
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(
+			self.otherattrs,
+			{
+				'params': dict(self.params) if self.params else None,
+			}))
 
 
 class ModulePreset(BaseDataObject):
@@ -1202,13 +1212,13 @@ class ModulePreset(BaseDataObject):
 			self,
 			name,
 			typepath,
-			params=None,
+			state: ModuleState=None,
 			ispartial=False,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.name = name
 		self.typepath = typepath
-		self.params = params or {}
+		self.state = state or ModuleState()
 		self.ispartial = bool(ispartial)
 
 	tablekeys = [
@@ -1223,8 +1233,8 @@ class ModulePreset(BaseDataObject):
 			{
 				'name': self.name,
 				'typepath': self.typepath,
-				'params': dict(self.params) if self.params else None,
 				'ispartial': self.ispartial,
+				'state': self.state.ToJsonDict(),
 			}))
 
 

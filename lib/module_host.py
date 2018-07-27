@@ -154,14 +154,14 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 			m.LoadUIState()
 
 	def BuildState(self):
-		return schema.ModuleState(
+		return schema.ModuleHostState(
 			collapsed=self.ownerComp.par.Collapsed.eval(),
 			uimode=self.ownerComp.par.Uimode.eval(),
 			params=self.ModuleConnector and self.ModuleConnector.GetParVals()
 		)
 
 	@loggedmethod
-	def LoadState(self, modstate: schema.ModuleState):
+	def LoadState(self, modstate: schema.ModuleHostState):
 		if not modstate:
 			return
 		if modstate.collapsed is not None:
@@ -170,7 +170,7 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 			self.ownerComp.par.Uimode = modstate.uimode
 		if not self.ModuleConnector:
 			return
-		self.ModuleConnector.SetParVals(modstate.params)
+		self.ModuleConnector.SetParVals(modstate.state.params)
 
 	@property
 	def ParentHost(self) -> 'ModuleHost':
@@ -649,6 +649,9 @@ class ModuleHostConnector:
 		return None
 
 	def SetParVals(self, parvals: Dict=None, resetmissing=False):
+		pass
+
+	def GetState(self, presetonly=False, onlyparamnames=None) -> schema.ModuleState:
 		pass
 
 	@property

@@ -99,21 +99,21 @@ class PresetManager(app_components.ComponentBase, common.ActionsExt):
 		for preset in self.presets:
 			preset.AddToTable(dat)
 
-	@customloggedmethod(omitargs=['params'])
+	@customloggedmethod(omitargs=['state'])
 	def CreatePreset(
 			self,
 			name,
 			typepath,
-			params: dict,
+			state: schema.ModuleState,
 			ispartial=False) -> Optional[schema.ModulePreset]:
-		if not params or not typepath:
+		if not state or not typepath:
 			return None
 		if not name:
 			name = self._GenerateNewName(typepath)
 		preset = schema.ModulePreset(
 			name=name,
 			typepath=typepath,
-			params=dict(params),
+			state=state,
 			ispartial=ispartial)
 		self.presets.append(preset)
 		preset.AddToTable(self._PresetsTable)
@@ -128,6 +128,7 @@ class PresetManager(app_components.ComponentBase, common.ActionsExt):
 		modschema = modconnector.modschema
 		params = modconnector.GetParVals(presetonly=True)
 		ispartial = False
+		state = modconnector.GetState(presetonly=True)
 		if modschema.masterispartialmatch:
 			modtype = self.AppHost.GetModuleTypeSchema(modschema.masterpath)
 			if modtype:
@@ -140,7 +141,7 @@ class PresetManager(app_components.ComponentBase, common.ActionsExt):
 		self.CreatePreset(
 			name=name,
 			typepath=modschema.masterpath,
-			params=params,
+
 			ispartial=ispartial)
 
 	@loggedmethod
@@ -172,3 +173,20 @@ class PresetManager(app_components.ComponentBase, common.ActionsExt):
 				attrs=opattrs(
 					order=i,
 					nodepos=[200, -400 + (i * 150)]))
+
+class ModulePresetSlotManager(app_components.ComponentBase, common.ActionsExt):
+	def __init__(self, ownerComp):
+		app_components.ComponentBase.__init__(self, ownerComp)
+		common.ActionsExt.__init__(self, ownerComp, actions={})
+		self._AutoInitActionParams()
+
+	@property
+	def _ModuleHost(self):
+		host = getattr(self.ownerComp.parent, 'ModuleHost')  # type: module_host.ModuleHost
+		return host
+
+	@property
+	def _ModuleHostConnector(self):
+		host = self._ModuleHost
+		return host.ModuleConnector if host else None
+
