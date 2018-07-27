@@ -257,12 +257,19 @@ class _ProxyModuleHostConnector(module_host.ModuleHostConnector):
 
 	def GetPar(self, name): return getattr(self.proxy.par, name, None)
 
-	def GetParVals(self, paramnames=None):
-		if paramnames is None:
-			paramnames = self.modschema.parampartnames
+	def GetParVals(self, mappableonly=False, presetonly=False):
+		partnames = []
+		for param in self.modschema.params:
+			if mappableonly and not param.mappable:
+				continue
+			if presetonly and not param.allowpresets:
+				continue
+			for part in param.parts:
+				partnames.append(part.name)
+			pass
 		return {
 			p.name: p.eval()
-			for p in self.proxy.pars(*paramnames)
+			for p in self.proxy.pars(*partnames)
 			if not p.isPulse and not p.isMomentary
 		}
 

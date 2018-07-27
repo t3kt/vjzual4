@@ -126,7 +126,7 @@ class PresetManager(app_components.ComponentBase, common.ActionsExt):
 		if not name:
 			return
 		modschema = modconnector.modschema
-		params = modconnector.GetParVals()
+		params = modconnector.GetParVals(presetonly=True)
 		ispartial = False
 		if modschema.masterispartialmatch:
 			modtype = self.AppHost.GetModuleTypeSchema(modschema.masterpath)

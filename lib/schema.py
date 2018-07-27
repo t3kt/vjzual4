@@ -365,6 +365,7 @@ class ParamSchema(BaseDataObject, common.AttrBasedIdentity):
 			advanced=False,
 			specialtype=None,
 			mappable=True,
+			allowpresets=None,
 			helptext=None,
 			groupname=None,
 			parts=None,
@@ -384,6 +385,12 @@ class ParamSchema(BaseDataObject, common.AttrBasedIdentity):
 		self.specialtype = specialtype or ''
 		self.isnode = specialtype and specialtype in ParamSpecialTypes.nodetypes
 		self.mappable = mappable and not self.isnode
+		if self.isnode:
+			self.allowpresets = False
+		elif allowpresets is not None:
+			self.allowpresets = allowpresets
+		else:
+			self.allowpresets = self.mappable and not self.hidden
 		self.helptext = helptext
 		self.groupname = groupname or pagename
 		self.group = None  # type: ParamGroupSchema
@@ -400,6 +407,7 @@ class ParamSchema(BaseDataObject, common.AttrBasedIdentity):
 		'specialtype',
 		'isnode',
 		'mappable',
+		'allowpresets',
 		'helptext',
 		'groupname',
 	]
@@ -425,6 +433,7 @@ class ParamSchema(BaseDataObject, common.AttrBasedIdentity):
 			'specialtype': self.specialtype,
 			'isnode': self.isnode,
 			'mappable': self.mappable,
+			'allowpresets': self.allowpresets,
 			'helptext': self.helptext,
 			'groupname': self.groupname,
 			'parts': BaseDataObject.ToJsonDicts(self.parts),
@@ -588,6 +597,7 @@ class BaseModuleSchema(BaseDataObject):
 		self.hasmappable = False
 		self.hasnonbypasspars = False
 		self.bypasspar = None  # type: Optional[ParamSchema]
+		self.presetableparams = []  # type: List[ParamSchema]
 		for par in self.params:
 			self.paramsbyname[par.name] = par
 			if par.advanced:
@@ -599,6 +609,8 @@ class BaseModuleSchema(BaseDataObject):
 				self.bypasspar = par
 			else:
 				self.hasnonbypasspars = True
+			if par.allowpresets:
+				self.presetableparams.append(par)
 			for part in par.parts:
 				self.parampartsbyname[part.name] = part
 		self.paramgroups = paramgroups or []
