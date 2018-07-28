@@ -126,22 +126,18 @@ class PresetManager(app_components.ComponentBase, common.ActionsExt):
 		if not name:
 			return
 		modschema = modconnector.modschema
-		params = modconnector.GetParVals(presetonly=True)
 		ispartial = False
-		state = modconnector.GetState(presetonly=True)
+		onlyparamnames = None
 		if modschema.masterispartialmatch:
 			modtype = self.AppHost.GetModuleTypeSchema(modschema.masterpath)
 			if modtype:
-				params = {
-					key: val
-					for key, val in params.items()
-					if key in modtype.parampartnames
-				}
+				onlyparamnames = modtype.paramsbyname.keys()
 				ispartial = True
+		state = modconnector.GetState(presetonly=True, onlyparamnames=onlyparamnames)
 		self.CreatePreset(
 			name=name,
 			typepath=modschema.masterpath,
-
+			state=state,
 			ispartial=ispartial)
 
 	@loggedmethod

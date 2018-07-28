@@ -645,7 +645,7 @@ class ModuleHostConnector:
 			return None
 		return 'op({!r}).par.{}'.format(par.owner.path, par.name)
 
-	def GetParVals(self, mappableonly=False, presetonly=False) -> Optional[Dict]:
+	def GetParVals(self, mappableonly=False, presetonly=False, onlyparamnames=None) -> Optional[Dict]:
 		return None
 
 	def SetParVals(self, parvals: Dict=None, resetmissing=False):
