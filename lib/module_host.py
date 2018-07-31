@@ -170,7 +170,7 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 			self.ownerComp.par.Uimode = modstate.uimode
 		if not self.ModuleConnector:
 			return
-		self.ModuleConnector.SetParVals(modstate.state.params)
+		self.ModuleConnector.SetParVals(modstate.currentstate.params)
 
 	@property
 	def ParentHost(self) -> 'ModuleHost':

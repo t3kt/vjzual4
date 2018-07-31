@@ -1171,12 +1171,16 @@ class ModuleHostState(BaseDataObject):
 			self,
 			collapsed=None,
 			uimode=None,
-			state: 'ModuleState'=None,
+			currentstate: 'ModuleState'=None,
+			currentstateindex=0,
+			states: 'List[ModuleState]'=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.collapsed = collapsed
 		self.uimode = uimode
-		self.state = state or ModuleState()
+		self.currentstateindex = currentstateindex or 0
+		self.currentstate = currentstate or ModuleState()
+		self.states = states or []  # type: List[ModuleState]
 
 	def ToJsonDict(self):
 		return cleandict(mergedicts(
@@ -1184,22 +1188,34 @@ class ModuleHostState(BaseDataObject):
 			{
 				'collapsed': self.collapsed,
 				'uimode': self.uimode,
-				'state': self.state.ToJsonDict(),
+				'currentstate': self.currentstate.ToJsonDict(),
+				'currentstateindex': self.currentstateindex,
+				'states': ModuleState.ToJsonDicts(self.states),
 			}))
+
+	@classmethod
+	def FromJsonDict(cls, obj):
+		return cls(
+			currentstate=ModuleState.FromJsonDict(obj.get('currentstate')),
+			states=ModuleState.FromJsonDicts(obj.get('states')),
+			**excludekeys(obj, ['currentstate', 'states']))
 
 
 class ModuleState(BaseDataObject):
 	def __init__(
 			self,
+			name=None,
 			params: Dict=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
+		self.name = name
 		self.params = params or {}
 
 	def ToJsonDict(self):
 		return cleandict(mergedicts(
 			self.otherattrs,
 			{
+				'name': self.name,
 				'params': dict(self.params) if self.params else None,
 			}))
 
@@ -1236,6 +1252,12 @@ class ModulePreset(BaseDataObject):
 				'ispartial': self.ispartial,
 				'state': self.state.ToJsonDict(),
 			}))
+
+	@classmethod
+	def FromJsonDict(cls, obj):
+		return cls(
+			state=ModuleState.FromJsonDict(obj.get('state')),
+			**excludekeys(obj, ['state']))
 
 
 class ModulationSourceSpec(BaseDataObject):
