@@ -644,7 +644,7 @@ class ModuleManager(app_components.ComponentBase):
 				header.par.Previewactive = False
 
 	@loggedmethod
-	def BuildModStates(self) -> 'Dict[str, schema.ModuleState]':
+	def BuildModStates(self) -> 'Dict[str, schema.ModuleHostState]':
 		if not self.appschema:
 			return {}
 		return {
@@ -654,7 +654,7 @@ class ModuleManager(app_components.ComponentBase):
 		}
 
 	@simpleloggedmethod
-	def LoadModStates(self, modstates: 'Dict[str, schema.ModuleState]'):
+	def LoadModStates(self, modstates: 'Dict[str, schema.ModuleHostState]'):
 		if not modstates or not self.appschema:
 			return
 		for modpath, modhost in self.modulehostsbypath.items():
