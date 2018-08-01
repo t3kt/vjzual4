@@ -4,6 +4,7 @@ print('vjz4/module_host.py loading')
 
 if False:
 	from _stubs import *
+	from app_state import ModuleStateManager
 
 try:
 	import schema
@@ -157,8 +158,8 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 		return schema.ModuleHostState(
 			collapsed=self.ownerComp.par.Collapsed.eval(),
 			uimode=self.ownerComp.par.Uimode.eval(),
-			params=self.ModuleConnector and self.ModuleConnector.GetParVals()
-		)
+			currentstate=self.ModuleConnector and schema.ModuleState(params=self.ModuleConnector.GetParVals()),
+			states=self.ModuleConnector and self.StateManager.BuildStates())
 
 	@loggedmethod
 	def LoadState(self, modstate: schema.ModuleHostState):
@@ -171,6 +172,7 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 		if not self.ModuleConnector:
 			return
 		self.ModuleConnector.SetParVals(modstate.currentstate.params)
+		self.StateManager.LoadStates(modstate.states)
 
 	@property
 	def ParentHost(self) -> 'ModuleHost':
@@ -201,6 +203,10 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 	@property
 	def ProgressBar(self):
 		return self.ownerComp.op('module_header/progress_bar')
+
+	@property
+	def StateManager(self) -> 'ModuleStateManager':
+		return self.ownerComp.op('states')
 
 	@property
 	def _SubModuleHosts(self) -> 'List[ModuleHost]':

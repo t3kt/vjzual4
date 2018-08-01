@@ -491,6 +491,28 @@ class UiBuilder:
 				attrs,
 				**kwargs))
 
+	def CreateStateSlotMarker(
+			self, dest, name,
+			state=None,  # type: Optional[schema.ModuleState]
+			attrs: opattrs=None, **kwargs):
+		return CreateFromTemplate(
+			template=self.ownerComp.op('module_state_slot_marker'),
+			dest=dest, name=name,
+			attrs=opattrs.merged(
+				opattrs(
+					parvals={
+						'Name': (state.name if state else None) or '',
+						'Populated': state is not None,
+						'h': 30,
+						'w': 30,
+					},
+					parexprs={
+						'Params': repr((state and state.params) or None),
+					},
+					tags=['vjz4stateslotmarker']),
+				attrs,
+				**kwargs))
+
 	def CreateLfoGenerator(
 			self, dest, name,
 			spec,  # type: schema.ModulationSourceSpec

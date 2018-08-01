@@ -170,11 +170,15 @@ class PresetManager(app_components.ComponentBase, common.ActionsExt):
 					order=i,
 					nodepos=[200, -400 + (i * 150)]))
 
-class ModulePresetSlotManager(app_components.ComponentBase, common.ActionsExt):
+class ModuleStateManager(app_components.ComponentBase, common.ActionsExt):
 	def __init__(self, ownerComp):
 		app_components.ComponentBase.__init__(self, ownerComp)
-		common.ActionsExt.__init__(self, ownerComp, actions={})
+		common.ActionsExt.__init__(self, ownerComp, actions={
+			'Clearstates': self.ClearStates,
+			'Capturestate': lambda: self.CaptureState(),
+		})
 		self._AutoInitActionParams()
+		self.statemarkers = []  # type: List[COMP]
 
 	@property
 	def _ModuleHost(self):
@@ -185,4 +189,103 @@ class ModulePresetSlotManager(app_components.ComponentBase, common.ActionsExt):
 	def _ModuleHostConnector(self):
 		host = self._ModuleHost
 		return host.ModuleConnector if host else None
+
+	@loggedmethod
+	def LoadStates(self, states: 'List[schema.ModuleState]'):
+		self.ClearStates()
+		if states:
+			for state in states:
+				self.AddState(state)
+
+	@loggedmethod
+	def BuildStates(self) -> 'List[schema.ModuleState]':
+		states = []
+		for marker in self.statemarkers:
+			if not marker.par.Populated:
+				continue
+			params = marker.par.Params.eval()
+			if not params:
+				continue
+			states.append(schema.ModuleState(
+				name=marker.par.Name.eval() or None,
+				params=params
+			))
+		return states
+
+	@loggedmethod
+	def ClearStates(self):
+		for marker in self.statemarkers:
+			marker.destroy()
+		self.statemarkers.clear()
+
+	@simpleloggedmethod
+	def AddState(
+			self,
+			state: schema.ModuleState=None):
+		i = len(self.statemarkers)
+		marker = self.UiBuilder.CreateStateSlotMarker(
+			dest=self.ownerComp,
+			name='state__{}'.format(i),
+			state=state,
+			attrs=opattrs(
+				nodepos=[300, 500 + -200 * i],
+				order=i,
+				panelparent=self.ownerComp.op('markers_panel'),
+				parvals={
+					'vmode': 'fill',
+					'hmode': 'fixed',
+					'w': 30,
+				}))
+		self.statemarkers.append(marker)
+
+	def _GetStateMarker(self, index, warn=False):
+		if index is None or index < 0 or index >= len(self.statemarkers):
+			if warn:
+				self._LogEvent('Warning: no state marker at index {}'.format(index))
+			return None
+		return self.statemarkers[index]
+
+	@simpleloggedmethod
+	def _UpdateStateMarker(self, marker, state: schema.ModuleState):
+		marker.par.Name = (state and state.name) or ''
+		marker.par.Populated = bool(state and state.params)
+		marker.par.Params = repr((state and state.params) or None)
+
+	@simpleloggedmethod
+	def SetState(self, index, state: schema.ModuleState=None):
+		marker = self._GetStateMarker(index, warn=True)
+		if not marker:
+			return
+		self._UpdateStateMarker(marker, state)
+
+	@loggedmethod
+	def CaptureState(
+			self,
+			name=None,
+			index=None):
+		connector = self._ModuleHostConnector
+		if not connector:
+			state = schema.ModuleState(name=name) if name else None
+		else:
+			state = schema.ModuleState(
+				name=name,
+				params=connector.GetParVals(presetonly=True))
+		if index is None:
+			self.AddState(state)
+		else:
+			marker = self._GetStateMarker(index, warn=True)
+			if not marker:
+				return
+			self._UpdateStateMarker(marker, state)
+
+	@loggedmethod
+	def RemoveState(self, index):
+		marker = self._GetStateMarker(index, warn=True)
+		if not marker:
+			return
+		marker.destroy()
+		self.statemarkers.remove(marker)
+		for i in range(index, len(self.statemarkers)):
+			self.statemarkers[i].name = 'state__{}'.format(i)
+
 
