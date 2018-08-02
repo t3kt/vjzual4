@@ -35,6 +35,11 @@ try:
 except ImportError:
 	app_components = mod.app_components
 
+try:
+	import menu
+except ImportError:
+	menu = mod.menu
+
 
 class PresetManager(app_components.ComponentBase, common.ActionsExt):
 	"""
@@ -287,5 +292,20 @@ class ModuleStateManager(app_components.ComponentBase, common.ActionsExt):
 		self.statemarkers.remove(marker)
 		for i in range(index, len(self.statemarkers)):
 			self.statemarkers[i].name = 'state__{}'.format(i)
+
+	def ShowContextMenu(self):
+		if not self._ModuleHostConnector:
+			return
+		menu.fromMouse().Show(
+			items=[
+				menu.Item(
+					'Capture new state',
+					callback=lambda: self.CaptureState()),
+				menu.Item(
+					'Clear all states',
+					disabled=not self.statemarkers,
+					callback=lambda: self.ClearStates()),
+			],
+			autoClose=True)
 
 

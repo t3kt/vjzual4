@@ -398,7 +398,7 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 		if self.ownerComp.par.Collapsed:
 			panels = self.ownerComp.ops('module_header')
 		else:
-			panels = self.ownerComp.ops('module_header', 'nodes_panel', 'controls_panel', 'sub_modules_panel')
+			panels = self.ownerComp.ops('module_header', 'states', 'nodes_panel', 'controls_panel', 'sub_modules_panel')
 		h = self.HeightOfVisiblePanels(panels)
 		if 0 < maxheight < h:
 			h = maxheight
