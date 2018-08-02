@@ -308,4 +308,27 @@ class ModuleStateManager(app_components.ComponentBase, common.ActionsExt):
 			],
 			autoClose=True)
 
+	def OnMarkerClick(self, panelValue):
+		marker = panelValue.owner
+		action = panelValue.name
+		
+		pass
+
+	def ShowMarkerContextMenu(self, marker):
+		if not self._ModuleHostConnector or not marker or 'vjz4stateslotmarker' not in marker.tags:
+			return
+		populated = bool(marker.par.Populated and marker.par.Params.eval())
+		index = marker.digits
+		menu.fromButton(marker).Show(
+			items=[
+				menu.Item(
+					'Delete state',
+					disabled=not populated,
+					callback=lambda: self.RemoveState(index)),
+				menu.Item(
+					'Capture state',
+					callback=lambda: self.CaptureState(index=index)),
+			],
+			autoClose=True)
+
 
