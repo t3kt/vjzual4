@@ -485,7 +485,7 @@ class UiBuilder:
 						'hmode': 'fill'
 					},
 					parexprs={
-						'Params': repr(preset.params),
+						'Params': repr(preset.state.params),
 					},
 					tags=['vjz4presetmarker']),
 				attrs,
@@ -566,7 +566,7 @@ def ShowPromptDialog(
 	_getPopDialog().Open(
 		title=title,
 		text=text,
-		textEntry=default,
+		textEntry=default or '',
 		buttons=[oktext, canceltext],
 		enterButton=1, escButton=2, escOnClickAway=True,
 		callback=_callback)
