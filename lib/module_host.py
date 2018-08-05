@@ -236,10 +236,14 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 		bodypanel = self.ownerComp.op('body_panel')
 		bodypanel.par.opacity = 1
 		header.par.Previewactive = False
+		statemanager = self.StateManager
+		statemanager.ClearStates()
+		statemanager.par.h = 0
 		uimodenames = []
 		if connector:
 			title.par.text = titlehelp.text = connector.modschema.label
 			if connector.modschema.hasnonbypasspars:
+				statemanager.par.h = 20
 				uimodenames.append('ctrl')
 			if self._DataNodes:
 				uimodenames.append('nodes')
