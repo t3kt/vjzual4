@@ -175,6 +175,21 @@ class PresetManager(app_components.ComponentBase, common.ActionsExt):
 					order=i,
 					nodepos=[200, -400 + (i * 150)]))
 
+	@loggedmethod
+	def HandleDrop(self, dropName, baseName, targetop):
+		sourceparent = op(baseName)
+		if not sourceparent:
+			return
+		sourceop = sourceparent.op(dropName)
+		if not sourceop:
+			return
+		if not targetop:
+			return
+		if targetop == self.ownerComp.op('presets_panel'):
+			pass
+		pass
+
+
 class ModuleStateManager(app_components.ComponentBase, common.ActionsExt):
 	def __init__(self, ownerComp):
 		app_components.ComponentBase.__init__(self, ownerComp)
