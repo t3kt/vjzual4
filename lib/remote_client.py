@@ -98,27 +98,24 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.Schem
 	def ProxyManager(self) -> module_proxy.ModuleProxyManager:
 		return self.ownerComp.op('proxy')
 
+	@loggedmethod
 	def Detach(self):
-		self._LogBegin('Detach()')
-		try:
-			self.Connected.val = False
-			self.Connection.ClearResponseTasks()
-			self.ClearTasks()
-			self.rawAppInfo = None
-			self.rawModuleInfos = []
-			self.AppSchema = None
-			self.ServerInfo = None
-			self._BuildAppInfoTable()
-			self._ClearModuleTable()
-			self._ClearParamTables()
-			self._ClearDataNodesTable()
-			self.ProxyManager.par.Rootpath = ''
-			self.ProxyManager.ClearProxies()
-			apphost = self.AppHost
-			if apphost:
-				apphost.OnDetach()
-		finally:
-			self._LogEnd()
+		self.Connected.val = False
+		self.Connection.ClearResponseTasks()
+		self.ClearTasks()
+		self.rawAppInfo = None
+		self.rawModuleInfos = []
+		self.AppSchema = None
+		self.ServerInfo = None
+		self._BuildAppInfoTable()
+		self._ClearModuleTable()
+		self._ClearParamTables()
+		self._ClearDataNodesTable()
+		self.ProxyManager.par.Rootpath = ''
+		self.ProxyManager.ClearProxies()
+		apphost = self.AppHost
+		if apphost:
+			apphost.OnDetach()
 
 	def Connect(self, host=None, port=None):
 		if host is None:
@@ -129,6 +126,7 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.Schem
 			port = self.ownerComp.par.Commandsendport.eval()
 		else:
 			self.ownerComp.par.Commandsendport = port
+		self.SetStatusText('Connecting to {}:{}'.format(host, port))
 		self._LogBegin('Connect({}, {})'.format(host, port))
 		try:
 			self.Detach()
@@ -200,11 +198,13 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.Schem
 	def QueryApp(self):
 		if not self.Connected:
 			return
+		self.SetStatusText('Querying app info...')
 		self.Connection.SendRequest('queryApp').then(
 			success=self._OnReceiveAppInfo,
 			failure=self._OnQueryAppFailure)
 
 	def _OnReceiveAppInfo(self, cmdmesg: remote.CommandMessage):
+		self.SetStatusText('App info received')
 		self._LogBegin('_OnReceiveAppInfo({!r})'.format(cmdmesg.arg))
 		try:
 			if not cmdmesg.arg:
@@ -217,6 +217,7 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.Schem
 			def _makeQueryModTask(modpath):
 				return lambda: self.QueryModule(modpath, ismoduletype=False)
 
+			self.SetStatusText('Querying module schemas')
 			self.AddTaskBatch(
 				[
 					_makeQueryModTask(path)
@@ -323,6 +324,7 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.Schem
 		def _makeQueryStateTask(modpath):
 			return lambda: self.QueryModule(modpath, ismoduletype=True)
 
+		self.SetStatusText('Querying module types')
 		return self.AddTaskBatch(
 			[
 				_makeQueryStateTask(modpath)
@@ -334,6 +336,7 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.Schem
 
 	@loggedmethod
 	def _OnAllModuleTypesReceived(self):
+		self.SetStatusText('Loading module types')
 		self.AppSchema = schema_utils.AppSchemaBuilder(
 			appinfo=self.rawAppInfo,
 			modules=self.rawModuleInfos,
@@ -350,6 +353,7 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.Schem
 		self.AddTaskBatch(
 			[
 				lambda: self.BuildModuleProxies(),
+				lambda: self.SetStatusText('Querying module states...'),
 			] + [
 				_makeQueryStateTask(m.path)
 				for m in self.AppSchema.modules
@@ -358,16 +362,15 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.Schem
 			],
 			autostart=True)
 
+	@loggedmethod
 	def BuildModuleProxies(self):
-		self._LogBegin('BuildModuleProxies()')
-		try:
-			for modschema in self.AppSchema.modules:
-				self.ProxyManager.AddProxy(modschema)
-		finally:
-			self._LogEnd()
+		self.SetStatusText('Building module proxies')
+		for modschema in self.AppSchema.modules:
+			self.ProxyManager.AddProxy(modschema)
 
 	@loggedmethod
 	def NotifyAppSchemaLoaded(self):
+		self.SetStatusText('App schema loaded')
 		self.AppHost.OnAppSchemaLoaded(self.AppSchema)
 
 	def QueryModuleState(self, modpath, params=None):
