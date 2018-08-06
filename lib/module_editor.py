@@ -637,7 +637,10 @@ def _GetSelected():
 		return []
 	selected = pane.owner.selectedChildren
 	if not selected:
-		selected = [pane.owner.currentChild]
+		try:
+			selected = [pane.owner.currentChild]
+		except:
+			return [pane.owner]
 	return selected
 
 def _GetContext():
