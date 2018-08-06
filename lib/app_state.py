@@ -247,7 +247,8 @@ class ModuleStateManager(app_components.ComponentBase, common.ActionsExt):
 					'vmode': 'fill',
 					'hmode': 'fixed',
 					'w': 30,
-				}))
+				},
+				dropscript=self.ownerComp.op('drop')))
 		self.statemarkers.append(marker)
 		common.CreateFromTemplate(
 			template=dest.op('on_marker_click_template'),
@@ -409,5 +410,44 @@ class ModuleStateManager(app_components.ComponentBase, common.ActionsExt):
 			self.ShowMarkerContextMenu(marker)
 		elif action == 'lselect':
 			self.ApplyState(index=marker.digits)
+
+	@loggedmethod
+	def HandlePresetDrop(self, presetmarker, targetmarker=None):
+		connector = self._ModuleHostConnector
+		if not connector:
+			return
+		typepath = presetmarker.par.Typepath.eval()
+		params = presetmarker.par.Params.eval()
+		partial = presetmarker.par.Partial.eval() or connector.modschema.masterispartialmatch
+		if typepath != connector.modschema.masterpath:
+			self._LogEvent('Unsupported preset type: {!r} (should be {!r})'.format(
+				typepath, connector.modschema.masterpath))
+			return
+		if not targetmarker:
+			connector.SetParVals(
+				parvals=params,
+				resetmissing=not partial)
+		else:
+			state = schema.ModuleState(
+				name=presetmarker.par.Name.eval(),
+				params=params)
+			if targetmarker in self.ownerComp.ops('markers_panel', 'markers_panel/add_states', 'markers_panel/add_states/*'):
+				self.AddState(state=state)
+			elif 'vjz4presetmarker' in targetmarker.tags:
+				self.SetState(index=targetmarker.digits, state=state)
+			else:
+				self._LogEvent('Unsupported drop target: {}'.format(targetmarker))
+
+	def HandleDrop(self, dropName, baseName, targetop):
+		sourceparent = op(baseName)
+		if not sourceparent:
+			return
+		sourceop = sourceparent.op(dropName)
+		if not sourceop:
+			return
+		if 'vjz4presetmarker' in sourceop.tags:
+			self.HandlePresetDrop(presetmarker=sourceop, targetmarker=targetop)
+		else:
+			self._LogEvent('Unsupported drop source: {}'.format(sourceop))
 
 

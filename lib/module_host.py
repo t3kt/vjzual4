@@ -582,7 +582,7 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 		if not sourceop:
 			return
 		if 'vjz4presetmarker' in sourceop.tags:
-			self._HandlePresetDrop(sourceop)
+			self.StateManager.HandlePresetDrop(presetmarker=sourceop, targetmarker=None)
 		else:
 			self._LogEvent('Unsupported drop source: {}'.format(sourceop))
 
