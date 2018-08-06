@@ -85,6 +85,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		self.previewMarkers = []  # type: List[op]
 		self.statefilename = None
 		self.OnDetach()
+		self.SetStatusText(None)
 
 	@property
 	def _RemoteClient(self) -> remote_client.RemoteClient:
@@ -152,6 +153,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		self.SetPreviewSource(None)
 		common.OPExternalStorage.CleanOrphans()
 		mod.td.run('op({!r}).SetAutoMapModule(None)'.format(self.ControlMapper.path), delayFrames=1)
+		self.SetStatusText('Detached from client')
 
 	def OnTDPreSave(self):
 		pass
@@ -522,6 +524,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		state = schema.AppState.ReadJsonFrom(filename)
 		self.LoadState(state)
 
+	def SetStatusText(self, text):
+		o = self.ownerComp.op('bottom_bar/status_bar/text')
+		o.par.text = text or ''
+
 def _ParseAddress(text: str, defaulthost='localhost', defaultport=9500) -> Tuple[str, int]:
 	text = text and text.strip()
 	if not text:
@@ -571,6 +577,7 @@ class ModuleManager(app_components.ComponentBase):
 
 	@loggedmethod
 	def _BuildSubModuleHosts(self):
+		self.SetStatusText('Building module hosts...')
 		dest = self.ownerComp
 		for m in dest.ops('mod__*'):
 			m.destroy()
@@ -598,6 +605,7 @@ class ModuleManager(app_components.ComponentBase):
 		def _makeInitTask(h, c):
 			return lambda: self._InitSubModuleHost(h, c)
 
+		self.SetStatusText('Attaching module hosts...')
 		return self.AddTaskBatch(
 			[
 				_makeInitTask(host, connector)
@@ -613,6 +621,7 @@ class ModuleManager(app_components.ComponentBase):
 
 	@loggedmethod
 	def _OnSubModuleHostsConnected(self):
+		self.SetStatusText('Module hosts connected')
 		self.UpdateModuleWidths()
 
 	def UpdateModuleWidths(self):
@@ -659,3 +668,27 @@ class ModuleManager(app_components.ComponentBase):
 			return
 		for modpath, modhost in self.modulehostsbypath.items():
 			modhost.LoadState(modstates.get(modpath))
+
+
+# class StatusBar(app_components.ComponentBase, common.ActionsExt):
+# 	def __init__(self, ownerComp):
+# 		app_components.ComponentBase.__init__(self, ownerComp)
+# 		common.ActionsExt.__init__(self, ownerComp, actions={})
+# 		self._AutoInitActionParams()
+# 		self.cleartask = None
+#
+# 	def AddMessage(self, text, duration=2000):
+# 		pass
+#
+# 	def ClearStatus(self):
+# 		self._CancelClearTask()
+# 		pass
+#
+# 	def _SetText(self, text):
+# 		self.ownerComp.op('text').par.text = text or ''
+#
+# 	def _CancelClearTask(self):
+# 		if not self.cleartask:
+# 			return
+# 		self.cleartask.kill()
+# 		self.cleartask = None
