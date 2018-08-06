@@ -35,6 +35,11 @@ try:
 except ImportError:
 	app_components = mod.app_components
 
+try:
+	import menu
+except ImportError:
+	menu = mod.menu
+
 
 class PresetManager(app_components.ComponentBase, common.ActionsExt):
 	"""
@@ -99,21 +104,21 @@ class PresetManager(app_components.ComponentBase, common.ActionsExt):
 		for preset in self.presets:
 			preset.AddToTable(dat)
 
-	@customloggedmethod(omitargs=['params'])
+	@customloggedmethod(omitargs=['state'])
 	def CreatePreset(
 			self,
 			name,
 			typepath,
-			params: dict,
+			state: schema.ModuleState,
 			ispartial=False) -> Optional[schema.ModulePreset]:
-		if not params or not typepath:
+		if not state or not typepath:
 			return None
 		if not name:
 			name = self._GenerateNewName(typepath)
 		preset = schema.ModulePreset(
 			name=name,
 			typepath=typepath,
-			params=dict(params),
+			state=state,
 			ispartial=ispartial)
 		self.presets.append(preset)
 		preset.AddToTable(self._PresetsTable)
@@ -126,21 +131,18 @@ class PresetManager(app_components.ComponentBase, common.ActionsExt):
 		if not name:
 			return
 		modschema = modconnector.modschema
-		params = modconnector.GetParVals()
 		ispartial = False
+		onlyparamnames = None
 		if modschema.masterispartialmatch:
 			modtype = self.AppHost.GetModuleTypeSchema(modschema.masterpath)
 			if modtype:
-				params = {
-					key: val
-					for key, val in params.items()
-					if key in modtype.parampartnames
-				}
+				onlyparamnames = modtype.paramsbyname.keys()
 				ispartial = True
+		state = modconnector.GetState(presetonly=True, onlyparamnames=onlyparamnames)
 		self.CreatePreset(
 			name=name,
 			typepath=modschema.masterpath,
-			params=params,
+			state=state,
 			ispartial=ispartial)
 
 	@loggedmethod
@@ -172,3 +174,240 @@ class PresetManager(app_components.ComponentBase, common.ActionsExt):
 				attrs=opattrs(
 					order=i,
 					nodepos=[200, -400 + (i * 150)]))
+
+class ModuleStateManager(app_components.ComponentBase, common.ActionsExt):
+	def __init__(self, ownerComp):
+		app_components.ComponentBase.__init__(self, ownerComp)
+		common.ActionsExt.__init__(self, ownerComp, actions={
+			'Clearstates': self.ClearStates,
+			'Capturestate': lambda: self.CaptureState(),
+		})
+		self._AutoInitActionParams()
+		self.statemarkers = []  # type: List[COMP]
+
+	@property
+	def _ModuleHost(self):
+		host = getattr(self.ownerComp.parent, 'ModuleHost')  # type: module_host.ModuleHost
+		return host
+
+	@property
+	def _ModuleHostConnector(self):
+		host = self._ModuleHost
+		return host.ModuleConnector if host else None
+
+	@loggedmethod
+	def LoadStates(self, states: 'List[schema.ModuleState]'):
+		self.ClearStates()
+		if states:
+			for state in states:
+				self.AddState(state)
+
+	@loggedmethod
+	def BuildStates(self) -> 'List[schema.ModuleState]':
+		states = []
+		for marker in self.statemarkers:
+			state = self._GetStateFromMarker(marker)
+			if state:
+				states.append(state)
+		return states
+
+	@staticmethod
+	def _GetStateFromMarker(marker):
+		if not marker or not marker.par.Populated:
+			return None
+		params = marker.par.Params.eval()
+		if not params:
+			return None
+		return schema.ModuleState(
+			name=marker.par.Name.eval() or None,
+			params=params)
+
+	@loggedmethod
+	def ClearStates(self):
+		for marker in self.statemarkers:
+			marker.destroy()
+		for o in self.ownerComp.ops('markers_panel/onstateclick__*'):
+			o.destroy()
+		self.statemarkers.clear()
+
+	@simpleloggedmethod
+	def AddState(
+			self,
+			state: schema.ModuleState=None):
+		i = len(self.statemarkers)
+		dest = self.ownerComp.op('markers_panel')
+		marker = self.UiBuilder.CreateStateSlotMarker(
+			dest=dest,
+			name='state__{}'.format(i),
+			state=state,
+			attrs=opattrs(
+				nodepos=[300, 500 + -200 * i],
+				order=i,
+				parvals={
+					'vmode': 'fill',
+					'hmode': 'fixed',
+					'w': 30,
+				}))
+		self.statemarkers.append(marker)
+		common.CreateFromTemplate(
+			template=dest.op('on_marker_click_template'),
+			dest=dest,
+			name='onstateclick__{}'.format(i),
+			attrs=opattrs(
+				nodepos=[150, 500 + -200 * i],
+				parvals={
+					'panel': marker.op('marker'),
+					'active': True,
+				}
+			))
+
+	def _GetStateMarker(self, index, warn=False):
+		if index is None or index < 0 or index >= len(self.statemarkers):
+			if warn:
+				self._LogEvent('Warning: no state marker at index {}'.format(index))
+			return None
+		return self.statemarkers[index]
+
+	@simpleloggedmethod
+	def _UpdateStateMarker(self, marker, state: schema.ModuleState):
+		marker.par.Name = (state and state.name) or ''
+		marker.par.Populated = bool(state and state.params)
+		marker.par.Params = repr((state and state.params) or None)
+
+	@simpleloggedmethod
+	def SetState(self, index, state: schema.ModuleState=None):
+		marker = self._GetStateMarker(index, warn=True)
+		if not marker:
+			return
+		self._UpdateStateMarker(marker, state)
+
+	@loggedmethod
+	def CaptureState(
+			self,
+			name=None,
+			index=None,
+			promptforname=False):
+		connector = self._ModuleHostConnector
+
+		def _docapture(n):
+			if not connector:
+				state = schema.ModuleState(name=n) if n else None
+			else:
+				state = schema.ModuleState(
+					name=n,
+					params=connector.GetParVals(presetonly=True))
+			if index is None:
+				self.AddState(state)
+			else:
+				marker = self._GetStateMarker(index, warn=True)
+				if not marker:
+					return
+				self._UpdateStateMarker(marker, state)
+
+		if promptforname:
+			ui_builder.ShowPromptDialog(
+				title='Capture module state',
+				text='State name',
+				oktext='Capture', canceltext='Cancel',
+				default=name,
+				ok=_docapture)
+		else:
+				_docapture(name)
+
+	@loggedmethod
+	def RemoveState(self, index):
+		marker = self._GetStateMarker(index, warn=True)
+		if not marker:
+			return
+		marker.destroy()
+		self.statemarkers.remove(marker)
+		for i in range(index, len(self.statemarkers)):
+			self.statemarkers[i].name = 'state__{}'.format(i)
+
+	@loggedmethod
+	def ApplyState(self, index):
+		connector = self._ModuleHostConnector
+		if not connector:
+			return
+		marker = self._GetStateMarker(index, warn=True)
+		if not marker:
+			return
+		state = self._GetStateFromMarker(marker)
+		if not state:
+			return
+		connector.SetParVals(state.params)
+
+	def RenameState(self, index):
+		marker = self._GetStateMarker(index, warn=True)
+		if not marker:
+			return
+
+		def _updatename(name):
+			marker.par.Name = name
+
+		ui_builder.ShowPromptDialog(
+			title='Rename module state',
+			text='State name',
+			oktext='Rename', canceltext='Cancel',
+			ok=_updatename)
+
+	def ShowContextMenu(self):
+		if not self._ModuleHostConnector:
+			return
+		menu.fromMouse().Show(
+			items=self._GetContextMenuItems(),
+			autoClose=True)
+
+	def _GetContextMenuItems(self, marker=None):
+		if not self._ModuleHostConnector:
+			return None
+		if marker and 'vjz4stateslotmarker' not in marker.tags:
+			marker = None
+		items = []
+		if marker:
+			populated = bool(marker.par.Populated and marker.par.Params.eval())
+			index = marker.digits
+			items += [
+				menu.Item(
+					'Apply state',
+					disabled=not populated,
+					callback=lambda: self.ApplyState(index)),
+				menu.Item(
+					'Delete state',
+					disabled=not populated,
+					callback=lambda: self.RemoveState(index)),
+				menu.Item(
+					'Recapture state',
+					callback=lambda: self.CaptureState(index=index)),
+				menu.Item(
+					'Rename state',
+					callback=lambda: self.RenameState(index),
+					dividerafter=True),
+			]
+		items += [
+				menu.Item(
+					'Capture new state',
+					callback=lambda: self.CaptureState()),
+				menu.Item(
+					'Capture new state as...',
+					callback=lambda: self.CaptureState(promptforname=True)),
+				menu.Item(
+					'Clear all states',
+					disabled=not self.statemarkers,
+					callback=lambda: self.ClearStates()),
+		]
+		return items
+
+	def ShowMarkerContextMenu(self, marker):
+		menu.fromButton(marker).Show(
+			items=self._GetContextMenuItems(marker),
+			autoClose=True)
+
+	@loggedmethod
+	def OnMarkerClick(self, marker, action):
+		if action == 'rselect':
+			self.ShowMarkerContextMenu(marker)
+		elif action == 'lselect':
+			self.ApplyState(index=marker.digits)
+
+

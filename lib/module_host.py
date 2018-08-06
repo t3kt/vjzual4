@@ -4,6 +4,7 @@ print('vjz4/module_host.py loading')
 
 if False:
 	from _stubs import *
+	from app_state import ModuleStateManager
 
 try:
 	import schema
@@ -154,14 +155,14 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 			m.LoadUIState()
 
 	def BuildState(self):
-		return schema.ModuleState(
+		return schema.ModuleHostState(
 			collapsed=self.ownerComp.par.Collapsed.eval(),
 			uimode=self.ownerComp.par.Uimode.eval(),
-			params=self.ModuleConnector and self.ModuleConnector.GetParVals()
-		)
+			currentstate=self.ModuleConnector and schema.ModuleState(params=self.ModuleConnector.GetParVals()),
+			states=self.ModuleConnector and self.StateManager.BuildStates())
 
 	@loggedmethod
-	def LoadState(self, modstate: schema.ModuleState):
+	def LoadState(self, modstate: schema.ModuleHostState):
 		if not modstate:
 			return
 		if modstate.collapsed is not None:
@@ -170,7 +171,8 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 			self.ownerComp.par.Uimode = modstate.uimode
 		if not self.ModuleConnector:
 			return
-		self.ModuleConnector.SetParVals(modstate.params)
+		self.ModuleConnector.SetParVals(modstate.currentstate.params)
+		self.StateManager.LoadStates(modstate.states)
 
 	@property
 	def ParentHost(self) -> 'ModuleHost':
@@ -203,6 +205,10 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 		return self.ownerComp.op('module_header/progress_bar')
 
 	@property
+	def StateManager(self) -> 'ModuleStateManager':
+		return self.ownerComp.op('states')
+
+	@property
 	def _SubModuleHosts(self) -> 'List[ModuleHost]':
 		return self.ownerComp.ops('sub_modules_panel/mod__*')
 
@@ -230,10 +236,14 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 		bodypanel = self.ownerComp.op('body_panel')
 		bodypanel.par.opacity = 1
 		header.par.Previewactive = False
+		statemanager = self.StateManager
+		statemanager.ClearStates()
+		statemanager.par.h = 0
 		uimodenames = []
 		if connector:
 			title.par.text = titlehelp.text = connector.modschema.label
 			if connector.modschema.hasnonbypasspars:
+				statemanager.par.h = 20
 				uimodenames.append('ctrl')
 			if self._DataNodes:
 				uimodenames.append('nodes')
@@ -392,7 +402,7 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 		if self.ownerComp.par.Collapsed:
 			panels = self.ownerComp.ops('module_header')
 		else:
-			panels = self.ownerComp.ops('module_header', 'nodes_panel', 'controls_panel', 'sub_modules_panel')
+			panels = self.ownerComp.ops('module_header', 'states', 'nodes_panel', 'controls_panel', 'sub_modules_panel')
 		h = self.HeightOfVisiblePanels(panels)
 		if 0 < maxheight < h:
 			h = maxheight
@@ -645,10 +655,13 @@ class ModuleHostConnector:
 			return None
 		return 'op({!r}).par.{}'.format(par.owner.path, par.name)
 
-	def GetParVals(self) -> Optional[Dict]:
+	def GetParVals(self, mappableonly=False, presetonly=False, onlyparamnames=None) -> Optional[Dict]:
 		return None
 
 	def SetParVals(self, parvals: Dict=None, resetmissing=False):
+		pass
+
+	def GetState(self, presetonly=False, onlyparamnames=None) -> schema.ModuleState:
 		pass
 
 	@property

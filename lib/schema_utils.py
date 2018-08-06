@@ -254,6 +254,7 @@ class _BaseModuleSchemaBuilder:
 		hidden = attrs['hidden'] == '1' if (attrs.get('hidden') not in ('', None)) else labelattrs.get('hidden', False)
 		advanced = attrs['advanced'] == '1' if (attrs.get('advanced') not in ('', None)) else labelattrs.get('advanced', False)
 		specialtype = self._DetermineSpecialType(name, parinfo.style, attrs, labelattrs)
+		allowpresets = attrs['allowpresets'] == '1' if (attrs.get('allowpresets') not in ('', None)) else None
 
 		label = attrs.get('label') or label
 
@@ -277,6 +278,7 @@ class _BaseModuleSchemaBuilder:
 			advanced=advanced,
 			specialtype=specialtype,
 			mappable=mappable,
+			allowpresets=allowpresets,
 			helptext=trygetdictval(attrs, 'helptext', 'help', parse=str),
 			groupname=trygetdictval(attrs, 'group', 'groupname', parse=str),
 			parts=[self._BuildParamPart(part) for part in partuplet],
