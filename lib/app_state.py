@@ -166,14 +166,39 @@ class PresetManager(app_components.ComponentBase, common.ActionsExt):
 		uibuilder = self.UiBuilder
 		if not uibuilder:
 			return
+		dropscript = self.ownerComp.op('drop')
 		for i, preset in enumerate(sorted(self.presets, key=attrgetter('typepath', 'name'))):
 			uibuilder.CreatePresetMarker(
 				dest=dest,
-				name='pset__{}'.format(i + 1),
+				name='pset__{}'.format(i),
 				preset=preset,
 				attrs=opattrs(
+					dropscript=dropscript,
 					order=i,
-					nodepos=[200, -400 + (i * 150)]))
+					nodepos=[200, 400 + (i * -150)]))
+
+	def _PromptOverwritePreset(self, index, state: schema.ModuleState, name, typepath):
+		if index < 0 or index >= len(self.presets):
+			self._LogEvent('Invalid preset index: {}'.format(index))
+			return
+		existingpreset = self.presets[index]
+		if typepath != existingpreset.typepath:
+			self._LogEvent('Preset type mismatch: (new) {} != (existing) {}'.format(typepath, existingpreset.typepath))
+			return
+
+		def _overwrite():
+			if name:
+				existingpreset.name = name
+			existingpreset.state = state
+			self._BuildPresetTable()
+			self._BuildPresetMarkers()
+
+		ui_builder.ShowPromptDialog(
+			title='Overwrite preset {}?',
+			textentry=False,
+			oktext='Overwrite',
+			canceltext='Cancel',
+			ok=_overwrite)
 
 	@loggedmethod
 	def HandleDrop(self, dropName, baseName, targetop):
@@ -185,9 +210,33 @@ class PresetManager(app_components.ComponentBase, common.ActionsExt):
 			return
 		if not targetop:
 			return
+		if 'vjz4stateslotmarker' not in sourceop.tags or not hasattr(sourceop.parent, 'ModuleHost'):
+			self._LogEvent('Unsupported drop source: {}'.format(sourceop))
+			return
+		presetmarker = sourceop
+		modhost = presetmarker.parent.ModuleHost  # type: module_host.ModuleHost
+		connector = modhost.ModuleConnector
+		params = presetmarker.par.Params.eval()
+		if not connector or not params:
+			self._LogEvent('Unsupported drop source: {}'.format(sourceop))
+			return
+		state = schema.ModuleState(
+			name=presetmarker.par.Name.eval() or None,
+			params=params)
 		if targetop == self.ownerComp.op('presets_panel'):
-			pass
-		pass
+			self.CreatePreset(
+				name=presetmarker.par.Name.eval() or None,
+				typepath=connector.modschema.masterpath,
+				state=state,
+				ispartial=False)
+		elif 'vjz4presetmarker' in targetop.tags or 'vjz4presetmarker' in targetop.parent().tags:
+			self._PromptOverwritePreset(
+				index=targetop.digits,
+				state=state,
+				name=presetmarker.par.Name.eval(),
+				typepath=connector.modschema.masterpath)
+		else:
+			self._LogEvent('Unsupported drop target: {}'.format(targetop))
 
 
 class ModuleStateManager(app_components.ComponentBase, common.ActionsExt):
@@ -448,7 +497,7 @@ class ModuleStateManager(app_components.ComponentBase, common.ActionsExt):
 				params=params)
 			if targetmarker in self.ownerComp.ops('markers_panel', 'markers_panel/add_states', 'markers_panel/add_states/*'):
 				self.AddState(state=state)
-			elif 'vjz4presetmarker' in targetmarker.tags:
+			elif 'vjz4stateslotmarker' in targetmarker.tags:
 				self.SetState(index=targetmarker.digits, state=state)
 			else:
 				self._LogEvent('Unsupported drop target: {}'.format(targetmarker))
