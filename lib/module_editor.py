@@ -40,6 +40,7 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 				'Cleanparameterattrs': lambda: self.CleanParameterAttrs(),
 				'Addmissingparams': lambda: self.AddMissingParams(),
 				'Fixmessedupdrywetswitchoops': self.FixMessedUpDryWetSwitchOops,
+				'Generatetypeid': self.GenerateModuleTypeId,
 				'Reloadcode': self.ReloadCode,
 			},
 			autoinitparexec=True)
@@ -146,6 +147,23 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 			return
 		self._LogEvent('Saving module to {}'.format(toxfile))
 		module.save(toxfile)
+
+	@loggedmethod
+	def GenerateModuleTypeId(self):
+		module = self.Module
+		self._LogEvent('module: {}'.format(module))
+		if not module:
+			return
+		if hasattr(module.par, 'Comptypeid') and module.par.Comptypeid:
+			self._LogEvent('module already has type id: {}'.format(module.par.Comptypeid))
+			return
+		name = module.name
+		if name.endswith('_module'):
+			name = name.replace('_module', '')
+		name = name.replace('_', '')
+		typeid = 'com.optexture.vjzual4.module.' + name
+		self._LogEvent('New type id: {!r}'.format(typeid))
+		self.UpdateModuleMetadata(typeid=typeid)
 
 	@loggedmethod
 	def CleanParameterAttrs(self):
