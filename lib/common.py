@@ -72,6 +72,10 @@ class ExtensionBase(LoggableBase):
 	def __init__(self, ownerComp):
 		self.ownerComp = ownerComp  # type: op
 		self.enablelogging = True
+		self.par = ownerComp.par
+		self.path = ownerComp.path
+		self.op = ownerComp.op
+		self.ops = ownerComp.ops
 
 	def _GetLogId(self):
 		if not self.ownerComp.valid or not hasattr(self.ownerComp.par, 'opshortcut'):
@@ -349,6 +353,12 @@ class Future:
 		return future
 
 	@classmethod
+	def immediateerror(cls, error, onlisten=None, oninvoke=None):
+		future = cls(onlisten=onlisten, oninvoke=oninvoke)
+		future.fail(error)
+		return future
+
+	@classmethod
 	def of(cls, obj):
 		if isinstance(obj, Future):
 			return obj
@@ -484,6 +494,7 @@ class opattrs:
 			parvals=None,
 			parexprs=None,
 			storage=None,
+			dropscript=None,
 	):
 		self.order = order
 		self.nodepos = nodepos
@@ -492,6 +503,7 @@ class opattrs:
 		self.parvals = parvals  # type: Dict[str, Any]
 		self.parexprs = parexprs  # type: Dict[str, str]
 		self.storage = storage  # type: Dict[str, Any]
+		self.dropscript = dropscript  # type: Union[OP, str]
 
 	def override(self, other: 'opattrs'):
 		if not other:
@@ -510,6 +522,7 @@ class opattrs:
 			else:
 				self.storage = dict(other.storage)
 		self.panelparent = other.panelparent or self.panelparent
+		self.dropscript = other.dropscript or self.dropscript
 		self.parvals = mergedicts(self.parvals, other.parvals)
 		self.parexprs = mergedicts(self.parexprs, other.parexprs)
 		return self
@@ -530,6 +543,9 @@ class opattrs:
 			comp.tags.update(self.tags)
 		if self.panelparent:
 			self.panelparent.outputCOMPConnectors[0].connect(comp)
+		if self.dropscript:
+			comp.par.drop = 'legacy'
+			comp.par.dropscript = self.dropscript
 		if self.storage:
 			for key, val in self.storage.items():
 				if val is None:

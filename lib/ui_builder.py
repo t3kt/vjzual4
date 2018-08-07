@@ -6,8 +6,6 @@ if False:
 	from _stubs import *
 	from _stubs.PopDialogExt import PopDialogExt
 	from module_host import ModuleHostConnector
-	from control_mapping import MappingEditor
-	from app_state import ModulePreset
 
 try:
 	import common
@@ -398,27 +396,6 @@ class UiBuilder:
 			return None
 		return _register(ctrl)
 
-	def CreateMappingEditor(
-			self, dest, name,
-			mapping: schema.ControlMapping,
-			attrs: opattrs=None, **kwargs):
-		return CreateFromTemplate(
-			template=self.ownerComp.op('mapping_editor'),
-			dest=dest, name=name,
-			attrs=opattrs.merged(
-				opattrs(
-					parvals={
-						'Mapid': mapping.mapid or '',
-						'Modpath': mapping.path or '',
-						'Param': mapping.param or '',
-						'Control': mapping.control or '',
-						'Enabled': bool(mapping.enable),
-						'Rangelow': mapping.rangelow,
-						'Rangehigh': mapping.rangehigh,
-					}),
-				attrs,
-				**kwargs))
-
 	def CreateMappingMarker(
 			self, dest, name,
 			mapping: schema.ControlMapping,
@@ -464,7 +441,7 @@ class UiBuilder:
 				**kwargs)
 		)
 		common.OPExternalStorage.Store(ctrl, 'controlinfo', control)
-		return ctrl  # type: MappingEditor
+		return ctrl
 
 	def CreateNodeMarker(
 			self, dest, name,
@@ -493,7 +470,7 @@ class UiBuilder:
 
 	def CreatePresetMarker(
 			self, dest, name,
-			preset,  # type: ModulePreset
+			preset,  # type: schema.ModulePreset
 			attrs: opattrs=None, **kwargs):
 		return CreateFromTemplate(
 			template=self.ownerComp.op('module_preset_marker'),
@@ -508,9 +485,54 @@ class UiBuilder:
 						'hmode': 'fill'
 					},
 					parexprs={
-						'Params': repr(preset.params),
+						'Params': repr(preset.state.params),
 					},
 					tags=['vjz4presetmarker']),
+				attrs,
+				**kwargs))
+
+	def CreateStateSlotMarker(
+			self, dest, name,
+			state=None,  # type: Optional[schema.ModuleState]
+			attrs: opattrs=None, **kwargs):
+		return CreateFromTemplate(
+			template=self.ownerComp.op('module_state_slot_marker'),
+			dest=dest, name=name,
+			attrs=opattrs.merged(
+				opattrs(
+					parvals={
+						'Name': (state.name if state else None) or '',
+						'Populated': state is not None,
+						'h': 30,
+						'w': 30,
+					},
+					parexprs={
+						'Params': repr((state and state.params) or None),
+					},
+					tags=['vjz4stateslotmarker']),
+				attrs,
+				**kwargs))
+
+	def CreateLfoGenerator(
+			self, dest, name,
+			spec,  # type: schema.ModulationSourceSpec
+			attrs: opattrs=None, **kwargs):
+		return CreateFromTemplate(
+			template=self.ownerComp.op('lfo_generator'),
+			dest=dest, name=name,
+			attrs=opattrs.merged(
+				opattrs(
+					parvals={
+						'Name': spec.name,
+						'Play': spec.play,
+						'Sync': spec.sync,
+						'Syncperiod': spec.syncperiod,
+						'Freeperiod': spec.freeperiod,
+						'Shape': spec.shape,
+						'Phase': spec.phase,
+						'Bias': spec.bias,
+					},
+					tags=['vjz4lfo', 'vjz4modsource']),
 				attrs,
 				**kwargs))
 
@@ -530,6 +552,7 @@ def ShowPromptDialog(
 		title=None,
 		text=None,
 		default='',
+		textentry=True,
 		oktext='OK',
 		canceltext='Cancel',
 		ok: Callable=None,
@@ -537,14 +560,17 @@ def ShowPromptDialog(
 	def _callback(info):
 		if info['buttonNum'] == 1:
 			if ok:
-				ok(info['enteredText'])
+				if not text:
+					ok()
+				else:
+					ok(info.get('enteredText'))
 		elif info['buttonNum'] == 2:
 			if cancel:
 				cancel()
 	_getPopDialog().Open(
 		title=title,
 		text=text,
-		textEntry=default,
+		textEntry=False if not textentry else (default or ''),
 		buttons=[oktext, canceltext],
 		enterButton=1, escButton=2, escOnClickAway=True,
 		callback=_callback)

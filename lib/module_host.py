@@ -1,26 +1,10 @@
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 print('vjz4/module_host.py loading')
 
 if False:
 	from _stubs import *
-	from ui_builder import UiBuilder
-	from app_host import AppHost
-
-try:
-	import td
-except ImportError:
-	pass
-
-try:
-	import comp_metadata
-except ImportError:
-	comp_metadata = mod.comp_metadata
-
-try:
-	import data_node
-except ImportError:
-	data_node = mod.data_node
+	from app_state import ModuleStateManager
 
 try:
 	import schema
@@ -28,23 +12,17 @@ except ImportError:
 	schema = mod.schema
 
 try:
-	import app_state
+	import app_components
 except ImportError:
-	app_state = mod.app_state
-ModuleState = app_state.ModuleState
+	app_components = mod.app_components
 
 try:
 	import common
 except ImportError:
 	common = mod.common
-cleandict, mergedicts, trygetpar = common.cleandict, common.mergedicts, common.trygetpar
+cleandict, mergedicts = common.cleandict, common.mergedicts
 Future = common.Future
 loggedmethod = common.loggedmethod
-
-try:
-	import control_mapping
-except ImportError:
-	control_mapping = mod.control_mapping
 
 try:
 	import menu
@@ -65,10 +43,10 @@ def _GetOrAdd(d, key, default):
 		d[key] = val = default
 	return val
 
-class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
+class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQueueExt):
 	"""Base class for components that host modules, such as ModuleHost or ModuleEditor."""
 	def __init__(self, ownerComp):
-		common.ExtensionBase.__init__(self, ownerComp)
+		app_components.ComponentBase.__init__(self, ownerComp)
 		common.TaskQueueExt.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions={
 			'Clearuistate': self.ClearUIState,
@@ -78,8 +56,6 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		self.ModuleConnector = None  # type: ModuleHostConnector
 		self.controlsbyparam = {}  # type: Dict[str, COMP]
 		self.parampartsbycontrolpath = {}  # type: Dict[str, schema.ParamPartSchema]
-		self.Mappings = control_mapping.ModuleControlMap()
-		self.UiModeNames = DependList([])
 		self._AutoInitActionParams()
 		self.ownerComp.tags.add('vjz4modhost')
 
@@ -103,10 +79,6 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 	@property
 	def _NodeMarkersBuilt(self):
 		return not self._Params or any(self.ownerComp.ops('nodes_panel/node__*'))
-
-	@property
-	def _MappingEditorsBuilt(self):
-		return not self._Params or any(self.ownerComp.ops('mappings_panel/map__*'))
 
 	def OnTDPreSave(self):
 		for o in self.ownerComp.ops('controls_panel/par__*', 'sub_modules_panel/mod__*'):
@@ -183,14 +155,14 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			m.LoadUIState()
 
 	def BuildState(self):
-		return ModuleState(
+		return schema.ModuleHostState(
 			collapsed=self.ownerComp.par.Collapsed.eval(),
 			uimode=self.ownerComp.par.Uimode.eval(),
-			params=self.ModuleConnector and self.ModuleConnector.GetParVals()
-		)
+			currentstate=self.ModuleConnector and schema.ModuleState(params=self.ModuleConnector.GetParVals()),
+			states=self.ModuleConnector and self.StateManager.BuildStates())
 
 	@loggedmethod
-	def LoadState(self, modstate: app_state.ModuleState):
+	def LoadState(self, modstate: schema.ModuleHostState):
 		if not modstate:
 			return
 		if modstate.collapsed is not None:
@@ -199,17 +171,13 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			self.ownerComp.par.Uimode = modstate.uimode
 		if not self.ModuleConnector:
 			return
-		self.ModuleConnector.SetParVals(modstate.params)
+		self.ModuleConnector.SetParVals(modstate.currentstate.params)
+		self.StateManager.LoadStates(modstate.states)
 
 	@property
 	def ParentHost(self) -> 'ModuleHost':
 		parent = getattr(self.ownerComp.parent, 'ModuleHost', None)
 		return parent or self.AppHost
-
-	@property
-	def AppHost(self):
-		apphost = getattr(self.ownerComp.parent, 'AppHost', None)  # type: AppHost
-		return apphost
 
 	@property
 	def ModulePath(self):
@@ -237,6 +205,10 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		return self.ownerComp.op('module_header/progress_bar')
 
 	@property
+	def StateManager(self) -> 'ModuleStateManager':
+		return self.ownerComp.op('states')
+
+	@property
 	def _SubModuleHosts(self) -> 'List[ModuleHost]':
 		return self.ownerComp.ops('sub_modules_panel/mod__*')
 
@@ -253,25 +225,30 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		header = self.ownerComp.op('module_header')
 		bypassbutton = header.op('bypass_button')
 		previewbutton = header.op('preview_button')
+		automapbutton = header.op('automap_button')
 		bypassbutton.par.display = False
 		bypassbutton.par.Value1.expr = ''
 		previewbutton.par.display = False
+		automapbutton.par.display = False
 		title = header.op('panel_title/bg')
 		titlehelp = header.op('panel_title/help')
 		title.par.text = titlehelp.text = ''
 		bodypanel = self.ownerComp.op('body_panel')
 		bodypanel.par.opacity = 1
 		header.par.Previewactive = False
-		self.UiModeNames.clear()
+		statemanager = self.StateManager
+		statemanager.ClearStates()
+		statemanager.par.h = 0
+		uimodenames = []
 		if connector:
 			title.par.text = titlehelp.text = connector.modschema.label
-			if self._Params:
-				self.UiModeNames.append('ctrl')
+			if connector.modschema.hasnonbypasspars:
+				statemanager.par.h = 20
+				uimodenames.append('ctrl')
 			if self._DataNodes:
-				self.UiModeNames.append('nodes')
-			self.UiModeNames.append('map')
+				uimodenames.append('nodes')
 			if connector.modschema.childmodpaths:
-				self.UiModeNames.append('submods')
+				uimodenames.append('submods')
 			if connector.modschema.hasbypass:
 				bypassexpr = connector.GetParExpr('Bypass')
 				bypassbutton.par.display = True
@@ -279,8 +256,26 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 				bodypanel.par.opacity.expr = '0.5 if {} else 1'.format(bypassexpr)
 			if connector.modschema.primarynode:
 				previewbutton.par.display = True
-		else:
-			self.UiModeNames.append('nodes')
+			if connector.modschema.hasmappable:
+				automapbutton.par.display = True
+			apphost = self.AppHost
+			if apphost:
+				apphost.RegisterModuleHost(self)
+		if not uimodenames:
+			uimodenames.append('nodes')
+		labelsbyname = {
+			'ctrl': 'Controls',
+			'nodes': 'Data Nodes',
+			'submods': 'Sub-Modules',
+		}
+		uimodelabels = [labelsbyname[m] for m in uimodenames]
+		uimodepar = self.ownerComp.par.Uimode
+		uimodepar.menuNames = uimodenames
+		uimodepar.menuLabels = uimodelabels
+		for mode in ['submods', 'ctrl', 'nodes']:
+			if mode in uimodenames:
+				uimodepar.val = mode
+				break
 
 		hostcore = self.ownerComp.op('host_core')
 		self._BuildParamTable(hostcore.op('set_param_table'))
@@ -399,37 +394,6 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 				nodepos=[100, -200 * i])
 		dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
 
-	def BuildMappingEditors(self, dest):
-		uibuilder = self.UiBuilder
-		for edit in dest.ops('map__*'):
-			edit.destroy()
-		if not self.ModuleConnector or not uibuilder:
-			return
-		for i, (parname, mapping) in enumerate(self.Mappings.GetAllMappings()):
-			uibuilder.CreateMappingEditor(
-				dest=dest,
-				name='map__' + parname,
-				paramname=parname,
-				ctrltype='slider', #TODO: FIX THIS
-				order=i,
-				nodepos=[100, -100 * i],
-				parvals=mergedicts(
-					{
-						'Control': mapping.control,
-						'Enabled': mapping.enable,
-					}),
-				parexprs=mergedicts(
-					{
-						# TODO: BIND WITH EXPRESSIONS!!
-					}
-				))
-		dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
-
-	def BuildMappingEditorsIfNeeded(self):
-		if self.ownerComp.par.Uimode == 'map' and not self.ownerComp.par.Collapsed and not self._MappingEditorsBuilt:
-			panel = self.ownerComp.op('mappings_panel')
-			self.BuildMappingEditors(panel)
-
 	@loggedmethod
 	def UpdateModuleHeight(self):
 		if not self.ownerComp.par.Autoheight:
@@ -438,7 +402,7 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		if self.ownerComp.par.Collapsed:
 			panels = self.ownerComp.ops('module_header')
 		else:
-			panels = self.ownerComp.ops('module_header', 'nodes_panel', 'controls_panel', 'sub_modules_panel', 'mappings_panel')
+			panels = self.ownerComp.ops('module_header', 'states', 'nodes_panel', 'controls_panel', 'sub_modules_panel')
 		h = self.HeightOfVisiblePanels(panels)
 		if 0 < maxheight < h:
 			h = maxheight
@@ -505,17 +469,6 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		menu.fromMouse().Show(
 			items=self._GetContextMenuItems(),
 			autoClose=True)
-
-	@property
-	def UiBuilder(self):
-		uibuilder = self.ownerComp.par.Uibuilder.eval()  # type: UiBuilder
-		if uibuilder:
-			return uibuilder
-		if hasattr(op, 'UiBuilder'):
-			return op.UiBuilder
-
-	def BuildMappingTable(self, dat):
-		self.Mappings.BuildMappingTable(dat)
 
 	def _ClearControls(self):
 		for o in self.ownerComp.ops('controls_panel/par__*'):
@@ -629,23 +582,9 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		if not sourceop:
 			return
 		if 'vjz4presetmarker' in sourceop.tags:
-			self._HandlePresetDrop(sourceop)
+			self.StateManager.HandlePresetDrop(presetmarker=sourceop, targetmarker=None)
 		else:
 			self._LogEvent('Unsupported drop source: {}'.format(sourceop))
-
-	@loggedmethod
-	def _HandlePresetDrop(self, presetmarker):
-		typepath = presetmarker.par.Typepath.eval()
-		params = presetmarker.par.Params.eval()
-		partial = presetmarker.par.Partial.eval() or self.ModuleConnector.modschema.masterispartialmatch
-		if typepath != self.ModuleConnector.modschema.masterpath:
-			self._LogEvent('Unsupported preset type: {!r} (should be {!r})'.format(
-				typepath, self.ModuleConnector.modschema.masterpath))
-			return
-		self._LogEvent('Applying preset {}'.format(presetmarker.par.Name))
-		self.ModuleConnector.SetParVals(
-			parvals=params,
-			resetmissing=not partial)
 
 	@loggedmethod
 	def HandleControlDrop(self, ctrl: COMP, dropName, baseName):
@@ -669,6 +608,14 @@ class ModuleHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			modpath=self.ModuleConnector.modpath,
 			paramname=parampart.name,
 			control=controlinfo)
+
+	@loggedmethod
+	def ToggleAutoMap(self):
+		apphost = self.AppHost
+		if not apphost or not self.ModuleConnector:
+			return
+		mapper = apphost.ControlMapper
+		mapper.ToggleAutoMapModule(self.ModuleConnector.modpath)
 
 
 class ModuleHostConnector:
@@ -694,10 +641,13 @@ class ModuleHostConnector:
 			return None
 		return 'op({!r}).par.{}'.format(par.owner.path, par.name)
 
-	def GetParVals(self) -> Optional[Dict]:
+	def GetParVals(self, mappableonly=False, presetonly=False, onlyparamnames=None) -> Optional[Dict]:
 		return None
 
 	def SetParVals(self, parvals: Dict=None, resetmissing=False):
+		pass
+
+	def GetState(self, presetonly=False, onlyparamnames=None) -> schema.ModuleState:
 		pass
 
 	@property

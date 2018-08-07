@@ -38,8 +38,13 @@ try:
 except ImportError:
 	common = mod.common
 
+try:
+	import app_components
+except ImportError:
+	app_components = mod.app_components
 
-class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt):
+
+class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.SchemaProvider, common.TaskQueueExt):
 	"""
 	Client which connects to a TD project that includes a RemoteServer, queries it for information about the project,
 	and facilitates communication between the two TD instances.
@@ -52,6 +57,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 	NDI.
 	"""
 	def __init__(self, ownerComp):
+		app_components.ComponentBase.__init__(self, ownerComp)
 		remote.RemoteBase.__init__(
 			self,
 			ownerComp,
@@ -59,7 +65,6 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 				'Connect': self.Connect,
 			},
 			handlers={
-				'confirmConnect': self._OnConfirmConnect,
 				'appInfo': self._OnReceiveAppInfo,
 				'modInfo': self._OnReceiveModuleInfo,
 			})
@@ -69,14 +74,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 		self.rawModuleInfos = []  # type: List[schema.RawModuleInfo]
 		self.rawModuleTypeInfos = []  # type: List[schema.RawModuleInfo]
 		self.AppSchema = None  # type: schema.AppSchema
-
-	@property
-	def _Callbacks(self):
-		dat = self.ownerComp.par.Callbacks.eval()
-		return dat.module if dat else None
-
-	def GetAppSchema(self):
-		return self.AppSchema
+		self.ServerInfo = None  # type: schema.ServerInfo
 
 	def GetModuleSchema(self, modpath) -> schema.ModuleSchema:
 		return self.AppSchema and self.AppSchema.modulesbypath.get(modpath)
@@ -100,26 +98,24 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 	def ProxyManager(self) -> module_proxy.ModuleProxyManager:
 		return self.ownerComp.op('proxy')
 
+	@loggedmethod
 	def Detach(self):
-		self._LogBegin('Detach()')
-		try:
-			self.Connected.val = False
-			self.Connection.ClearResponseTasks()
-			self.ClearTasks()
-			self.rawAppInfo = None
-			self.rawModuleInfos = []
-			self.AppSchema = None
-			self._BuildAppInfoTable()
-			self._ClearModuleTable()
-			self._ClearParamTables()
-			self._ClearDataNodesTable()
-			self.ProxyManager.par.Rootpath = ''
-			self.ProxyManager.ClearProxies()
-			callbacks = self._Callbacks
-			if callbacks and hasattr(callbacks, 'OnDetach'):
-				callbacks.OnDetach()
-		finally:
-			self._LogEnd()
+		self.Connected.val = False
+		self.Connection.ClearResponseTasks()
+		self.ClearTasks()
+		self.rawAppInfo = None
+		self.rawModuleInfos = []
+		self.AppSchema = None
+		self.ServerInfo = None
+		self._BuildAppInfoTable()
+		self._ClearModuleTable()
+		self._ClearParamTables()
+		self._ClearDataNodesTable()
+		self.ProxyManager.par.Rootpath = ''
+		self.ProxyManager.ClearProxies()
+		apphost = self.AppHost
+		if apphost:
+			apphost.OnDetach()
 
 	def Connect(self, host=None, port=None):
 		if host is None:
@@ -130,6 +126,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 			port = self.ownerComp.par.Commandsendport.eval()
 		else:
 			self.ownerComp.par.Commandsendport = port
+		self.SetStatusText('Connecting to {}:{}'.format(host, port))
 		self._LogBegin('Connect({}, {})'.format(host, port))
 		try:
 			self.Detach()
@@ -140,10 +137,14 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 		finally:
 			self._LogEnd()
 
+	@property
+	def _Version(self):
+		return 1
+
 	def BuildClientInfo(self):
 		connpar = self.Connection.par
 		return schema.ClientInfo(
-				version=1,
+				version=self._Version,
 				address=self.ownerComp.par.Localaddress.eval() or self.ownerComp.par.Localaddress.default,
 				cmdsend=self.ownerComp.par.Commandsendport.eval(),
 				cmdrecv=self.ownerComp.par.Commandreceiveport.eval(),
@@ -176,28 +177,34 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 		else:
 			return Future.immediate()
 
-	def _OnConfirmConnect(self, _):
+	def _OnConfirmConnect(self, cmdmesg: remote.CommandMessage):
 		self.Connected.val = True
-		callbacks = self._Callbacks
-		if callbacks and hasattr(callbacks, 'OnConnected'):
-			callbacks.OnConnected()
+		if not cmdmesg.arg:
+			self._LogEvent('No server info!')
+			serverinfo = schema.ServerInfo()
+		else:
+			serverinfo = schema.ServerInfo.FromJsonDict(cmdmesg.arg)  # type: schema.ServerInfo
+		if serverinfo.version is not None and serverinfo.version != self._Version:
+			raise Exception('Client/server version mismatch! client: {}, server: {}'.format(
+				self._Version, serverinfo.version))
+		self.ServerInfo = serverinfo
+		self.AppHost.OnConnected(serverinfo)
 		self.QueryApp()
 
 	def _OnConnectFailure(self, cmdmesg: remote.CommandMessage):
 		self._LogEvent('_OnConnectFailure({})'.format(cmdmesg))
 
+	@loggedmethod
 	def QueryApp(self):
-		self._LogBegin('QueryApp()')
-		try:
-			if not self.Connected:
-				return
-			self.Connection.SendRequest('queryApp').then(
-				success=self._OnReceiveAppInfo,
-				failure=self._OnQueryAppFailure)
-		finally:
-			self._LogEnd()
+		if not self.Connected:
+			return
+		self.SetStatusText('Querying app info...')
+		self.Connection.SendRequest('queryApp').then(
+			success=self._OnReceiveAppInfo,
+			failure=self._OnQueryAppFailure)
 
 	def _OnReceiveAppInfo(self, cmdmesg: remote.CommandMessage):
+		self.SetStatusText('App info received')
 		self._LogBegin('_OnReceiveAppInfo({!r})'.format(cmdmesg.arg))
 		try:
 			if not cmdmesg.arg:
@@ -210,6 +217,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 			def _makeQueryModTask(modpath):
 				return lambda: self.QueryModule(modpath, ismoduletype=False)
 
+			self.SetStatusText('Querying module schemas')
 			self.AddTaskBatch(
 				[
 					_makeQueryModTask(path)
@@ -316,6 +324,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 		def _makeQueryStateTask(modpath):
 			return lambda: self.QueryModule(modpath, ismoduletype=True)
 
+		self.SetStatusText('Querying module types')
 		return self.AddTaskBatch(
 			[
 				_makeQueryStateTask(modpath)
@@ -327,6 +336,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 
 	@loggedmethod
 	def _OnAllModuleTypesReceived(self):
+		self.SetStatusText('Loading module types')
 		self.AppSchema = schema_utils.AppSchemaBuilder(
 			appinfo=self.rawAppInfo,
 			modules=self.rawModuleInfos,
@@ -343,6 +353,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 		self.AddTaskBatch(
 			[
 				lambda: self.BuildModuleProxies(),
+				lambda: self.SetStatusText('Querying module states...'),
 			] + [
 				_makeQueryStateTask(m.path)
 				for m in self.AppSchema.modules
@@ -351,25 +362,16 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 			],
 			autostart=True)
 
+	@loggedmethod
 	def BuildModuleProxies(self):
-		self._LogBegin('BuildModuleProxies()')
-		try:
-			for modschema in self.AppSchema.modules:
-				self.ProxyManager.AddProxy(modschema)
-		finally:
-			self._LogEnd()
+		self.SetStatusText('Building module proxies')
+		for modschema in self.AppSchema.modules:
+			self.ProxyManager.AddProxy(modschema)
 
+	@loggedmethod
 	def NotifyAppSchemaLoaded(self):
-		self._LogBegin('NotifyAppSchemaLoaded()')
-		try:
-			callbacks = self._Callbacks
-			if callbacks and hasattr(callbacks, 'OnAppSchemaLoaded'):
-				self._LogEvent('Calling OnAppSchemaLoaded callback')
-				callbacks.OnAppSchemaLoaded(self.AppSchema)
-			else:
-				self._LogEvent('No OnAppSchemaLoaded callback')
-		finally:
-			self._LogEnd()
+		self.SetStatusText('App schema loaded')
+		self.AppHost.OnAppSchemaLoaded(self.AppSchema)
 
 	def QueryModuleState(self, modpath, params=None):
 		# params == None means all
@@ -421,6 +423,22 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 					par.val = val
 		finally:
 			self._LogEnd()
+
+	@common.simpleloggedmethod
+	def StoreRemoteAppState(self, appstate: schema.AppState):
+		if not self.Connected:
+			return Future.immediateerror('Not connected')
+		if not self.ServerInfo or not self.ServerInfo.allowlocalstatestorage:
+			return Future.immediateerror('Remove server does not allow local state storage')
+		return self.Connection.SendRequest('storeAppState', appstate.ToJsonDict())
+
+	@loggedmethod
+	def RetrieveRemoteStoredAppState(self):
+		if not self.Connected:
+			return Future.immediateerror('Not connected')
+		if not self.ServerInfo or not self.ServerInfo.allowlocalstatestorage:
+			return Future.immediateerror('Remove server does not allow local state storage')
+		return self.Connection.SendRequest('retrieveAppState')
 
 	def HandleOscEvent(self, address, args):
 		if not self.Connected or ':' not in address or not args:
