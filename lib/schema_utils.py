@@ -40,13 +40,15 @@ class AppSchemaBuilder:
 		self.rawmodules = modules or []
 		self.rawmoduletypes = moduletypes or []
 		self.modules = OrderedDict()  # type: Dict[str, ModuleSchema]
+		self.moduletypeattrs = {}  # type: Dict[str, Dict[str, Any]]
 		self.moduletypes = OrderedDict()  # type: Dict[str, ModuleTypeSchema]
+		self.moduletypesbypath = {}  # type: Dict[str, ModuleTypeSchema]
 		self.implicitmoduletypes = OrderedDict()  # type: Dict[str, ModuleTypeSchema]
 
 	def Build(self):
 		self._BuildModuleSchemas()
 		self._BuildModuleTypeSchemas()
-		self._DeriveImplicitModuleTypes()
+		self._AssociateAndGenerateModuleTypes()
 		self._StripUnusedModuleTypes()
 		return AppSchema(
 			name=self.appinfo.name,
@@ -62,11 +64,15 @@ class AppSchemaBuilder:
 
 	def _BuildModuleSchemas(self):
 		for modinfo in self.rawmodules:
-			self.modules[modinfo.path] = _ModuleSchemaBuilder(modinfo).Build()
+			modschema = _ModuleSchemaBuilder(modinfo).Build()
+			self.modules[modinfo.path] = modschema
+			self.moduletypeattrs[modinfo.path] = dict(modinfo.typeattrs or {})
 
 	def _BuildModuleTypeSchemas(self):
 		for modinfo in self.rawmoduletypes:
-			self.moduletypes[modinfo.path] = _ModuleTypeSchemaBuilder(modinfo).Build()
+			typeschema = _ModuleTypeSchemaBuilder(modinfo).Build()
+			self.moduletypes[typeschema.typeid] = typeschema
+			self.moduletypesbypath[typeschema.path] = typeschema
 
 	def _GetMatchingModuleType(self, modschema: ModuleSchema) -> Optional[ModuleTypeSchema]:
 		modtypes = []
@@ -77,17 +83,23 @@ class AppSchemaBuilder:
 		modtypes = list(sorted(modtypes, key=attrgetter('isexplicit', 'paramcount'), reverse=True))
 		return modtypes[0] if modtypes else None
 
-	def _DeriveImplicitModuleTypes(self):
+	def _AssociateAndGenerateModuleTypes(self):
 
 		for modschema in self.modules.values():
-			masterpath = modschema.masterpath
-			if masterpath and masterpath in self.moduletypes:
+			typeid = modschema.typeid
+			if typeid and typeid in self.moduletypes:
 				continue
+			masterpath = modschema.masterpath
+			if not typeid and masterpath and masterpath in self.moduletypesbypath:
+				typeschema = self.moduletypesbypath[masterpath]
+				modschema.typeid = typeschema.typeid
+				continue
+
 			modtype = self._GetMatchingModuleType(modschema)
 			if not modtype:
 				if not self._IsElligibleForImplicitModuleType(modschema):
 					continue
-				modtype = _ModuleSchemaAsType(modschema, implicit=True)
+				modtype = _ModuleSchemaAsImplicitType(modschema, typeattrs=self.moduletypeattrs.get(modschema.path))
 				self.moduletypes[modtype.path] = modtype
 			modschema.masterpath = modtype.path
 			modschema.masterisimplicit = True
@@ -119,18 +131,22 @@ class AppSchemaBuilder:
 			return False
 		return True
 
-def _ModuleSchemaAsType(modschema: ModuleSchema, implicit=False):
-	if implicit:
-		name = '({})'.format(modschema.masterpath or modschema.name)
-		label = '({})'.format(modschema.masterpath) if modschema.masterpath else None
-		path = modschema.masterpath or modschema.path
-	else:
-		name, label, path = modschema.name, modschema.label, modschema.path
+def _ModuleSchemaAsImplicitType(modschema: ModuleSchema, typeattrs=None):
+	typeid = modschema.typeid or '~{}'.format(modschema.path)
+	name = '({})'.format(modschema.masterpath or modschema.name)
+	label = '({})'.format(modschema.masterpath) if modschema.masterpath else None
+	path = modschema.masterpath or modschema.path
+	typeattrs = typeattrs or {}
 	return ModuleTypeSchema(
+		typeid=typeid,
 		name=name,
 		label=label,
 		path=path,
-		derivedfrompath=modschema.path if implicit else None,
+		description=typeattrs.get('description'),
+		version=typeattrs.get('version'),
+		website=typeattrs.get('website'),
+		author=typeattrs.get('author'),
+		derivedfrompath=modschema.path,
 		params=[
 			copy.deepcopy(parinfo)
 			for parinfo in modschema.params
@@ -403,10 +419,16 @@ class _ModuleTypeSchemaBuilder(_BaseModuleSchemaBuilder):
 		self._BuildParams()
 		self._BuildParamGroups()
 		modinfo = self.modinfo
+		typeattrs = modinfo.typeattrs or {}
 		return ModuleTypeSchema(
+			typeid=typeattrs.get('typeid'),
 			name=modinfo.name,
 			label=modinfo.label,
 			path=modinfo.path,
+			description=typeattrs.get('description'),
+			version=typeattrs.get('version'),
+			website=typeattrs.get('website'),
+			author=typeattrs.get('author'),
 			tags=self.tags,
 			params=self.params,
 			paramgroups=list(self._GetFilteredGroups()),

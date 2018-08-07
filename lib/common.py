@@ -450,6 +450,14 @@ def trygetdictval(d: Dict, *keys, default=None, parse=None):
 			return parse(val) if parse else val
 	return default
 
+def GetCustomPage(o, name):
+	if not o:
+		return None
+	for page in o.customPages:
+		if page.name == name:
+			return page
+	return None
+
 def ParseAttrTable(dat):
 	if not dat or dat.numRows == 0:
 		return {}

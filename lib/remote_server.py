@@ -240,6 +240,7 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 		self._LogBegin('SendModuleInfo({!r})'.format(modpath))
 		try:
 			modinfo = self._BuildModuleInfo(modpath)
+			self._LogEvent(modinfo)
 			self.Connection.SendResponse(request.cmd, request.cmdid, modinfo.ToJsonDict() if modinfo else None)
 		finally:
 			self._LogEnd()
@@ -376,6 +377,7 @@ class _RawModuleInfoBuilder(common.LoggableSubComponent):
 		return [
 			[self._BuildParamInfo(p) for p in t]
 			for t in self.module.customTuplets
+			if t[0].page.name != ':meta'
 		]
 
 	@staticmethod
@@ -472,4 +474,5 @@ class _RawModuleInfoBuilder(common.LoggableSubComponent):
 			nodes=nodes,
 			primarynode=primarynodepath,
 			modattrs=self.settings.modattrs,
+			typeattrs=self.settings.typeattrs,
 		)
