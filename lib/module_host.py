@@ -582,23 +582,9 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 		if not sourceop:
 			return
 		if 'vjz4presetmarker' in sourceop.tags:
-			self._HandlePresetDrop(sourceop)
+			self.StateManager.HandlePresetDrop(presetmarker=sourceop, targetmarker=None)
 		else:
 			self._LogEvent('Unsupported drop source: {}'.format(sourceop))
-
-	@loggedmethod
-	def _HandlePresetDrop(self, presetmarker):
-		typepath = presetmarker.par.Typepath.eval()
-		params = presetmarker.par.Params.eval()
-		partial = presetmarker.par.Partial.eval() or self.ModuleConnector.modschema.masterispartialmatch
-		if typepath != self.ModuleConnector.modschema.masterpath:
-			self._LogEvent('Unsupported preset type: {!r} (should be {!r})'.format(
-				typepath, self.ModuleConnector.modschema.masterpath))
-			return
-		self._LogEvent('Applying preset {}'.format(presetmarker.par.Name))
-		self.ModuleConnector.SetParVals(
-			parvals=params,
-			resetmissing=not partial)
 
 	@loggedmethod
 	def HandleControlDrop(self, ctrl: COMP, dropName, baseName):

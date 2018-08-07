@@ -552,6 +552,7 @@ def ShowPromptDialog(
 		title=None,
 		text=None,
 		default='',
+		textentry=True,
 		oktext='OK',
 		canceltext='Cancel',
 		ok: Callable=None,
@@ -559,14 +560,17 @@ def ShowPromptDialog(
 	def _callback(info):
 		if info['buttonNum'] == 1:
 			if ok:
-				ok(info['enteredText'])
+				if not text:
+					ok()
+				else:
+					ok(info.get('enteredText'))
 		elif info['buttonNum'] == 2:
 			if cancel:
 				cancel()
 	_getPopDialog().Open(
 		title=title,
 		text=text,
-		textEntry=default or '',
+		textEntry=False if not textentry else (default or ''),
 		buttons=[oktext, canceltext],
 		enterButton=1, escButton=2, escOnClickAway=True,
 		callback=_callback)
