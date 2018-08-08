@@ -103,18 +103,18 @@ class AppSchemaBuilder:
 				if not self._IsElligibleForImplicitModuleType(modschema):
 					continue
 				modtype = _ModuleSchemaAsImplicitType(modschema, typeattrs=typeattrs)
-				self.moduletypes[modtype.path] = modtype
+				self.moduletypes[modtype.typeid] = modtype
 			modschema.masterpath = modtype.path
 			modschema.masterisimplicit = True
 			modschema.masterispartialmatch = len(modschema.params) != len(modtype.params)
 
 	def _StripUnusedModuleTypes(self):
-		pathstoremove = set(self.moduletypes.keys())
+		typeidstoremove = set(self.moduletypes.keys())
 		for modschema in self.modules.values():
-			if modschema.masterpath and modschema.masterpath in pathstoremove:
-				pathstoremove.remove(modschema.masterpath)
-		for path in pathstoremove:
-			del self.moduletypes[path]
+			if modschema.typeid and modschema.typeid in typeidstoremove:
+				typeidstoremove.remove(modschema.typeid)
+		for typeid in typeidstoremove:
+			del self.moduletypes[typeid]
 
 	@staticmethod
 	def _IsElligibleForImplicitModuleType(modschema: ModuleSchema):

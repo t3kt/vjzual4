@@ -86,6 +86,9 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.Schem
 	def _ModuleTable(self): return self.ownerComp.op('set_modules')
 
 	@property
+	def _ModuleTypeTable(self): return self.ownerComp.op('set_module_types')
+
+	@property
 	def _ParamTable(self): return self.ownerComp.op('set_params')
 
 	@property
@@ -109,6 +112,7 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.Schem
 		self.ServerInfo = None
 		self._BuildAppInfoTable()
 		self._ClearModuleTable()
+		self._ClearModuleTypeTable()
 		self._ClearParamTables()
 		self._ClearDataNodesTable()
 		self.ProxyManager.par.Rootpath = ''
@@ -244,6 +248,11 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.Schem
 		dat.clear()
 		dat.appendRow(schema.ModuleSchema.tablekeys)
 
+	def _ClearModuleTypeTable(self):
+		dat = self._ModuleTypeTable
+		dat.clear()
+		dat.appendRow(schema.ModuleTypeSchema.tablekeys)
+
 	def _ClearParamTables(self):
 		dat = self._ParamTable
 		dat.clear()
@@ -314,6 +323,8 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.Schem
 			modpaths.append(modinfo.path)
 			if modinfo.masterpath:
 				masterpaths.add(modinfo.masterpath)
+		self._LogEvent('found {} module paths:\n{}'.format(len(modpaths), modpaths))
+		self._LogEvent('found {} module master paths:\n{}'.format(len(masterpaths), masterpaths))
 		if not masterpaths:
 			return self._OnAllModuleTypesReceived()
 
@@ -346,6 +357,9 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.Schem
 			modschema.AddToTable(moduletable)
 			self._AddParamsToTable(modschema.path, modschema.params)
 			self._AddToDataNodesTable(modschema.path, modschema.nodes)
+		moduletypetable = self._ModuleTypeTable
+		for modtype in self.AppSchema.moduletypes:
+			modtype.AddToTable(moduletypetable)
 
 		def _makeQueryStateTask(modpath):
 			return lambda: self.QueryModuleState(modpath)
