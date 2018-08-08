@@ -233,6 +233,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 					callback=lambda: self.ShowAppSchema()),
 				_viewItem('App Info', 'app_info'),
 				_viewItem('Modules', 'modules'),
+				_viewItem('Module Types', 'module_types'),
 				_viewItem('Params', 'params'),
 				_viewItem('Param Parts', 'param_parts'),
 				_viewItem('Data Nodes', 'data_nodes'),

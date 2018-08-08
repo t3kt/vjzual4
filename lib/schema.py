@@ -1,5 +1,5 @@
 from collections import OrderedDict
-from typing import List, Dict, Iterable, Optional, Set, Tuple
+from typing import Any, List, Dict, Iterable, Optional, Set, Tuple
 
 print('vjz4/schema.py loading')
 
@@ -208,6 +208,7 @@ class RawModuleInfo(BaseDataObject):
 			nodes=None,
 			primarynode=None,
 			modattrs=None,
+			typeattrs=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.path = path
@@ -223,6 +224,7 @@ class RawModuleInfo(BaseDataObject):
 		self.nodes = list(nodes or [])  # type: List[DataNodeInfo]
 		self.primarynode = primarynode  # type: str
 		self.modattrs = modattrs or {}  # type: Dict[str, str]
+		self.typeattrs = typeattrs or {}  # type: Dict[str, Any]
 
 	@classmethod
 	def FromJsonDict(cls, obj):
@@ -264,6 +266,7 @@ class RawModuleInfo(BaseDataObject):
 			'nodes': BaseDataObject.ToJsonDicts(self.nodes),
 			'primarynode': self.primarynode,
 			'modattrs': self.modattrs,
+			'typeattrs': self.typeattrs,
 		}))
 
 class ParamPartSchema(BaseDataObject):
@@ -577,6 +580,7 @@ class BaseModuleSchema(BaseDataObject):
 	"""
 	def __init__(
 			self,
+			typeid=None,
 			name=None,
 			label=None,
 			path=None,
@@ -585,6 +589,7 @@ class BaseModuleSchema(BaseDataObject):
 			paramgroups=None,  # type: Iterable[ParamGroupSchema]
 			**otherattrs):
 		super().__init__(**otherattrs)
+		self.typeid = typeid
 		self.name = name
 		self.label = label or name
 		self.path = path
@@ -624,6 +629,7 @@ class BaseModuleSchema(BaseDataObject):
 			'name': self.name,
 			'label': self.label,
 			'path': self.path,
+			'typeid': self.typeid,
 			'tags': list(sorted(self.tags)),
 			'hasbypass': self.hasbypass,
 			'hasadvanced': self.hasadvanced,
@@ -633,7 +639,7 @@ class BaseModuleSchema(BaseDataObject):
 		}))
 
 	def MatchesModuleType(self, modtypeschema: 'BaseModuleSchema', exact=False):
-		if not modtypeschema or not self.params or not modtypeschema.params:
+		if not modtypeschema or not self.hasnonbypasspars or not modtypeschema.hasnonbypasspars:
 			return False
 		if exact:
 			if len(self.params) != len(modtypeschema.params):
@@ -654,6 +660,11 @@ class ModuleTypeSchema(BaseModuleSchema):
 			name=None,
 			label=None,
 			path=None,
+			typeid=None,
+			description=None,
+			version=None,
+			website=None,
+			author=None,
 			tags=None,  # type: Iterable[str]
 			params=None,  # type: List[ParamSchema]
 			paramgroups=None,  # type: List[ParamGroupSchema]
@@ -663,11 +674,16 @@ class ModuleTypeSchema(BaseModuleSchema):
 			name=name,
 			label=label,
 			path=path,
+			typeid=typeid or path,
 			tags=tags,
 			params=params,
 			paramgroups=paramgroups,
 			**otherattrs)
 		self.derivedfrompath = derivedfrompath
+		self.description = description
+		self.version = version
+		self.website = website
+		self.author = author
 
 	@property
 	def isexplicit(self): return not self.derivedfrompath
@@ -676,7 +692,7 @@ class ModuleTypeSchema(BaseModuleSchema):
 	def paramcount(self): return len(self.params)
 
 	def __str__(self):
-		return '{}({})'.format(self.__class__.__name__, self.name, self.path)
+		return '{}({})'.format(self.__class__.__name__, self.name, self.typeid)
 
 	@classmethod
 	def FromJsonDict(cls, obj):
@@ -686,6 +702,7 @@ class ModuleTypeSchema(BaseModuleSchema):
 			**excludekeys(obj, ['params', 'hasbypass', 'hasadvanced']))
 
 	tablekeys = [
+		'typeid',
 		'path',
 		'name',
 		'label',
@@ -694,16 +711,25 @@ class ModuleTypeSchema(BaseModuleSchema):
 		'hasmappable',
 		'derivedfrompath',
 		'tags',
+		'description',
+		'version',
+		'website',
+		'author',
 	]
 
 	def ToJsonDict(self):
 		return cleandict(mergedicts(super().ToJsonDict(), {
 			'derivedfrompath': self.derivedfrompath,
+			'description': self.description,
+			'version': self.version,
+			'website': self.website,
+			'author': self.author,
 		}))
 
 class ModuleSchema(BaseModuleSchema):
 	def __init__(
 			self,
+			typeid=None,
 			name=None,
 			label=None,
 			path=None,
@@ -721,6 +747,7 @@ class ModuleSchema(BaseModuleSchema):
 			name=name,
 			label=label,
 			path=path,
+			typeid=typeid or masterpath,
 			tags=tags,
 			params=params,
 			**otherattrs)
@@ -753,6 +780,7 @@ class ModuleSchema(BaseModuleSchema):
 		'name',
 		'label',
 		'parentpath',
+		'typeid',
 		'masterpath',
 		'masterisimplicit',
 		'masterispartialmatch',
