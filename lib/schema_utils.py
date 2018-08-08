@@ -86,7 +86,10 @@ class AppSchemaBuilder:
 	def _AssociateAndGenerateModuleTypes(self):
 
 		for modschema in self.modules.values():
-			typeid = modschema.typeid
+			typeattrs = self.moduletypeattrs.get(modschema.path) or {}
+			typeid = typeattrs.get('typeid') or modschema.typeid
+			if typeid:
+				modschema.typeid = typeid
 			if typeid and typeid in self.moduletypes:
 				continue
 			masterpath = modschema.masterpath
@@ -99,7 +102,7 @@ class AppSchemaBuilder:
 			if not modtype:
 				if not self._IsElligibleForImplicitModuleType(modschema):
 					continue
-				modtype = _ModuleSchemaAsImplicitType(modschema, typeattrs=self.moduletypeattrs.get(modschema.path))
+				modtype = _ModuleSchemaAsImplicitType(modschema, typeattrs=typeattrs)
 				self.moduletypes[modtype.path] = modtype
 			modschema.masterpath = modtype.path
 			modschema.masterisimplicit = True
@@ -132,11 +135,11 @@ class AppSchemaBuilder:
 		return True
 
 def _ModuleSchemaAsImplicitType(modschema: ModuleSchema, typeattrs=None):
-	typeid = modschema.typeid or '~{}'.format(modschema.path)
+	typeattrs = typeattrs or {}
+	typeid = typeattrs.get('typeid') or modschema.typeid or '~{}'.format(modschema.path)
 	name = '({})'.format(modschema.masterpath or modschema.name)
 	label = '({})'.format(modschema.masterpath) if modschema.masterpath else None
 	path = modschema.masterpath or modschema.path
-	typeattrs = typeattrs or {}
 	return ModuleTypeSchema(
 		typeid=typeid,
 		name=name,

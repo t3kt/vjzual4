@@ -240,7 +240,6 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 		self._LogBegin('SendModuleInfo({!r})'.format(modpath))
 		try:
 			modinfo = self._BuildModuleInfo(modpath)
-			self._LogEvent(modinfo)
 			self.Connection.SendResponse(request.cmd, request.cmdid, modinfo.ToJsonDict() if modinfo else None)
 		finally:
 			self._LogEnd()
