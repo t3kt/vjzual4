@@ -639,7 +639,7 @@ class BaseModuleSchema(BaseDataObject):
 		}))
 
 	def MatchesModuleType(self, modtypeschema: 'BaseModuleSchema', exact=False):
-		if not modtypeschema or not self.params or not modtypeschema.params:
+		if not modtypeschema or not self.hasnonbypasspars or not modtypeschema.hasnonbypasspars:
 			return False
 		if exact:
 			if len(self.params) != len(modtypeschema.params):

@@ -14,6 +14,7 @@ except ImportError:
 	common = mod.common
 cleandict, excludekeys, mergedicts = common.cleandict, common.excludekeys, common.mergedicts
 trygetdictval = common.trygetdictval
+loggedmethod = common.loggedmethod
 
 def __dynamiclocalimport(module):
 	globs = globals()
@@ -30,12 +31,14 @@ except ImportError:
 	__dynamiclocalimport(schema)
 
 
-class AppSchemaBuilder:
+class AppSchemaBuilder(common.LoggableSubComponent):
 	def __init__(
 			self,
+			hostobj: common.LoggableBase,
 			appinfo: RawAppInfo,
 			modules: List[RawModuleInfo],
 			moduletypes: List[RawModuleInfo]):
+		super().__init__(hostobj=hostobj, logprefix='AppSchemaBuilder')
 		self.appinfo = appinfo
 		self.rawmodules = modules or []
 		self.rawmoduletypes = moduletypes or []
@@ -45,6 +48,7 @@ class AppSchemaBuilder:
 		self.moduletypesbypath = {}  # type: Dict[str, ModuleTypeSchema]
 		self.implicitmoduletypes = OrderedDict()  # type: Dict[str, ModuleTypeSchema]
 
+	@loggedmethod
 	def Build(self):
 		self._BuildModuleSchemas()
 		self._BuildModuleTypeSchemas()
@@ -62,12 +66,14 @@ class AppSchemaBuilder:
 				if modschema.parentpath == self.appinfo.path
 			])
 
+	@loggedmethod
 	def _BuildModuleSchemas(self):
 		for modinfo in self.rawmodules:
 			modschema = _ModuleSchemaBuilder(modinfo).Build()
 			self.modules[modinfo.path] = modschema
 			self.moduletypeattrs[modinfo.path] = dict(modinfo.typeattrs or {})
 
+	@loggedmethod
 	def _BuildModuleTypeSchemas(self):
 		for modinfo in self.rawmoduletypes:
 			typeschema = _ModuleTypeSchemaBuilder(modinfo).Build()
@@ -75,14 +81,20 @@ class AppSchemaBuilder:
 			self.moduletypesbypath[typeschema.path] = typeschema
 
 	def _GetMatchingModuleType(self, modschema: ModuleSchema) -> Optional[ModuleTypeSchema]:
-		modtypes = []
-		for modtype in self.moduletypes.values():
-			if modschema.MatchesModuleType(modtype, exact=False):
-				modtypes.append(modtype)
+		self._LogBegin('_GetMatchingModuleType({})'.format(modschema.path))
+		try:
+			modtypes = []
+			for modtype in self.moduletypes.values():
+				if modschema.MatchesModuleType(modtype, exact=False):
+					modtypes.append(modtype)
 
-		modtypes = list(sorted(modtypes, key=attrgetter('isexplicit', 'paramcount'), reverse=True))
-		return modtypes[0] if modtypes else None
+			modtypes = list(sorted(modtypes, key=attrgetter('isexplicit', 'paramcount'), reverse=True))
+			self._LogEvent('matching types: {}'.format([m.typeid for m in modtypes]))
+			return modtypes[0] if modtypes else None
+		finally:
+			self._LogEnd()
 
+	@loggedmethod
 	def _AssociateAndGenerateModuleTypes(self):
 
 		for modschema in self.modules.values():
@@ -101,18 +113,22 @@ class AppSchemaBuilder:
 			modtype = self._GetMatchingModuleType(modschema)
 			if not modtype:
 				if not self._IsElligibleForImplicitModuleType(modschema):
+					self._LogEvent('module is not elligible for implicit module type: {}'.format(modschema.path))
 					continue
 				modtype = _ModuleSchemaAsImplicitType(modschema, typeattrs=typeattrs)
 				self.moduletypes[modtype.typeid] = modtype
+			modschema.typeid = modtype.typeid
 			modschema.masterpath = modtype.path
 			modschema.masterisimplicit = True
 			modschema.masterispartialmatch = len(modschema.params) != len(modtype.params)
 
+	@loggedmethod
 	def _StripUnusedModuleTypes(self):
 		typeidstoremove = set(self.moduletypes.keys())
 		for modschema in self.modules.values():
 			if modschema.typeid and modschema.typeid in typeidstoremove:
 				typeidstoremove.remove(modschema.typeid)
+		self._LogEvent('removing unused module types: {}'.format(typeidstoremove))
 		for typeid in typeidstoremove:
 			del self.moduletypes[typeid]
 

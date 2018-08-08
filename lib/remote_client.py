@@ -349,6 +349,7 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.Schem
 	def _OnAllModuleTypesReceived(self):
 		self.SetStatusText('Loading module types')
 		self.AppSchema = schema_utils.AppSchemaBuilder(
+			hostobj=self,
 			appinfo=self.rawAppInfo,
 			modules=self.rawModuleInfos,
 			moduletypes=self.rawModuleTypeInfos).Build()
