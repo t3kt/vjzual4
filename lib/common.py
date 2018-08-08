@@ -74,6 +74,8 @@ class ExtensionBase(LoggableBase):
 		self.enablelogging = True
 		self.par = ownerComp.par
 		self.path = ownerComp.path
+		self.op = ownerComp.op
+		self.ops = ownerComp.ops
 
 	def _GetLogId(self):
 		if not self.ownerComp.valid or not hasattr(self.ownerComp.par, 'opshortcut'):
@@ -448,6 +450,14 @@ def trygetdictval(d: Dict, *keys, default=None, parse=None):
 			return parse(val) if parse else val
 	return default
 
+def GetCustomPage(o, name):
+	if not o:
+		return None
+	for page in o.customPages:
+		if page.name == name:
+			return page
+	return None
+
 def ParseAttrTable(dat):
 	if not dat or dat.numRows == 0:
 		return {}
@@ -492,6 +502,7 @@ class opattrs:
 			parvals=None,
 			parexprs=None,
 			storage=None,
+			dropscript=None,
 	):
 		self.order = order
 		self.nodepos = nodepos
@@ -500,6 +511,7 @@ class opattrs:
 		self.parvals = parvals  # type: Dict[str, Any]
 		self.parexprs = parexprs  # type: Dict[str, str]
 		self.storage = storage  # type: Dict[str, Any]
+		self.dropscript = dropscript  # type: Union[OP, str]
 
 	def override(self, other: 'opattrs'):
 		if not other:
@@ -518,6 +530,7 @@ class opattrs:
 			else:
 				self.storage = dict(other.storage)
 		self.panelparent = other.panelparent or self.panelparent
+		self.dropscript = other.dropscript or self.dropscript
 		self.parvals = mergedicts(self.parvals, other.parvals)
 		self.parexprs = mergedicts(self.parexprs, other.parexprs)
 		return self
@@ -538,6 +551,9 @@ class opattrs:
 			comp.tags.update(self.tags)
 		if self.panelparent:
 			self.panelparent.outputCOMPConnectors[0].connect(comp)
+		if self.dropscript:
+			comp.par.drop = 'legacy'
+			comp.par.dropscript = self.dropscript
 		if self.storage:
 			for key, val in self.storage.items():
 				if val is None:
