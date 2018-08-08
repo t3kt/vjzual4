@@ -1,5 +1,5 @@
 from collections import OrderedDict
-from typing import List, Dict, Iterable, Optional, Set, Tuple
+from typing import Any, List, Dict, Iterable, Optional, Set, Tuple
 
 print('vjz4/schema.py loading')
 
@@ -207,6 +207,8 @@ class RawModuleInfo(BaseDataObject):
 			pargroups=None,
 			nodes=None,
 			primarynode=None,
+			modattrs=None,
+			typeattrs=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.path = path
@@ -221,6 +223,8 @@ class RawModuleInfo(BaseDataObject):
 		self.pargroups = list(pargroups or [])  # type: List[RawParamGroupInfo]
 		self.nodes = list(nodes or [])  # type: List[DataNodeInfo]
 		self.primarynode = primarynode  # type: str
+		self.modattrs = modattrs or {}  # type: Dict[str, str]
+		self.typeattrs = typeattrs or {}  # type: Dict[str, Any]
 
 	@classmethod
 	def FromJsonDict(cls, obj):
@@ -261,6 +265,8 @@ class RawModuleInfo(BaseDataObject):
 			'pargroups': RawParamGroupInfo.ToJsonDicts(self.pargroups),
 			'nodes': BaseDataObject.ToJsonDicts(self.nodes),
 			'primarynode': self.primarynode,
+			'modattrs': self.modattrs,
+			'typeattrs': self.typeattrs,
 		}))
 
 class ParamPartSchema(BaseDataObject):
@@ -291,8 +297,9 @@ class ParamPartSchema(BaseDataObject):
 		self.minlimit = minlimit
 		self.maxlimit = maxlimit
 		self.helptext = helptext
-		self.menunames = menunames
-		self.menulabels = menulabels
+		self.menunames = menunames  # type: List[str]
+		self.menulabels = menulabels  # type: List[str]
+		self.parent = None  # type: ParamSchema
 
 	tablekeys = [
 		'name',
@@ -304,6 +311,18 @@ class ParamPartSchema(BaseDataObject):
 		'default',
 		'helptext',
 	]
+
+	extratablekeys = ['key', 'param', 'paramkey', 'modpath', 'style', 'vecindex']
+
+	def GetExtraTableAttrs(self, param: 'ParamSchema', vecIndex: int, modpath: str):
+		return {
+			'key': modpath + ':' + self.name,
+			'param': param.name,
+			'paramkey': modpath + ':' + param.name,
+			'modpath': modpath,
+			'style': param.style,
+			'vecindex': vecIndex,
+		}
 
 	def ToJsonDict(self):
 		return cleandict(mergedicts(self.otherattrs, {
@@ -349,12 +368,15 @@ class ParamSchema(BaseDataObject, common.AttrBasedIdentity):
 			advanced=False,
 			specialtype=None,
 			mappable=True,
+			allowpresets=None,
 			helptext=None,
 			groupname=None,
 			parts=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.parts = parts or []  # type: List[ParamPartSchema]
+		for part in self.parts:
+			part.parent = self
 		self.name = name
 		self.label = label
 		self.style = style
@@ -366,6 +388,12 @@ class ParamSchema(BaseDataObject, common.AttrBasedIdentity):
 		self.specialtype = specialtype or ''
 		self.isnode = specialtype and specialtype in ParamSpecialTypes.nodetypes
 		self.mappable = mappable and not self.isnode
+		if self.isnode:
+			self.allowpresets = False
+		elif allowpresets is not None:
+			self.allowpresets = allowpresets
+		else:
+			self.allowpresets = self.mappable and not self.hidden
 		self.helptext = helptext
 		self.groupname = groupname or pagename
 		self.group = None  # type: ParamGroupSchema
@@ -382,9 +410,18 @@ class ParamSchema(BaseDataObject, common.AttrBasedIdentity):
 		'specialtype',
 		'isnode',
 		'mappable',
+		'allowpresets',
 		'helptext',
 		'groupname',
 	]
+
+	extratablekeys = ['key', 'modpath']
+
+	def GetExtraTableAttrs(self, modpath: str):
+		return {
+			'key': modpath + ':' + self.name,
+			'modpath': modpath,
+		}
 
 	def ToJsonDict(self):
 		return cleandict(mergedicts(self.otherattrs, {
@@ -399,6 +436,7 @@ class ParamSchema(BaseDataObject, common.AttrBasedIdentity):
 			'specialtype': self.specialtype,
 			'isnode': self.isnode,
 			'mappable': self.mappable,
+			'allowpresets': self.allowpresets,
 			'helptext': self.helptext,
 			'groupname': self.groupname,
 			'parts': BaseDataObject.ToJsonDicts(self.parts),
@@ -542,6 +580,7 @@ class BaseModuleSchema(BaseDataObject):
 	"""
 	def __init__(
 			self,
+			typeid=None,
 			name=None,
 			label=None,
 			path=None,
@@ -550,43 +589,57 @@ class BaseModuleSchema(BaseDataObject):
 			paramgroups=None,  # type: Iterable[ParamGroupSchema]
 			**otherattrs):
 		super().__init__(**otherattrs)
+		self.typeid = typeid
 		self.name = name
 		self.label = label or name
 		self.path = path
 		self.tags = set(tags or [])
 		self.params = list(params or [])
 		self.paramsbyname = OrderedDict()  # type: Dict[str, ParamSchema]
-		for p in self.params:
-			self.paramsbyname[p.name] = p
+		self.parampartsbyname = OrderedDict()  # type: Dict[str, ParamPartSchema]
 		self.hasbypass = False
 		self.hasadvanced = False
+		self.hasmappable = False
+		self.hasnonbypasspars = False
+		self.bypasspar = None  # type: Optional[ParamSchema]
+		self.presetableparams = []  # type: List[ParamSchema]
 		for par in self.params:
+			self.paramsbyname[par.name] = par
 			if par.advanced:
 				self.hasadvanced = True
+			if par.mappable:
+				self.hasmappable = True
 			if par.specialtype == ParamSpecialTypes.bypass:
 				self.hasbypass = True
+				self.bypasspar = par
+			else:
+				self.hasnonbypasspars = True
+			if par.allowpresets:
+				self.presetableparams.append(par)
+			for part in par.parts:
+				self.parampartsbyname[part.name] = part
 		self.paramgroups = paramgroups or []
 
 	@property
 	def parampartnames(self):
-		for param in self.params:
-			for part in param.parts:
-				yield part.name
+		return self.parampartsbyname.keys()
 
 	def ToJsonDict(self):
 		return cleandict(mergedicts(self.otherattrs, {
 			'name': self.name,
 			'label': self.label,
 			'path': self.path,
+			'typeid': self.typeid,
 			'tags': list(sorted(self.tags)),
 			'hasbypass': self.hasbypass,
 			'hasadvanced': self.hasadvanced,
+			'hasmappable': self.hasmappable,
 			'params': BaseDataObject.ToJsonDicts(self.params),
 			'paramgroups': BaseDataObject.ToJsonDicts(self.paramgroups),
 		}))
 
 	def MatchesModuleType(self, modtypeschema: 'BaseModuleSchema', exact=False):
-		if not modtypeschema or not self.params or not modtypeschema.params:
+		if not modtypeschema or not self.hasnonbypasspars or not modtypeschema.hasnonbypasspars:
 			return False
 		if exact:
 			if len(self.params) != len(modtypeschema.params):
@@ -607,6 +660,11 @@ class ModuleTypeSchema(BaseModuleSchema):
 			name=None,
 			label=None,
 			path=None,
+			typeid=None,
+			description=None,
+			version=None,
+			website=None,
+			author=None,
 			tags=None,  # type: Iterable[str]
 			params=None,  # type: List[ParamSchema]
 			paramgroups=None,  # type: List[ParamGroupSchema]
@@ -616,11 +674,16 @@ class ModuleTypeSchema(BaseModuleSchema):
 			name=name,
 			label=label,
 			path=path,
+			typeid=typeid or path,
 			tags=tags,
 			params=params,
 			paramgroups=paramgroups,
 			**otherattrs)
 		self.derivedfrompath = derivedfrompath
+		self.description = description
+		self.version = version
+		self.website = website
+		self.author = author
 
 	@property
 	def isexplicit(self): return not self.derivedfrompath
@@ -629,7 +692,7 @@ class ModuleTypeSchema(BaseModuleSchema):
 	def paramcount(self): return len(self.params)
 
 	def __str__(self):
-		return '{}({})'.format(self.__class__.__name__, self.name, self.path)
+		return '{}({})'.format(self.__class__.__name__, self.name, self.typeid)
 
 	@classmethod
 	def FromJsonDict(cls, obj):
@@ -639,23 +702,34 @@ class ModuleTypeSchema(BaseModuleSchema):
 			**excludekeys(obj, ['params', 'hasbypass', 'hasadvanced']))
 
 	tablekeys = [
+		'typeid',
 		'path',
 		'name',
 		'label',
 		'hasbypass',
 		'hasadvanced',
+		'hasmappable',
 		'derivedfrompath',
 		'tags',
+		'description',
+		'version',
+		'website',
+		'author',
 	]
 
 	def ToJsonDict(self):
 		return cleandict(mergedicts(super().ToJsonDict(), {
 			'derivedfrompath': self.derivedfrompath,
+			'description': self.description,
+			'version': self.version,
+			'website': self.website,
+			'author': self.author,
 		}))
 
 class ModuleSchema(BaseModuleSchema):
 	def __init__(
 			self,
+			typeid=None,
 			name=None,
 			label=None,
 			path=None,
@@ -673,6 +747,7 @@ class ModuleSchema(BaseModuleSchema):
 			name=name,
 			label=label,
 			path=path,
+			typeid=typeid or masterpath,
 			tags=tags,
 			params=params,
 			**otherattrs)
@@ -705,11 +780,13 @@ class ModuleSchema(BaseModuleSchema):
 		'name',
 		'label',
 		'parentpath',
+		'typeid',
 		'masterpath',
 		'masterisimplicit',
 		'masterispartialmatch',
 		'hasbypass',
 		'hasadvanced',
+		'hasmappable',
 		'primarynode',
 	]
 
@@ -821,10 +898,6 @@ class ClientInfo(BaseDataObject):
 		self.primaryvidrecv = primaryvidrecv
 		self.secondaryvidrecv = secondaryvidrecv
 
-	@classmethod
-	def FromJsonDict(cls, obj):
-		return cls(**obj)
-
 	def ToJsonDict(self):
 		return cleandict(mergedicts(self.otherattrs, {
 			'version': self.version,
@@ -839,12 +912,35 @@ class ClientInfo(BaseDataObject):
 			'secondaryvidrecv': self.secondaryvidrecv,
 		}))
 
+class ServerInfo(BaseDataObject):
+	def __init__(
+			self,
+			version=None,
+			address=None,
+			allowlocalstatestorage: bool=None,
+			localstatefile: str=None,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.version = version
+		self.address = address
+		self.allowlocalstatestorage = allowlocalstatestorage
+		self.localstatefile = localstatefile
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'version': self.version,
+			'address': self.address,
+			'allowlocalstatestorage': self.allowlocalstatestorage,
+			'localstatefile': self.localstatefile,
+		}))
+
 class DeviceControlInfo(BaseDataObject):
 	def __init__(
 			self,
 			name,
 			fullname,
 			devname,
+			group=None,
 			ctrltype=None,
 			inputcc=None,
 			outputcc=None,
@@ -856,14 +952,20 @@ class DeviceControlInfo(BaseDataObject):
 		self.ctrltype = ctrltype
 		self.inputcc = inputcc
 		self.outputcc = outputcc
+		self.group = group
+		self.inchan = 'ch1c{}'.format(inputcc) if inputcc is not None else None
+		self.outchan = 'ch1c{}'.format(outputcc) if outputcc is not None else None
 
 	tablekeys = [
 		'name',
 		'fullname',
 		'devname',
+		'group',
 		'ctrltype',
 		'inputcc',
 		'outputcc',
+		'inchan',
+		'outchan',
 	]
 
 	def ToJsonDict(self):
@@ -871,12 +973,54 @@ class DeviceControlInfo(BaseDataObject):
 			'name': self.name,
 			'fullname': self.fullname,
 			'devname': self.devname,
+			'group': self.group,
 			'ctrltype': self.ctrltype,
 			'inputcc': self.inputcc,
 			'outputcc': self.outputcc,
+			'inchan': self.inchan,
+			'outchan': self.outchan,
 		}))
 
-class ControlMapping(BaseDataObject):
+class BaseMapping(BaseDataObject):
+	def __init__(
+			self,
+			path=None,
+			param=None,
+			enable=True,
+			rangelow=None,
+			rangehigh=None,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.path = path
+		self.param = param
+		self.enable = enable
+		self.rangelow = rangelow if rangelow is not None else 0
+		self.rangehigh = rangehigh if rangehigh is not None else 1
+
+	@property
+	def parampath(self):
+		if not self.path or not self.param:
+			return None
+		return self.path + ':' + self.param
+
+	tablekeys = [
+		'path',
+		'param',
+		'enable',
+		'rangelow',
+		'rangehigh',
+	]
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'path': self.path,
+			'param': self.param,
+			'enable': self.enable,
+			'rangelow': self.rangelow,
+			'rangehigh': self.rangehigh,
+		}))
+
+class ControlMapping(BaseMapping):
 	def __init__(
 			self,
 			path=None,
@@ -885,42 +1029,315 @@ class ControlMapping(BaseDataObject):
 			rangelow=None,
 			rangehigh=None,
 			control=None,
-			mapid=None,
 			**otherattrs):
-		super().__init__(**otherattrs)
-		self.path = path
-		self.param = param
-		self.enable = enable
-		self.rangelow = rangelow if rangelow is not None else 0
-		self.rangehigh = rangehigh if rangehigh is not None else 1
+		super().__init__(
+			path=path,
+			param=param,
+			enable=enable,
+			rangelow=rangelow,
+			rangehigh=rangehigh,
+			**otherattrs)
 		self.control = control
-		self.mapid = mapid
 
-	tablekeys = [
-		'mapid',
-		'path',
-		'param',
-		'enable',
-		'rangelow',
-		'rangehigh',
+	tablekeys = BaseMapping.tablekeys + [
 		'control',
 	]
 
 	def ToJsonDict(self):
-		return cleandict(mergedicts(self.otherattrs, {
-			'mapid': self.mapid,
-			'path': self.path,
-			'param': self.param,
-			'enable': self.enable,
-			'rangelow': self.rangelow,
-			'rangehigh': self.rangehigh,
+		return cleandict(mergedicts(super().ToJsonDict(), {
 			'control': self.control,
 		}))
 
-class SchemaProvider:
-	def GetAppSchema(self) -> AppSchema:
-		raise NotImplementedError()
 
+class ModulationMappingModes:
+	add = 'add'
+	multiply = 'multiply'
+	override = 'override'
+
+class ModulationMapping(BaseMapping):
+	def __init__(
+			self,
+			path=None,
+			param=None,
+			enable=True,
+			rangelow=None,
+			rangehigh=None,
+			source=None,
+			mode=ModulationMappingModes.add,
+			**otherattrs):
+		super().__init__(
+			path=path,
+			param=param,
+			enable=enable,
+			rangelow=rangelow,
+			rangehigh=rangehigh,
+			**otherattrs)
+		self.source = source
+		self.mode = mode
+
+	tablekeys = BaseMapping.tablekeys + [
+		'source',
+	]
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(super().ToJsonDict(), {
+			'source': self.source,
+			'mode': self.mode,
+		}))
+
+class ControlMappingSet(BaseDataObject):
+	def __init__(
+			self,
+			name=None,
+			enable=True,
+			generatedby: str=None,
+			mappings=None,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.name = name
+		self.enable = enable
+		self.generatedby = generatedby
+		self.mappings = mappings or []  # type: List[ControlMapping]
+
+	def GetMappingsForParam(self, modpath: str, paramname: str, devicename: str) -> List[ControlMapping]:
+		prefix = (devicename + ':') if devicename else None
+		results = []
+		for mapping in self.mappings:
+			if mapping.path != modpath or mapping.param != paramname:
+				continue
+			if mapping.control and prefix and not mapping.control.startswith(prefix):
+				continue
+			results.append(mapping)
+		return results
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'name': self.name,
+			'enable': self.enable,
+			'generatedby': self.generatedby,
+			'mappings': ControlMapping.ToJsonDicts(self.mappings),
+		}))
+
+	@classmethod
+	def FromJsonDict(cls, obj):
+		return cls(
+			mappings=ControlMapping.FromJsonDicts(obj.get('mappings')),
+			**excludekeys(obj, ['mappings']))
+
+class ModulationMappingSet(BaseDataObject):
+	def __init__(
+			self,
+			enable=True,
+			mappings=None,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.enable = enable
+		self.mappings = mappings or []  # type: List[ModulationMapping]
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(super().ToJsonDict(), {
+			'enable': self.enable,
+			'mappings': ModulationMapping.ToJsonDicts(self.mappings),
+		}))
+
+	@classmethod
+	def FromJsonDict(cls, obj):
+		return cls(
+			mappings=ModulationMapping.FromJsonDicts(obj.get('mappings')),
+			**excludekeys(obj, ['mappings']))
+
+
+class AppState(BaseDataObject):
+	"""
+	The full state of the client app, attached to a server, including connection settings, current
+	state of each module, and a collection of module presets.
+	"""
+	def __init__(
+			self,
+			client: ClientInfo=None,
+			modstates: 'Dict[str, ModuleHostState]' =None,
+			presets: 'List[ModulePreset]'=None,
+			modsources: 'List[ModulationSourceSpec]'=None,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.client = client
+		self.modstates = modstates or {}
+		self.presets = presets or []
+		self.modsources = modsources or []
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(
+			self.otherattrs,
+			{
+				'client': self.client.ToJsonDict() if self.client else None,
+				'modstates': ModuleHostState.ToJsonDictMap(self.modstates),
+				'presets': ModulePreset.ToJsonDicts(self.presets),
+				'modsources': ModulationSourceSpec.ToJsonDicts(self.modsources),
+			}))
+
+	@classmethod
+	def FromJsonDict(cls, obj):
+		return cls(
+			client=ClientInfo.FromOptionalJsonDict(obj.get('client')),
+			modstates=ModuleHostState.FromJsonDictMap(obj.get('modstates')),
+			presets=ModulePreset.FromJsonDicts(obj.get('presets')),
+			modsources=ModulationSourceSpec.FromJsonDicts(obj.get('modsources')),
+			**excludekeys(obj, ['client', 'modstates', 'presets', 'modsources']))
+
+	def GetModuleState(self, path, create=False):
+		if path not in self.modstates and create:
+			self.modstates[path] = ModuleHostState()
+		return self.modstates.get(path)
+
+
+class ModuleHostState(BaseDataObject):
+	"""
+	The state of a hosted module, including the value of all of its parameters, as well as the UI
+	state of the module host.
+	"""
+	def __init__(
+			self,
+			collapsed=None,
+			uimode=None,
+			currentstate: 'ModuleState'=None,
+			currentstateindex=0,
+			states: 'List[ModuleState]'=None,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.collapsed = collapsed
+		self.uimode = uimode
+		self.currentstateindex = currentstateindex or 0
+		self.currentstate = currentstate or ModuleState()
+		self.states = states or []  # type: List[ModuleState]
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(
+			self.otherattrs,
+			{
+				'collapsed': self.collapsed,
+				'uimode': self.uimode,
+				'currentstate': self.currentstate.ToJsonDict(),
+				'currentstateindex': self.currentstateindex,
+				'states': ModuleState.ToJsonDicts(self.states),
+			}))
+
+	@classmethod
+	def FromJsonDict(cls, obj):
+		return cls(
+			currentstate=ModuleState.FromJsonDict(obj.get('currentstate')),
+			states=ModuleState.FromJsonDicts(obj.get('states')),
+			**excludekeys(obj, ['currentstate', 'states']))
+
+
+class ModuleState(BaseDataObject):
+	def __init__(
+			self,
+			name=None,
+			params: Dict=None,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.name = name
+		self.params = params or {}
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(
+			self.otherattrs,
+			{
+				'name': self.name,
+				'params': dict(self.params) if self.params else None,
+			}))
+
+
+class ModulePreset(BaseDataObject):
+	"""
+	A set of parameter values that can be applied to a specific type of module.
+	"""
+	def __init__(
+			self,
+			name,
+			typepath,
+			state: ModuleState=None,
+			ispartial=False,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.name = name
+		self.typepath = typepath
+		self.state = state or ModuleState()
+		self.ispartial = bool(ispartial)
+
+	tablekeys = [
+		'name',
+		'typepath',
+		'ispartial',
+	]
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(
+			self.otherattrs,
+			{
+				'name': self.name,
+				'typepath': self.typepath,
+				'ispartial': self.ispartial,
+				'state': self.state.ToJsonDict(),
+			}))
+
+	@classmethod
+	def FromJsonDict(cls, obj):
+		return cls(
+			state=ModuleState.FromJsonDict(obj.get('state')),
+			**excludekeys(obj, ['state']))
+
+
+class ModulationSourceSpec(BaseDataObject):
+	def __init__(
+			self,
+			name,
+			sourcetype='lfo',
+			play=True,
+			sync=True,
+			syncperiod='four',
+			freeperiod=4,
+			shape='ramp',
+			phase=0,
+			bias=0,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.name = name
+		self.sourcetype = sourcetype
+		self.play = play
+		self.sync = sync
+		self.syncperiod = syncperiod
+		self.freeperiod = freeperiod
+		self.shape = shape
+		self.phase = phase
+		self.bias = bias
+
+	tablekeys = [
+		'name',
+		'sourcetype',
+		'play',
+		'sync',
+		'syncperiod',
+		'freeperiod',
+		'shape',
+		'phase',
+		'bias',
+	]
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'name': self.name,
+			'sourcetype': self.sourcetype,
+			'play': self.play,
+			'sync': self.sync,
+			'syncperiod': self.syncperiod,
+			'freeperiod': self.freeperiod,
+			'shape': self.shape,
+			'phase': self.phase,
+			'bias': self.bias,
+		}))
+
+class SchemaProvider:
 	def GetModuleSchema(self, modpath) -> Optional[ModuleSchema]:
 		raise NotImplementedError()
 

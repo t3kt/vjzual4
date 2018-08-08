@@ -37,9 +37,18 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 				'Savemoduletox': lambda: self.SaveModuleTox(),
 				'Testprintmodule': lambda: self._TestPrintModule(),
 				'Testprintsettings': lambda: self._TestPrintExtractedSettings(),
+				'Cleanparameterattrs': lambda: self.CleanParameterAttrs(),
+				'Addmissingparams': lambda: self.AddMissingParams(),
+				'Fixmessedupdrywetswitchoops': self.FixMessedUpDryWetSwitchOops,
+				'Generatetypeid': self.GenerateModuleTypeId,
+				'Reloadcode': self.ReloadCode,
 			},
 			autoinitparexec=True)
 		self._AutoInitActionParams()
+
+	@staticmethod
+	def ReloadCode():
+		mod.td.run('[o.par.loadonstartpulse.pulse() for o in ops("/_/local/modules/*")]', delayFrames=1)
 
 	@property
 	def Module(self):
@@ -86,6 +95,33 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 			self._LogEnd()
 
 	@loggedmethod
+	def AddMissingParams(self):
+		module = self.Module
+		if not module:
+			self._LogEvent('no module!')
+			return
+		self._LogEvent('Module: {}'.format(module))
+		settings = module_settings.ExtractSettings(module)
+		for t in module.customTuplets:
+			name = t[0].tupletName
+			if self._ShouldIgnoreParam(t[0]):
+				continue
+			if name not in settings.parattrs:
+				settings.parattrs[name] = {'label': t[0].label}
+		module_settings.ApplySettings(module, settings)
+
+	@staticmethod
+	def _ShouldIgnoreParam(par):
+		if par.page.name == 'Module' and par.name in [
+				'Modname', 'Uilabel', 'Bypass', 'Resetstate', 'Solo', 'Collapsed', 'Uimode',
+				'Showadvanced', 'Showviewers',
+			]:
+			return True
+		if par.page.name == ':meta':
+			return True
+		return False
+
+	@loggedmethod
 	def _TestPrintExtractedSettings(self):
 		module = self.Module
 		if not module:
@@ -111,6 +147,56 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 			return
 		self._LogEvent('Saving module to {}'.format(toxfile))
 		module.save(toxfile)
+
+	@loggedmethod
+	def GenerateModuleTypeId(self):
+		module = self.Module
+		self._LogEvent('module: {}'.format(module))
+		if not module:
+			return
+		if hasattr(module.par, 'Comptypeid') and module.par.Comptypeid:
+			self._LogEvent('module already has type id: {}'.format(module.par.Comptypeid))
+			return
+		name = module.name
+		if name.endswith('_module'):
+			name = name.replace('_module', '')
+		name = name.replace('_', '')
+		typeid = 'com.optexture.vjzual4.module.' + name
+		self._LogEvent('New type id: {!r}'.format(typeid))
+		self.UpdateModuleMetadata(typeid=typeid)
+
+	@loggedmethod
+	def CleanParameterAttrs(self):
+		module = self.Module
+		self._LogEvent('module: {}'.format(module))
+		if not module:
+			return
+		settings = module_settings.ExtractSettings(module)
+		existingtupletsbyname = {
+			t[0].tupletName: t
+			for t in module.customTuplets
+		}
+		usedkeys = set()
+		for name, attrs in settings.parattrs.items():
+			for key, val in attrs.items():
+				if val != '' and key not in ('name', 'label', 'specialtype', 'advanced', 'mappable'):
+					usedkeys.add(key)
+		parstoremove = []
+		for name, attrs in settings.parattrs.items():
+			if name not in existingtupletsbyname:
+				parstoremove.append(name)
+			elif self._ShouldIgnoreParam(existingtupletsbyname[name][0]):
+				parstoremove.append(name)
+			unusedkeys = set(attrs.keys()) - usedkeys
+			if unusedkeys:
+				for key in unusedkeys:
+					del attrs[key]
+				if not attrs:
+					parstoremove.append(name)
+		for name in sorted(parstoremove):
+			self._LogEvent('Removing orphan parameter attrs: {}'.format(name))
+			del settings.parattrs[name]
+		module_settings.ApplySettings(module, settings)
 
 	@loggedmethod
 	def AdaptOpExpressions(self):
@@ -326,8 +412,30 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 			self._LogEvent('index expression does not match: {!r}'.format(indexpar.expr))
 			return
 		drywetswitch.python = True
-		drywetswitch.par.index.expr = 'not parent().par.Bypass'
-		drywetswitch.par.blend.expr = '0 if parent().par.Bypass else ' + levelexpr
+		drywetswitch.par.index.expr = '0 if parent().par.Bypass else ' + levelexpr
+		drywetswitch.par.blend.expr = 'not parent().par.Bypass'
+
+	@loggedmethod
+	def FixMessedUpDryWetSwitchOops(self):
+		module = self.Module
+		if not module:
+			return
+		drywetswitch = module and module.op('dry_wet_switch')
+		if not drywetswitch or not drywetswitch.python:
+			self._LogEvent('dry wet switch not found or not using python: {}'.format(drywetswitch))
+			return
+		indexpar = drywetswitch.par.index
+		blendpar = drywetswitch.par.blend
+		if indexpar.mode != ParMode.EXPRESSION or blendpar.mode != ParMode.EXPRESSION:
+			self._LogEvent('dry wet switch does not match pattern')
+			return
+		if indexpar.expr == 'not parent().par.Bypass':
+			self._LogEvent('dry wet switch DOES match pattern. fixing...')
+			blendexpr = indexpar.expr
+			indexpar.expr = blendpar.expr
+			blendpar.expr = blendexpr
+		else:
+			self._LogEvent('dry wet switch does not match pattern')
 
 	@loggedmethod
 	def _AdaptVjz3DataNodes(self, module):
@@ -547,7 +655,10 @@ def _GetSelected():
 		return []
 	selected = pane.owner.selectedChildren
 	if not selected:
-		selected = [pane.owner.currentChild]
+		try:
+			selected = [pane.owner.currentChild]
+		except:
+			return [pane.owner]
 	return selected
 
 def _GetContext():
