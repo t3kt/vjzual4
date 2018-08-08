@@ -88,6 +88,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		self.SetStatusText(None)
 
 	@property
+	def ProgressBar(self):
+		return self.ownerComp.op('bottom_bar/progress_bar')
+
+	@property
 	def _RemoteClient(self) -> remote_client.RemoteClient:
 		return self.ownerComp.par.Remoteclient.eval()
 
@@ -140,6 +144,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 
 	@loggedmethod
 	def OnDetach(self):
+		self.ClearTasks()
 		for o in self.ownerComp.ops('app_info', 'modules', 'params', 'param_parts', 'data_nodes'):
 			o.closeViewer()
 		self._ShowSchemaJson(None)

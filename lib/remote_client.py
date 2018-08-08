@@ -44,7 +44,7 @@ except ImportError:
 	app_components = mod.app_components
 
 
-class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.SchemaProvider, common.TaskQueueExt):
+class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.SchemaProvider):
 	"""
 	Client which connects to a TD project that includes a RemoteServer, queries it for information about the project,
 	and facilitates communication between the two TD instances.
@@ -68,7 +68,6 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.Schem
 				'appInfo': self._OnReceiveAppInfo,
 				'modInfo': self._OnReceiveModuleInfo,
 			})
-		common.TaskQueueExt.__init__(self, ownerComp)
 		self._AutoInitActionParams()
 		self.rawAppInfo = None  # type: schema.RawAppInfo
 		self.rawModuleInfos = []  # type: List[schema.RawModuleInfo]
@@ -105,7 +104,6 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.Schem
 	def Detach(self):
 		self.Connected.val = False
 		self.Connection.ClearResponseTasks()
-		self.ClearTasks()
 		self.rawAppInfo = None
 		self.rawModuleInfos = []
 		self.AppSchema = None
@@ -222,7 +220,7 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.Schem
 				return lambda: self.QueryModule(modpath, ismoduletype=False)
 
 			self.SetStatusText('Querying module schemas')
-			self.AddTaskBatch(
+			self.AppHost.AddTaskBatch(
 				[
 					_makeQueryModTask(path)
 					for path in sorted(appinfo.modpaths)
@@ -336,7 +334,7 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.Schem
 			return lambda: self.QueryModule(modpath, ismoduletype=True)
 
 		self.SetStatusText('Querying module types')
-		return self.AddTaskBatch(
+		return self.AppHost.AddTaskBatch(
 			[
 				_makeQueryStateTask(modpath)
 				for modpath in masterpaths
@@ -365,7 +363,7 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.Schem
 		def _makeQueryStateTask(modpath):
 			return lambda: self.QueryModuleState(modpath)
 
-		self.AddTaskBatch(
+		self.AppHost.AddTaskBatch(
 			[
 				lambda: self.BuildModuleProxies(),
 				lambda: self.SetStatusText('Querying module states...'),
