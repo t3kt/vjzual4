@@ -651,7 +651,6 @@ class _SpecialParamMatchers:
 		advanced=True,
 		mappable=False,
 		allowpresets=False,
-		hidden=True,
 	)
 
 	allmatchers = [resolution]
