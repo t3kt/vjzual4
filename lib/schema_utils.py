@@ -1,4 +1,5 @@
 import copy
+import json
 from operator import attrgetter
 from os.path import commonprefix
 from typing import List, Dict, Optional, Tuple
@@ -69,14 +70,20 @@ class AppSchemaBuilder(common.LoggableSubComponent):
 	@loggedmethod
 	def _BuildModuleSchemas(self):
 		for modinfo in self.rawmodules:
-			modschema = _ModuleSchemaBuilder(modinfo).Build()
+			modschema = _ModuleSchemaBuilder(
+				hostobj=self,
+				modinfo=modinfo,
+			).Build()
 			self.modules[modinfo.path] = modschema
 			self.moduletypeattrs[modinfo.path] = dict(modinfo.typeattrs or {})
 
 	@loggedmethod
 	def _BuildModuleTypeSchemas(self):
 		for modinfo in self.rawmoduletypes:
-			typeschema = _ModuleTypeSchemaBuilder(modinfo).Build()
+			typeschema = _ModuleTypeSchemaBuilder(
+				hostobj=self,
+				modinfo=modinfo,
+			).Build()
 			self.moduletypes[typeschema.typeid] = typeschema
 			self.moduletypesbypath[typeschema.path] = typeschema
 
@@ -172,8 +179,13 @@ def _ModuleSchemaAsImplicitType(modschema: ModuleSchema, typeattrs=None):
 		])
 
 
-class _BaseModuleSchemaBuilder:
-	def __init__(self, modinfo: RawModuleInfo):
+class _BaseModuleSchemaBuilder(common.LoggableSubComponent):
+	def __init__(
+			self,
+			hostobj: AppSchemaBuilder,
+			logprefix: str,
+			modinfo: RawModuleInfo):
+		super().__init__(hostobj=hostobj, logprefix=logprefix)
 		self.modinfo = modinfo
 		self.params = []
 		self.groups = OrderedDict()  # type: Dict[str, ParamGroupSchema]
@@ -243,6 +255,7 @@ class _BaseModuleSchemaBuilder:
 				continue
 			yield group
 
+	@loggedmethod
 	def _BuildParamGroups(self):
 		for groupinfo in self.modinfo.pargroups or []:
 			group = ParamGroupSchema(
@@ -267,6 +280,7 @@ class _BaseModuleSchemaBuilder:
 	def _TransformParamGroups(self):
 		pass
 
+	@loggedmethod
 	def _BuildParams(self):
 		parattrs = self.modinfo.parattrs or {}
 		if self.modinfo.partuplets:
@@ -302,7 +316,7 @@ class _BaseModuleSchemaBuilder:
 		if self._IsVjzual3SpecialParam(name, page):
 			return None
 
-		return ParamSchema(
+		paramschema = ParamSchema(
 			name=name,
 			label=label,
 			style=parinfo.style,
@@ -318,6 +332,18 @@ class _BaseModuleSchemaBuilder:
 			groupname=trygetdictval(attrs, 'group', 'groupname', parse=str),
 			parts=[self._BuildParamPart(part) for part in partuplet],
 		)
+		self._TransformParam(paramschema)
+		return paramschema
+
+	def _TransformParam(self, paramschema: ParamSchema):
+		self._LogBegin('_TransformParam({})'.format(paramschema.name))
+		try:
+			for matcher in _SpecialParamMatchers.allmatchers:
+				if matcher.ApplyTo(paramschema):
+					self._LogEvent('Found match: {}'.format(matcher))
+					return
+		finally:
+			self._LogEnd()
 
 	@staticmethod
 	def _BuildParamPart(part: RawParamInfo, attrs: Dict[str, str] = None):
@@ -398,8 +424,14 @@ class _BaseModuleSchemaBuilder:
 		raise NotImplementedError()
 
 class _ModuleSchemaBuilder(_BaseModuleSchemaBuilder):
-	def __init__(self, modinfo: RawModuleInfo):
-		super().__init__(modinfo)
+	def __init__(
+			self,
+			hostobj: AppSchemaBuilder,
+			modinfo: RawModuleInfo):
+		super().__init__(
+			hostobj=hostobj,
+			logprefix='ModuleSchemaBuilder',
+			modinfo=modinfo)
 		self.nodes = []  # type: List[DataNodeInfo]
 
 	def _BuildNodes(self):
@@ -411,6 +443,7 @@ class _ModuleSchemaBuilder(_BaseModuleSchemaBuilder):
 				node.parentpath = self.modinfo.path
 			self.nodes.append(node)
 
+	@loggedmethod
 	def Build(self):
 		self._BuildParams()
 		self._BuildParamGroups()
@@ -431,9 +464,16 @@ class _ModuleSchemaBuilder(_BaseModuleSchemaBuilder):
 		)
 
 class _ModuleTypeSchemaBuilder(_BaseModuleSchemaBuilder):
-	def __init__(self, modinfo: RawModuleInfo):
-		super().__init__(modinfo)
+	def __init__(
+			self,
+			hostobj: AppSchemaBuilder,
+			modinfo: RawModuleInfo):
+		super().__init__(
+			hostobj=hostobj,
+			logprefix='ModuleTypeSchemaBuilder',
+			modinfo=modinfo)
 
+	@loggedmethod
 	def Build(self):
 		self._BuildParams()
 		self._BuildParamGroups()
@@ -461,7 +501,9 @@ class _ParamSpec:
 			alternatenames=None,
 			style=None,
 			optional=False,
-			ignoremismatch=False):
+			ignoremismatch=False,
+			length=None,
+			specialtype=None):
 		self.name = name
 		self.possiblenames = set()
 		self.possiblenames.add(name)
@@ -477,11 +519,63 @@ class _ParamSpec:
 			self.styles = [style]
 		else:
 			self.styles = list(style)
+		if length is None:
+			self.lengths = None
+		elif isinstance(length, int):
+				self.lengths = [length]
+		else:
+			self.lengths = list(length)
+		self.specialtype = specialtype
 
 	def Matches(self, param: ParamSchema):
 		if self.styles and param.style not in self.styles:
 			return False
+		if self.lengths and len(param.parts) not in self.lengths:
+			return False
+		if self.specialtype and param.specialtype != self.specialtype:
+			return False
 		return True
+
+class _ParamMatcher:
+	def __init__(
+			self,
+			spec: _ParamSpec,
+			specialtype=None,
+			mappable=None,
+			hidden=None,
+			advanced=None,
+			allowpresets=None):
+		self.spec = spec
+		self.specialtype = specialtype
+		self.mappable = mappable
+		self.hidden = hidden
+		self.advanced = advanced
+		self.allowpresets = allowpresets
+
+	def ApplyTo(self, param: ParamSchema):
+		if not self.spec.Matches(param):
+			return False
+		if self.specialtype is not None:
+			param.specialtype = self.specialtype
+		if self.mappable is not None:
+			param.mappable = self.mappable
+		if self.hidden is not None:
+			param.hidden = self.hidden
+		if self.advanced is not None:
+			param.advanced = self.advanced
+		if self.allowpresets is not None:
+			param.allowpresets = self.allowpresets
+		return True
+
+	def __str__(self):
+		return json.dumps(cleandict({
+			'specialtype': self.specialtype,
+			'mappable': self.mappable,
+			'hidden': self.hidden,
+			'advanced': self.advanced,
+			'allowpresets': self.allowpresets,
+		}))
+
 
 class _ParamGroupMatcher:
 	def __init__(
@@ -539,9 +633,25 @@ feedbackGroupMatcher = _ParamGroupMatcher(
 	specialtype='feedback',
 	allowprefix=False,
 	paramspecs=[
-		_ParamSpec('Feedbackenabled', 'Toggle'),
-		_ParamSpec('Feedbacklevel', 'Float'),
-		_ParamSpec('Feedbacklevelexp', 'Float', optional=True),
-		_ParamSpec('Feedbackoperand', 'Menu'),
-		_ParamSpec('Feedbackblacklevel', 'Float', optional=True),
+		_ParamSpec('Feedbackenabled', style='Toggle'),
+		_ParamSpec('Feedbacklevel', style='Float'),
+		_ParamSpec('Feedbacklevelexp', style='Float', optional=True),
+		_ParamSpec('Feedbackoperand', style='Menu'),
+		_ParamSpec('Feedbackblacklevel', style='Float', optional=True),
 	])
+
+class _SpecialParamMatchers:
+	resolution = _ParamMatcher(
+		specialtype='resolution',
+		spec=_ParamSpec(
+			name='Renderres',
+			alternatenames=['Resolution', 'Res'],
+			style=['WH', 'Int'],
+			length=2),
+		advanced=True,
+		mappable=False,
+		allowpresets=False,
+	)
+
+	allmatchers = [resolution]
+
