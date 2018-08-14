@@ -62,6 +62,7 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 		self._AutoInitActionParams()
 		self.AppRoot = None
 		self._AllModulePaths = []
+		self.Detach()
 
 	@property
 	def _ModuleTable(self): return self.ownerComp.op('set_modules')
@@ -233,21 +234,18 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 		finally:
 			self._LogEnd()
 
+	@loggedmethod
 	def _GetModuleState(self, modpath, paramnames):
-		self._LogBegin('GetModuleState({!r}, {!r})'.format(modpath, paramnames))
-		try:
-			if not modpath or not paramnames:
-				return None
-			module = self.ownerComp.op(modpath)
-			if not module:
-				return None
-			return {
-				p.name: _GetParJsonValue(p)
-				for p in module.pars(*paramnames)
-				if not p.isPulse and not p.isMomentary
-			}
-		finally:
-			self._LogEnd()
+		if not modpath or not paramnames:
+			return None
+		module = self.ownerComp.op(modpath)
+		if not module:
+			return None
+		return {
+			p.name: _GetParJsonValue(p)
+			for p in module.pars(*paramnames)
+			if not p.isPulse and not p.isMomentary
+		}
 
 	@common.simpleloggedmethod
 	def _StoreAppState(self, request: remote.CommandMessage):
@@ -451,3 +449,71 @@ class _RawModuleInfoBuilder(common.LoggableSubComponent):
 			modattrs=self.settings.modattrs,
 			typeattrs=self.settings.typeattrs,
 		)
+
+class _ServerSettingAccessor(common.ExtensionBase):
+
+	@property
+	def _SettingsComp(self):
+		p = getattr(self.ownerComp.par, 'Settings', None)
+		if p is None:
+			return None
+		return p.eval()
+
+	def _SettingsCompPar(self, name):
+		settings = self._SettingsComp
+		if not settings:
+			return None
+		return getattr(settings.par, name, None)
+
+	def _SettingsCompAndOwnPars(self, *names):
+		settings = self._SettingsComp
+		for name in names:
+			if settings:
+				p = getattr(settings.par, name)
+				if p is not None:
+					yield p
+			p = getattr(self.ownerComp.par, name)
+			if p is not None:
+				yield p
+
+	@property
+	def AppName(self):
+		for p in self._SettingsCompAndOwnPars('Appname'):
+			if p:
+				return p.eval()
+		approot = self.AppRoot
+		if approot:
+			p = getattr(approot.par, 'Appname', None)
+			if p:
+				return p.eval()
+		return project.name
+
+	@property
+	def AppLabel(self):
+		for p in self._SettingsCompAndOwnPars('Applabel'):
+			return p.eval()
+		approot = self.AppRoot
+		if approot:
+			for p in approot.pars('Applabel', 'Uilabel'):
+				if p:
+					return p.eval()
+
+	@property
+	def AppRoot(self):
+		for p in self._SettingsCompAndOwnPars('Approot'):
+			if p:
+				return p.eval()
+		for o in ops('/_/app', '/_/app_root', '/_', '/app', '/app_root', '/project1'):
+			if o.isCOMP:
+				return o
+		for o in ops('/*'):
+			if o.name not in ('local', 'sys', 'ui', 'perform', 'vjz4', 'vjz4_server') and o.isCOMP:
+				return o
+		raise Exception('App root not found!')
+
+	@property
+	def Address(self):
+		for p in self._SettingsCompAndOwnPars('Address'):
+			if p:
+				return p.eval()
+
