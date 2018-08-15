@@ -62,6 +62,7 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 		self._AutoInitActionParams()
 		self.AppRoot = None
 		self._AllModulePaths = []
+		self.Detach()
 
 	@property
 	def _ModuleTable(self): return self.ownerComp.op('set_modules')
@@ -69,66 +70,60 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 	@property
 	def _LocalParGetters(self): return self.ownerComp.op('local_par_val_getters')
 
+	@loggedmethod
 	def Detach(self):
-		self._LogBegin('Detach()')
-		try:
-			self._AllModulePaths = []
-			self._BuildModuleTable()
-			pargetters = self._LocalParGetters
-			for o in pargetters.ops('__pars__*'):
-				o.destroy()
-			textparexprs = pargetters.op('text_par_exprs')
-			textparexprs.clear()
-			self.ownerComp.op('sel_primary_video_source').par.top = ''
-			self.ownerComp.op('sel_secondary_video_source').par.top = ''
-			for send in self.ownerComp.ops('primary_syphonspout_out', 'secondary_syphonspout_out'):
-				send.par.active = False
-				send.par.sendername = ''
-		finally:
-			self._LogEnd()
+		self._AllModulePaths = []
+		self._BuildModuleTable()
+		pargetters = self._LocalParGetters
+		for o in pargetters.ops('__pars__*'):
+			o.destroy()
+		textparexprs = pargetters.op('text_par_exprs')
+		textparexprs.clear()
+		self.ownerComp.op('sel_primary_video_source').par.top = ''
+		self.ownerComp.op('sel_secondary_video_source').par.top = ''
+		for send in self.ownerComp.ops('primary_syphonspout_out', 'secondary_syphonspout_out'):
+			send.par.active = False
+			send.par.sendername = ''
 
+	@loggedmethod
 	def Attach(self):
-		self._LogBegin('Attach()')
-		try:
-			self.AppRoot = self.ownerComp.par.Approot.eval()
-			if not self.AppRoot:
-				raise Exception('No app root specified')
-			self._AllModulePaths = [m.path for m in self._FindSubModules(self.AppRoot, recursive=True, sort=False)]
-			self._BuildModuleTable()
-			pargetters = self._LocalParGetters
-			textparstyles = ('Str', 'StrMenu', 'TOP', 'CHOP', 'DAT', 'COMP', 'SOP', 'PanelCOMP', 'OBJ', 'OP')
-			textpars = []
-			for i, modpath in enumerate(self._AllModulePaths):
-				modop = self.ownerComp.op(modpath)
-				nontextnames = []
-				for par in modop.customPars:
-					if par.style in textparstyles:
-						textpars.append(par)
-					else:
-						nontextnames.append(par.name)
-				CreateOP(
-					parameterCHOP,
-					dest=pargetters,
-					name='__pars__' + tdu.legalName(modpath).replace('/', '__'),
-					nodepos=[
-						0,
-						(i * 150) - 500
-					],
-					parvals={
-						'ops': modpath,
-						'parameters': ' '.join(nontextnames),
-						'renameto': modpath[1:] + ':*',
-					})
-			textparexprs = pargetters.op('text_par_exprs')
-			textparexprs.clear()
-			for par in textpars:
-				textparexprs.appendRow(
-					[
-						repr(par.owner.path + ':' + par.name),
-						'op({!r}).par.{}'.format(par.owner.path, par.name),
-					])
-		finally:
-			self._LogEnd()
+		self.AppRoot = self.ownerComp.par.Approot.eval()
+		if not self.AppRoot:
+			raise Exception('No app root specified')
+		self._AllModulePaths = [m.path for m in self._FindSubModules(self.AppRoot, recursive=True, sort=False)]
+		self._BuildModuleTable()
+		pargetters = self._LocalParGetters
+		textparstyles = ('Str', 'StrMenu', 'TOP', 'CHOP', 'DAT', 'COMP', 'SOP', 'PanelCOMP', 'OBJ', 'OP')
+		textpars = []
+		for i, modpath in enumerate(self._AllModulePaths):
+			modop = self.ownerComp.op(modpath)
+			nontextnames = []
+			for par in modop.customPars:
+				if par.style in textparstyles:
+					textpars.append(par)
+				else:
+					nontextnames.append(par.name)
+			CreateOP(
+				parameterCHOP,
+				dest=pargetters,
+				name='__pars__' + tdu.legalName(modpath).replace('/', '__'),
+				nodepos=[
+					0,
+					(i * 150) - 500
+				],
+				parvals={
+					'ops': modpath,
+					'parameters': ' '.join(nontextnames),
+					'renameto': modpath[1:] + ':*',
+				})
+		textparexprs = pargetters.op('text_par_exprs')
+		textparexprs.clear()
+		for par in textpars:
+			textparexprs.appendRow(
+				[
+					repr(par.owner.path + ':' + par.name),
+					'op({!r}).par.{}'.format(par.owner.path, par.name),
+				])
 
 	def _BuildModuleTable(self):
 		dat = self._ModuleTable
@@ -138,31 +133,28 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 			for modpath in self._AllModulePaths:
 				dat.appendRow([modpath])
 
+	@loggedmethod
 	def _OnConnect(self, request: remote.CommandMessage):
-		self._LogBegin('Connect({!r})'.format(request.arg))
-		try:
-			self.Detach()
-			if not request.arg:
-				raise Exception('No remote info!')
-			clientinfo = schema.ClientInfo.FromJsonDict(request.arg)
-			# TODO: check version
-			self.Attach()
-			_ApplyParValue(self.ownerComp.par.Address, clientinfo.address)
-			_ApplyParValue(self.ownerComp.par.Commandsendport, clientinfo.cmdrecv)
-			connpar = self.Connection.par
-			_ApplyParValue(connpar.Oscsendport, clientinfo.oscrecv)
-			_ApplyParValue(connpar.Oscreceiveport, clientinfo.oscsend)
-			_ApplyParValue(connpar.Osceventsendport, clientinfo.osceventrecv)
-			_ApplyParValue(connpar.Osceventreceiveport, clientinfo.osceventsend)
-			self.ownerComp.op('primary_syphonspout_out').par.sendername = clientinfo.primaryvidrecv or ''
-			self.ownerComp.op('secondary_syphonspout_out').par.sendername = clientinfo.secondaryvidrecv or ''
+		self.Detach()
+		if not request.arg:
+			raise Exception('No remote info!')
+		clientinfo = schema.ClientInfo.FromJsonDict(request.arg)
+		# TODO: check version
+		self.Attach()
+		_ApplyParValue(self.ownerComp.par.Address, clientinfo.address)
+		_ApplyParValue(self.ownerComp.par.Commandsendport, clientinfo.cmdrecv)
+		connpar = self.Connection.par
+		_ApplyParValue(connpar.Oscsendport, clientinfo.oscrecv)
+		_ApplyParValue(connpar.Oscreceiveport, clientinfo.oscsend)
+		_ApplyParValue(connpar.Osceventsendport, clientinfo.osceventrecv)
+		_ApplyParValue(connpar.Osceventreceiveport, clientinfo.osceventsend)
+		self.ownerComp.op('primary_syphonspout_out').par.sendername = clientinfo.primaryvidrecv or ''
+		self.ownerComp.op('secondary_syphonspout_out').par.sendername = clientinfo.secondaryvidrecv or ''
 
-			# TODO: apply connection settings (OSC)
-			self.Connected.val = True
-			serverinfo = self._BuildServerInfo()
-			self.Connection.SendResponse(request.cmd, request.cmdid, serverinfo.ToJsonDict())
-		finally:
-			self._LogEnd()
+		# TODO: apply connection settings (OSC)
+		self.Connected.val = True
+		serverinfo = self._BuildServerInfo()
+		self.Connection.SendResponse(request.cmd, request.cmdid, serverinfo.ToJsonDict())
 
 	def _BuildServerInfo(self):
 		return schema.ServerInfo(
@@ -172,68 +164,53 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 			localstatefile=self.ownerComp.par.Localstatefile.eval() or self.ownerComp.par.Localstatefile.default,
 		)
 
+	@loggedmethod
 	def SetPrimaryVideoSource(self, path):
-		self._LogBegin('SetPrimaryVideoSource({})'.format(path))
-		try:
-			src = self.ownerComp.op(path)
-			self.ownerComp.op('sel_primary_video_source').par.top = src.path if src else ''
-			self.ownerComp.op('primary_syphonspout_out').par.active = src is not None
-		finally:
-			self._LogEnd()
+		src = self.ownerComp.op(path)
+		self.ownerComp.op('sel_primary_video_source').par.top = src.path if src else ''
+		self.ownerComp.op('primary_syphonspout_out').par.active = src is not None
 
+	@loggedmethod
 	def SetSecondaryVideoSource(self, path):
-		self._LogBegin('SetSecondaryVideoSource({})'.format(path))
-		try:
-			src = self.ownerComp.op(path)
-			self.ownerComp.op('sel_secondary_video_source').par.top = src.path if src else ''
-			self.ownerComp.op('secondary_syphonspout_out').par.active = src is not None
-		finally:
-			self._LogEnd()
+		src = self.ownerComp.op(path)
+		self.ownerComp.op('sel_secondary_video_source').par.top = src.path if src else ''
+		self.ownerComp.op('secondary_syphonspout_out').par.active = src is not None
 
+	@loggedmethod
 	def _BuildAppInfo(self):
-		self._LogBegin('_BuildAppInfo()')
-		try:
-			return schema.RawAppInfo(
-				name=str(getattr(self.AppRoot.par, 'Appname', None) or self.ownerComp.par.Appname or project.name),
-				label=str(getattr(self.AppRoot.par, 'Uilabel', None) or getattr(self.AppRoot.par, 'Label', None) or self.ownerComp.par.Applabel),
-				path=self.AppRoot.path,
-				modpaths=self._AllModulePaths,
-			)
-		finally:
-			self._LogEnd()
+		return schema.RawAppInfo(
+			name=str(getattr(self.AppRoot.par, 'Appname', None) or self.ownerComp.par.Appname or project.name),
+			label=str(getattr(self.AppRoot.par, 'Uilabel', None) or getattr(self.AppRoot.par, 'Label', None) or self.ownerComp.par.Applabel),
+			path=self.AppRoot.path,
+			modpaths=self._AllModulePaths,
+		)
 
 	@staticmethod
 	def _FindSubModules(parentComp, recursive=False, sort=True):
 		return _FindSubModules(parentComp, recursive=recursive, sort=sort)
 
+	@loggedmethod
 	def SendAppInfo(self, request: remote.CommandMessage=None):
-		self._LogBegin('SendAppInfo({})'.format(request or ''))
-		try:
-			appinfo = self._BuildAppInfo()
-			if request:
-				self.Connection.SendResponse(request.cmd, request.cmdid, appinfo.ToJsonDict())
-			else:
-				self.Connection.SendCommand('appInfo', appinfo.ToJsonDict())
-		finally:
-			self._LogEnd()
+		appinfo = self._BuildAppInfo()
+		if request:
+			self.Connection.SendResponse(request.cmd, request.cmdid, appinfo.ToJsonDict())
+		else:
+			self.Connection.SendCommand('appInfo', appinfo.ToJsonDict())
 
+	@loggedmethod
 	def _BuildModuleInfo(self, modpath) -> Optional[schema.RawModuleInfo]:
-		self._LogBegin('_BuildModuleInfo({!r})'.format(modpath))
-		try:
-			module = self.ownerComp.op(modpath)
-			if not module:
-				self._LogEvent('Module not found: {}'.format(modpath))
-				return None
-			settings = module_settings.ExtractSettings(module)
-			if not settings.parattrs:
-				modulecore = module.op('core')
-				coreparattrsdat = trygetpar(modulecore, 'Parameters')
-				if coreparattrsdat and not settings.parattrs:
-					settings.parattrs = common.ParseAttrTable(coreparattrsdat)
-			builder = _RawModuleInfoBuilder(module, hostobj=self)
-			return builder.Build()
-		finally:
-			self._LogEnd()
+		module = self.ownerComp.op(modpath)
+		if not module:
+			self._LogEvent('Module not found: {}'.format(modpath))
+			return None
+		settings = module_settings.ExtractSettings(module)
+		if not settings.parattrs:
+			modulecore = module.op('core')
+			coreparattrsdat = trygetpar(modulecore, 'Parameters')
+			if coreparattrsdat and not settings.parattrs:
+				settings.parattrs = common.ParseAttrTable(coreparattrsdat)
+		builder = _RawModuleInfoBuilder(module, hostobj=self)
+		return builder.Build()
 
 	def SendModuleInfo(self, request: remote.CommandMessage):
 		modpath = request.arg
@@ -257,21 +234,18 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 		finally:
 			self._LogEnd()
 
+	@loggedmethod
 	def _GetModuleState(self, modpath, paramnames):
-		self._LogBegin('GetModuleState({!r}, {!r})'.format(modpath, paramnames))
-		try:
-			if not modpath or not paramnames:
-				return None
-			module = self.ownerComp.op(modpath)
-			if not module:
-				return None
-			return {
-				p.name: _GetParJsonValue(p)
-				for p in module.pars(*paramnames)
-				if not p.isPulse and not p.isMomentary
-			}
-		finally:
-			self._LogEnd()
+		if not modpath or not paramnames:
+			return None
+		module = self.ownerComp.op(modpath)
+		if not module:
+			return None
+		return {
+			p.name: _GetParJsonValue(p)
+			for p in module.pars(*paramnames)
+			if not p.isPulse and not p.isMomentary
+		}
 
 	@common.simpleloggedmethod
 	def _StoreAppState(self, request: remote.CommandMessage):
@@ -475,3 +449,71 @@ class _RawModuleInfoBuilder(common.LoggableSubComponent):
 			modattrs=self.settings.modattrs,
 			typeattrs=self.settings.typeattrs,
 		)
+
+class _ServerSettingAccessor(common.ExtensionBase):
+
+	@property
+	def _SettingsComp(self):
+		p = getattr(self.ownerComp.par, 'Settings', None)
+		if p is None:
+			return None
+		return p.eval()
+
+	def _SettingsCompPar(self, name):
+		settings = self._SettingsComp
+		if not settings:
+			return None
+		return getattr(settings.par, name, None)
+
+	def _SettingsCompAndOwnPars(self, *names):
+		settings = self._SettingsComp
+		for name in names:
+			if settings:
+				p = getattr(settings.par, name)
+				if p is not None:
+					yield p
+			p = getattr(self.ownerComp.par, name)
+			if p is not None:
+				yield p
+
+	@property
+	def AppName(self):
+		for p in self._SettingsCompAndOwnPars('Appname'):
+			if p:
+				return p.eval()
+		approot = self.AppRoot
+		if approot:
+			p = getattr(approot.par, 'Appname', None)
+			if p:
+				return p.eval()
+		return project.name
+
+	@property
+	def AppLabel(self):
+		for p in self._SettingsCompAndOwnPars('Applabel'):
+			return p.eval()
+		approot = self.AppRoot
+		if approot:
+			for p in approot.pars('Applabel', 'Uilabel'):
+				if p:
+					return p.eval()
+
+	@property
+	def AppRoot(self):
+		for p in self._SettingsCompAndOwnPars('Approot'):
+			if p:
+				return p.eval()
+		for o in ops('/_/app', '/_/app_root', '/_', '/app', '/app_root', '/project1'):
+			if o.isCOMP:
+				return o
+		for o in ops('/*'):
+			if o.name not in ('local', 'sys', 'ui', 'perform', 'vjz4', 'vjz4_server') and o.isCOMP:
+				return o
+		raise Exception('App root not found!')
+
+	@property
+	def Address(self):
+		for p in self._SettingsCompAndOwnPars('Address'):
+			if p:
+				return p.eval()
+
