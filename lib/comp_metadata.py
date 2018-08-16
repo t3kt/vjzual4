@@ -13,15 +13,18 @@ def UpdateCompMetadata(
 		comp,
 		description=None,
 		version=None,
+		typeid=None,
 		website='https://github.com/t3kt/vjzual4',
 		author='tekt@optexture.com'):
 	page = comp.appendCustomPage(':meta')
 	_makeLastPage(comp, page)
-	AddOrUpdatePar(page.appendStr, 'Compdescription', 'Description', description, readonly=True)
-	AddOrUpdatePar(page.appendInt, 'Compversion', 'Version', version, readonly=True)
-	AddOrUpdatePar(page.appendStr, 'Compwebsite', 'Website', website, readonly=True)
-	AddOrUpdatePar(page.appendStr, 'Compauthor', 'Author', author, readonly=True)
-	page.sort('Compdescription', 'Compversion', 'Compwebsite', 'Compauthor')
+	if typeid:
+		AddOrUpdatePar(page.appendStr, 'Comptypeid', ':Type Id', typeid, readonly=True)
+	AddOrUpdatePar(page.appendStr, 'Compdescription', ':Description', description, readonly=True)
+	AddOrUpdatePar(page.appendInt, 'Compversion', ':Version', version, readonly=True)
+	AddOrUpdatePar(page.appendStr, 'Compwebsite', ':Website', website, readonly=True)
+	AddOrUpdatePar(page.appendStr, 'Compauthor', ':Author', author, readonly=True)
+	page.sort('Comptypeid', 'Compdescription', 'Compversion', 'Compwebsite', 'Compauthor')
 
 
 def _makeLastPage(comp, page):

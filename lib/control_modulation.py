@@ -28,6 +28,11 @@ try:
 except ImportError:
 	menu = mod.menu
 
+try:
+	import app_components
+except ImportError:
+	app_components = mod.app_components
+
 
 class _LfoMode(common.BaseDataObject):
 	def __init__(
@@ -104,9 +109,9 @@ def BuildLfoModeTable(dat):
 		mode.AddToTable(dat)
 
 
-class ModulationManager(common.ExtensionBase, common.ActionsExt):
+class ModulationManager(app_components.ComponentBase, common.ActionsExt):
 	def __init__(self, ownerComp):
-		common.ExtensionBase.__init__(self, ownerComp)
+		app_components.ComponentBase.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions={
 		})
 		self._AutoInitActionParams()
@@ -130,20 +135,6 @@ class ModulationManager(common.ExtensionBase, common.ActionsExt):
 	def AddSources(self, sourcespecs: List[schema.ModulationSourceSpec]):
 		self.SourceManager.AddSources(sourcespecs)
 
-	@property
-	def AppHost(self):
-		apphost = getattr(self.ownerComp.parent, 'AppHost', None)  # type: AppHost
-		return apphost
-
-	@property
-	def UiBuilder(self):
-		apphost = self.AppHost
-		uibuilder = apphost.UiBuilder if apphost else None  # type: ui_builder.UiBuilder
-		if uibuilder:
-			return uibuilder
-		if hasattr(op, 'UiBuilder'):
-			return op.UiBuilder
-
 	@loggedmethod
 	def ClearSources(self):
 		self.SourceManager.ClearSources()
@@ -161,9 +152,9 @@ class ModulationManager(common.ExtensionBase, common.ActionsExt):
 		self.Mapper.AddMapping(mapping)
 
 
-class ModulationSourceManager(common.ExtensionBase, common.ActionsExt):
+class ModulationSourceManager(app_components.ComponentBase, common.ActionsExt):
 	def __init__(self, ownerComp):
-		common.ExtensionBase.__init__(self, ownerComp)
+		app_components.ComponentBase.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions={
 			'Clearsources': self.ClearSources,
 			'Addlfo': lambda: self.AddLfo(),
@@ -192,14 +183,6 @@ class ModulationSourceManager(common.ExtensionBase, common.ActionsExt):
 	@property
 	def _ModulationManager(self) -> ModulationManager:
 		return self.ownerComp.parent.ModulationManager
-
-	@property
-	def AppHost(self):
-		return self._ModulationManager.AppHost
-
-	@property
-	def UiBuilder(self):
-		return self._ModulationManager.UiBuilder
 
 	@property
 	def _SourcesTable(self):
@@ -345,9 +328,9 @@ class ModulationSourceManager(common.ExtensionBase, common.ActionsExt):
 			autoClose=True)
 
 
-class ModulationMapper(common.ExtensionBase, common.ActionsExt):
+class ModulationMapper(app_components.ComponentBase, common.ActionsExt):
 	def __init__(self, ownerComp):
-		common.ExtensionBase.__init__(self, ownerComp)
+		app_components.ComponentBase.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions={
 			'Clearmappings': self.ClearMappings,
 		})
@@ -361,14 +344,6 @@ class ModulationMapper(common.ExtensionBase, common.ActionsExt):
 	@property
 	def _ModulationManager(self) -> ModulationManager:
 		return self.ownerComp.parent.ModulationManager
-
-	@property
-	def AppHost(self):
-		return self._ModulationManager.AppHost
-
-	@property
-	def UiBuilder(self):
-		return self._ModulationManager.UiBuilder
 
 	@property
 	def _MappingsTable(self):

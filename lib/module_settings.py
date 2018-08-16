@@ -18,21 +18,29 @@ try:
 except ImportError:
 	schema = mod.schema
 
+try:
+	import comp_metadata
+except ImportError:
+	comp_metadata = mod.comp_metadata
+
 class ModuleSettings(common.BaseDataObject):
 	def __init__(
 			self,
 			modattrs=None,
+			typeattrs=None,
 			parattrs=None,
 			pargroupattrs=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.modattrs = modattrs or {}  # type: Dict[str, str]
+		self.typeattrs = typeattrs or {}  # type: Dict[str, str]
 		self.parattrs = parattrs or {}  # type: Dict[Dict[str, str]]
 
 	def ToJsonDict(self):
 		return cleandict(mergedicts(
 			{
 				'modattrs': self.modattrs,
+				'typeattrs': self.typeattrs,
 				'parattrs': self.parattrs,
 			},
 			self.otherattrs))
@@ -73,7 +81,21 @@ def ExtractSettings(comp: 'OP'):
 			for name, attrs in parsedattrs.items():
 				if name in existingpars:
 					settings.parattrs[name] = attrs
+	master = comp.par.clone.eval()
+	typeattrop = master if (master and master is not comp) else comp
+	for parname, key in _typeattrpars.items():
+		par = getattr(typeattrop.par, parname, None)
+		if par is not None and par.page.name == ':meta':
+			settings.typeattrs[key] = par.eval()
 	return settings
+
+_typeattrpars = {
+	'Comptypeid': 'typeid',
+	'Compdescription': 'description',
+	'Compversion': 'version',
+	'Compwebsite': 'website',
+	'Compauthor': 'author',
+}
 
 def ApplySettings(comp: 'OP', settings: ModuleSettings):
 	settingscomp = GetOrCreateOP(
@@ -102,4 +124,11 @@ def ApplySettings(comp: 'OP', settings: ModuleSettings):
 	parattrsdat.clear()
 	parattrsdat.appendRow(['name', 'label', 'specialtype', 'advanced', 'mappable'])
 	settingscomp.par.opviewer = './parameter_metadata'
+	typeparvals = {
+		parname: settings.typeattrs[key]
+		for parname, key in _typeattrpars.items()
+		if key in settings.typeattrs and settings.typeattrs[key] not in (None, '')
+	}
+	if typeparvals:
+		comp_metadata.UpdateCompMetadata(comp, **typeparvals)
 	UpdateAttrTable(parattrsdat, settings.parattrs, clear=False)

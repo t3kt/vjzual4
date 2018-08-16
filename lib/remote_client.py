@@ -4,7 +4,6 @@ print('vjz4/remote_client.py loading')
 
 if False:
 	from _stubs import *
-	from app_host import AppHost
 
 try:
 	import common
@@ -39,8 +38,13 @@ try:
 except ImportError:
 	common = mod.common
 
+try:
+	import app_components
+except ImportError:
+	app_components = mod.app_components
 
-class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt):
+
+class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.SchemaProvider):
 	"""
 	Client which connects to a TD project that includes a RemoteServer, queries it for information about the project,
 	and facilitates communication between the two TD instances.
@@ -53,6 +57,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 	NDI.
 	"""
 	def __init__(self, ownerComp):
+		app_components.ComponentBase.__init__(self, ownerComp)
 		remote.RemoteBase.__init__(
 			self,
 			ownerComp,
@@ -63,7 +68,6 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 				'appInfo': self._OnReceiveAppInfo,
 				'modInfo': self._OnReceiveModuleInfo,
 			})
-		common.TaskQueueExt.__init__(self, ownerComp)
 		self._AutoInitActionParams()
 		self.rawAppInfo = None  # type: schema.RawAppInfo
 		self.rawModuleInfos = []  # type: List[schema.RawModuleInfo]
@@ -81,6 +85,9 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 	def _ModuleTable(self): return self.ownerComp.op('set_modules')
 
 	@property
+	def _ModuleTypeTable(self): return self.ownerComp.op('set_module_types')
+
+	@property
 	def _ParamTable(self): return self.ownerComp.op('set_params')
 
 	@property
@@ -93,32 +100,24 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 	def ProxyManager(self) -> module_proxy.ModuleProxyManager:
 		return self.ownerComp.op('proxy')
 
-	@property
-	def AppHost(self):
-		apphost = getattr(self.ownerComp.parent, 'AppHost', None)  # type: AppHost
-		return apphost
-
+	@loggedmethod
 	def Detach(self):
-		self._LogBegin('Detach()')
-		try:
-			self.Connected.val = False
-			self.Connection.ClearResponseTasks()
-			self.ClearTasks()
-			self.rawAppInfo = None
-			self.rawModuleInfos = []
-			self.AppSchema = None
-			self.ServerInfo = None
-			self._BuildAppInfoTable()
-			self._ClearModuleTable()
-			self._ClearParamTables()
-			self._ClearDataNodesTable()
-			self.ProxyManager.par.Rootpath = ''
-			self.ProxyManager.ClearProxies()
-			apphost = self.AppHost
-			if apphost:
-				apphost.OnDetach()
-		finally:
-			self._LogEnd()
+		self.Connected.val = False
+		self.Connection.ClearResponseTasks()
+		self.rawAppInfo = None
+		self.rawModuleInfos = []
+		self.AppSchema = None
+		self.ServerInfo = None
+		self._BuildAppInfoTable()
+		self._ClearModuleTable()
+		self._ClearModuleTypeTable()
+		self._ClearParamTables()
+		self._ClearDataNodesTable()
+		self.ProxyManager.par.Rootpath = ''
+		self.ProxyManager.ClearProxies()
+		apphost = self.AppHost
+		if apphost:
+			apphost.OnDetach()
 
 	def Connect(self, host=None, port=None):
 		if host is None:
@@ -129,6 +128,7 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 			port = self.ownerComp.par.Commandsendport.eval()
 		else:
 			self.ownerComp.par.Commandsendport = port
+		self.SetStatusText('Connecting to {}:{}'.format(host, port))
 		self._LogBegin('Connect({}, {})'.format(host, port))
 		try:
 			self.Detach()
@@ -200,11 +200,13 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 	def QueryApp(self):
 		if not self.Connected:
 			return
+		self.SetStatusText('Querying app info...')
 		self.Connection.SendRequest('queryApp').then(
 			success=self._OnReceiveAppInfo,
 			failure=self._OnQueryAppFailure)
 
 	def _OnReceiveAppInfo(self, cmdmesg: remote.CommandMessage):
+		self.SetStatusText('App info received')
 		self._LogBegin('_OnReceiveAppInfo({!r})'.format(cmdmesg.arg))
 		try:
 			if not cmdmesg.arg:
@@ -217,7 +219,8 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 			def _makeQueryModTask(modpath):
 				return lambda: self.QueryModule(modpath, ismoduletype=False)
 
-			self.AddTaskBatch(
+			self.SetStatusText('Querying module schemas')
+			self.AppHost.AddTaskBatch(
 				[
 					_makeQueryModTask(path)
 					for path in sorted(appinfo.modpaths)
@@ -242,6 +245,11 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 		dat = self._ModuleTable
 		dat.clear()
 		dat.appendRow(schema.ModuleSchema.tablekeys)
+
+	def _ClearModuleTypeTable(self):
+		dat = self._ModuleTypeTable
+		dat.clear()
+		dat.appendRow(schema.ModuleTypeSchema.tablekeys)
 
 	def _ClearParamTables(self):
 		dat = self._ParamTable
@@ -313,6 +321,8 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 			modpaths.append(modinfo.path)
 			if modinfo.masterpath:
 				masterpaths.add(modinfo.masterpath)
+		self._LogEvent('found {} module paths:\n{}'.format(len(modpaths), modpaths))
+		self._LogEvent('found {} module master paths:\n{}'.format(len(masterpaths), masterpaths))
 		if not masterpaths:
 			return self._OnAllModuleTypesReceived()
 
@@ -323,7 +333,8 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 		def _makeQueryStateTask(modpath):
 			return lambda: self.QueryModule(modpath, ismoduletype=True)
 
-		return self.AddTaskBatch(
+		self.SetStatusText('Querying module types')
+		return self.AppHost.AddTaskBatch(
 			[
 				_makeQueryStateTask(modpath)
 				for modpath in masterpaths
@@ -334,7 +345,9 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 
 	@loggedmethod
 	def _OnAllModuleTypesReceived(self):
+		self.SetStatusText('Loading module types')
 		self.AppSchema = schema_utils.AppSchemaBuilder(
+			hostobj=self,
 			appinfo=self.rawAppInfo,
 			modules=self.rawModuleInfos,
 			moduletypes=self.rawModuleTypeInfos).Build()
@@ -343,13 +356,17 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 			modschema.AddToTable(moduletable)
 			self._AddParamsToTable(modschema.path, modschema.params)
 			self._AddToDataNodesTable(modschema.path, modschema.nodes)
+		moduletypetable = self._ModuleTypeTable
+		for modtype in self.AppSchema.moduletypes:
+			modtype.AddToTable(moduletypetable)
 
 		def _makeQueryStateTask(modpath):
 			return lambda: self.QueryModuleState(modpath)
 
-		self.AddTaskBatch(
+		self.AppHost.AddTaskBatch(
 			[
 				lambda: self.BuildModuleProxies(),
+				lambda: self.SetStatusText('Querying module states...'),
 			] + [
 				_makeQueryStateTask(m.path)
 				for m in self.AppSchema.modules
@@ -358,16 +375,15 @@ class RemoteClient(remote.RemoteBase, schema.SchemaProvider, common.TaskQueueExt
 			],
 			autostart=True)
 
+	@loggedmethod
 	def BuildModuleProxies(self):
-		self._LogBegin('BuildModuleProxies()')
-		try:
-			for modschema in self.AppSchema.modules:
-				self.ProxyManager.AddProxy(modschema)
-		finally:
-			self._LogEnd()
+		self.SetStatusText('Building module proxies')
+		for modschema in self.AppSchema.modules:
+			self.ProxyManager.AddProxy(modschema)
 
 	@loggedmethod
 	def NotifyAppSchemaLoaded(self):
+		self.SetStatusText('App schema loaded')
 		self.AppHost.OnAppSchemaLoaded(self.AppSchema)
 
 	def QueryModuleState(self, modpath, params=None):
