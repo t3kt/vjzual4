@@ -48,7 +48,11 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 	def __init__(self, ownerComp):
 		super().__init__(
 			ownerComp,
-			actions={},
+			actions={
+				'Initsettings': lambda: self.Settings.InitSettingsComp(),
+				'Detach': self.Detach,
+			},
+			autoinitparexec=False,
 			handlers={
 				'connect': self._OnConnect,
 				'queryApp': self.SendAppInfo,
@@ -60,6 +64,7 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 				'retrieveAppState': self._RetrieveStoredAppState,
 			})
 		self._AutoInitActionParams()
+		self.Settings = _ServerSettingAccessor(ownerComp)
 		self.AppRoot = None
 		self._AllModulePaths = []
 		self.Detach()
@@ -87,7 +92,7 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 
 	@loggedmethod
 	def Attach(self):
-		self.AppRoot = self.ownerComp.par.Approot.eval()
+		self.AppRoot = self.Settings.AppRoot
 		if not self.AppRoot:
 			raise Exception('No app root specified')
 		self._AllModulePaths = [m.path for m in self._FindSubModules(self.AppRoot, recursive=True, sort=False)]
@@ -141,7 +146,7 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 		clientinfo = schema.ClientInfo.FromJsonDict(request.arg)
 		# TODO: check version
 		self.Attach()
-		_ApplyParValue(self.ownerComp.par.Address, clientinfo.address)
+		self.Settings.Address = clientinfo.address
 		_ApplyParValue(self.ownerComp.par.Commandsendport, clientinfo.cmdrecv)
 		connpar = self.Connection.par
 		_ApplyParValue(connpar.Oscsendport, clientinfo.oscrecv)
@@ -179,8 +184,8 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 	@loggedmethod
 	def _BuildAppInfo(self):
 		return schema.RawAppInfo(
-			name=str(getattr(self.AppRoot.par, 'Appname', None) or self.ownerComp.par.Appname or project.name),
-			label=str(getattr(self.AppRoot.par, 'Uilabel', None) or getattr(self.AppRoot.par, 'Label', None) or self.ownerComp.par.Applabel),
+			name=self.Settings.AppName,
+			label=self.Settings.AppLabel,
 			path=self.AppRoot.path,
 			modpaths=self._AllModulePaths,
 		)
@@ -452,12 +457,36 @@ class _RawModuleInfoBuilder(common.LoggableSubComponent):
 
 class _ServerSettingAccessor(common.ExtensionBase):
 
+	@loggedmethod
+	def InitSettingsComp(self):
+		dest = self.ownerComp.parent()
+		settingsComp = self._SettingsComp
+		if settingsComp:
+			self._LogEvent('Settings comp already exists: {}'.format(settingsComp))
+		else:
+			self._LogEvent('Settings comp does not exist, creating new comp')
+			settingsComp = common.CreateFromTemplate(
+				template=self.ownerComp.op('vjz4_server_settings_template'),
+				dest=dest,
+				name='vjz4_server_settings',
+				attrs=common.opattrs(parvals={
+					'Appname': self.AppName,
+					'Applabel': self.AppLabel,
+					'Approot': self.AppRoot,
+					'Address': self.Address,
+					# TODO: other settings
+				}))
+		self.ownerComp.par.Settings = settingsComp
+
 	@property
 	def _SettingsComp(self):
 		p = getattr(self.ownerComp.par, 'Settings', None)
-		if p is None:
-			return None
-		return p.eval()
+		if p:
+			return p.eval()
+		settingsComp = self.ownerComp.parent().op('vjz4_server_settings')
+		if settingsComp and hasattr(self.ownerComp.par, 'Settings'):
+			self.ownerComp.par.Settings = settingsComp
+		return settingsComp
 
 	def _SettingsCompPar(self, name):
 		settings = self._SettingsComp
@@ -513,7 +542,19 @@ class _ServerSettingAccessor(common.ExtensionBase):
 
 	@property
 	def Address(self):
-		for p in self._SettingsCompAndOwnPars('Address'):
+		pars = list(self._SettingsCompAndOwnPars('Address'))
+		if not pars:
+			return 'localhost'
+		for p in pars:
 			if p:
 				return p.eval()
+		return pars[-1].default
+
+	@Address.setter
+	def Address(self, value):
+		for p in self._SettingsCompAndOwnPars('Address'):
+			if p is not None:
+				p.val = value or ''
+				return
+		raise Exception('Address parameter not found!')
 
