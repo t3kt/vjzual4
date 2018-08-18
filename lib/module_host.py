@@ -433,7 +433,10 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 			menu.Item(
 				'Edit Master',
 				disabled=not self.ModuleConnector.CanEditModuleMaster,
-				callback=lambda: self.ModuleConnector.EditModuleMaster(),
+				callback=lambda: self.ModuleConnector.EditModuleMaster()),
+			menu.Item(
+				'Edit Module Host',
+				callback=lambda: self.ShowInNetworkEditor(),
 				dividerafter=True),
 			menu.Item(
 				'Show Advanced',

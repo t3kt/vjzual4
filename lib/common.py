@@ -786,3 +786,11 @@ class _OPExternalDataStorage:
 _OPStorageEntry = NamedTuple('_OPStorageEntry', [('opid', int), ('data', Dict[str, Any])])
 
 OPExternalStorage = _OPExternalDataStorage()
+
+def GetActiveEditor():
+	pane = ui.panes.current
+	if pane.type == PaneType.NETWORKEDITOR:
+		return pane
+	for pane in ui.panes:
+		if pane.type == PaneType.NETWORKEDITOR:
+			return pane
