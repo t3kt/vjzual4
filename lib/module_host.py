@@ -394,7 +394,6 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 				nodepos=[100, -200 * i])
 		dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
 
-	@loggedmethod
 	def UpdateModuleHeight(self):
 		if not self.ownerComp.par.Autoheight:
 			return

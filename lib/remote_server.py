@@ -49,7 +49,8 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 		super().__init__(
 			ownerComp,
 			actions={
-				'Initsettings': lambda: self._Settings.InitSettingsComp(),
+				'Initsettings': lambda: self.Settings.InitSettingsComp(),
+				'Detach': self.Detach,
 			},
 			autoinitparexec=False,
 			handlers={
@@ -63,7 +64,7 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 				'retrieveAppState': self._RetrieveStoredAppState,
 			})
 		self._AutoInitActionParams()
-		self._Settings = _ServerSettingAccessor(ownerComp)
+		self.Settings = _ServerSettingAccessor(ownerComp)
 		self.AppRoot = None
 		self._AllModulePaths = []
 		self.Detach()
@@ -91,7 +92,7 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 
 	@loggedmethod
 	def Attach(self):
-		self.AppRoot = self._Settings.AppRoot
+		self.AppRoot = self.Settings.AppRoot
 		if not self.AppRoot:
 			raise Exception('No app root specified')
 		self._AllModulePaths = [m.path for m in self._FindSubModules(self.AppRoot, recursive=True, sort=False)]
@@ -145,10 +146,7 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 		clientinfo = schema.ClientInfo.FromJsonDict(request.arg)
 		# TODO: check version
 		self.Attach()
-		if clientinfo.address:
-			self._Settings.Address = clientinfo.address
-		else:
-			self._Settings.ResetAddress()
+		self.Settings.Address = clientinfo.address
 		_ApplyParValue(self.ownerComp.par.Commandsendport, clientinfo.cmdrecv)
 		connpar = self.Connection.par
 		_ApplyParValue(connpar.Oscsendport, clientinfo.oscrecv)
@@ -186,8 +184,8 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 	@loggedmethod
 	def _BuildAppInfo(self):
 		return schema.RawAppInfo(
-			name=self._Settings.AppName,
-			label=self._Settings.AppLabel,
+			name=self.Settings.AppName,
+			label=self.Settings.AppLabel,
 			path=self.AppRoot.path,
 			modpaths=self._AllModulePaths,
 		)
@@ -544,21 +542,19 @@ class _ServerSettingAccessor(common.ExtensionBase):
 
 	@property
 	def Address(self):
-		for p in self._SettingsCompAndOwnPars('Address'):
+		pars = list(self._SettingsCompAndOwnPars('Address'))
+		if not pars:
+			return 'localhost'
+		for p in pars:
 			if p:
-				return p
+				return p.eval()
+		return pars[-1].default
 
 	@Address.setter
 	def Address(self, value):
 		for p in self._SettingsCompAndOwnPars('Address'):
 			if p is not None:
-				p.val = value
+				p.val = value or ''
 				return
 		raise Exception('Address parameter not found!')
-
-	def ResetAddress(self):
-		p = self.Address
-		if p is None:
-			raise Exception('Address parameter not found')
-		p.val = p.default
 

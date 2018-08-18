@@ -171,6 +171,9 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		if hasattr(op, 'UiBuilder'):
 			return op.UiBuilder
 
+	def UpdateModuleWidths(self):
+		self.ModuleManager.UpdateModuleWidths()
+
 	@loggedmethod
 	def _BuildNodeMarkers(self):
 		dest = self.ownerComp.op('nodes')
