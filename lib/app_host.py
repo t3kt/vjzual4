@@ -201,12 +201,12 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 					callback=lambda: self.ShowConnectDialog()),
 				menu.Item(
 					'Disconnect',
-					dividerafter=True,
 					callback=lambda: self._Disconnect()),
+				menu.Divider(),
 				menu.Item(
 					'Connection Properties',
-					callback=lambda: self._RemoteClient.openParameters(),
-					dividerafter=True),
+					callback=lambda: self._RemoteClient.openParameters()),
+				menu.Divider(),
 				menu.Item(
 					'Load State',
 					callback=lambda: self.LoadStateFile(prompt=True)),
@@ -253,8 +253,8 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 					callback=lambda: self._ShowSchemaJson(self.serverinfo)),
 				menu.Item(
 					'App State',
-					callback=lambda: self._ShowSchemaJson(self.BuildState()),
-					dividerafter=True),
+					callback=lambda: self._ShowSchemaJson(self.BuildState())),
+				menu.Divider(),
 				menu.Item(
 					'Reload code',
 					callback=lambda: op.Vjz4.op('RELOAD_CODE').run()),

@@ -435,16 +435,18 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 				disabled=not self.ModuleConnector.CanEditModuleMaster,
 				callback=lambda: self.ModuleConnector.EditModuleMaster()),
 			menu.Item(
-				'Edit Module Host',
-				callback=lambda: self.ShowInNetworkEditor(),
-				dividerafter=True),
+				'Edit Host',
+				callback=lambda: self.ShowInNetworkEditor()),
+			menu.Item(
+				'Host Parameters',
+				callback=lambda: self.ownerComp.openParameters()),
+			menu.Divider(),
 			menu.Item(
 				'Show Advanced',
 				disabled=not self.ModuleConnector.modschema.hasadvanced,
 				checked=self.ownerComp.par.Showadvanced.eval(),
-				callback=lambda: setattr(self.ownerComp.par, 'Showadvanced', not self.ownerComp.par.Showadvanced),
-				dividerafter=True),
-			# _MenuItem('Host Parameters', callback=lambda: self.ownerComp.openParameters()),
+				callback=lambda: setattr(self.ownerComp.par, 'Showadvanced', not self.ownerComp.par.Showadvanced)),
+			menu.Divider(),
 		]
 		if hassubmods:
 			items += [

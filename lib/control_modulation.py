@@ -343,8 +343,8 @@ class ModulationSourceManager(app_components.ComponentBase, common.ActionsExt):
 			menu.Item(
 				'Show previews',
 				checked=previewpar.eval(),
-				dividerafter=True,
 				callback=_togglepreviews),
+			menu.Divider(),
 			menu.Item(
 				'Add LFO',
 				callback=lambda: self.AddLfo()),
