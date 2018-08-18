@@ -255,7 +255,6 @@ class _BaseModuleSchemaBuilder(common.LoggableSubComponent):
 				continue
 			yield group
 
-	@loggedmethod
 	def _BuildParamGroups(self):
 		for groupinfo in self.modinfo.pargroups or []:
 			group = ParamGroupSchema(
@@ -280,7 +279,6 @@ class _BaseModuleSchemaBuilder(common.LoggableSubComponent):
 	def _TransformParamGroups(self):
 		pass
 
-	@loggedmethod
 	def _BuildParams(self):
 		parattrs = self.modinfo.parattrs or {}
 		if self.modinfo.partuplets:
@@ -336,14 +334,10 @@ class _BaseModuleSchemaBuilder(common.LoggableSubComponent):
 		return paramschema
 
 	def _TransformParam(self, paramschema: ParamSchema):
-		self._LogBegin('_TransformParam({})'.format(paramschema.name))
-		try:
-			for matcher in _SpecialParamMatchers.allmatchers:
-				if matcher.ApplyTo(paramschema):
-					self._LogEvent('Found match: {}'.format(matcher))
-					return
-		finally:
-			self._LogEnd()
+		for matcher in _SpecialParamMatchers.allmatchers:
+			if matcher.ApplyTo(paramschema):
+				# self._LogEvent('Found match: {}'.format(matcher))
+				return
 
 	@staticmethod
 	def _BuildParamPart(part: RawParamInfo, attrs: Dict[str, str] = None):
@@ -443,7 +437,6 @@ class _ModuleSchemaBuilder(_BaseModuleSchemaBuilder):
 				node.parentpath = self.modinfo.path
 			self.nodes.append(node)
 
-	@loggedmethod
 	def Build(self):
 		self._BuildParams()
 		self._BuildParamGroups()
@@ -473,7 +466,6 @@ class _ModuleTypeSchemaBuilder(_BaseModuleSchemaBuilder):
 			logprefix='ModuleTypeSchemaBuilder',
 			modinfo=modinfo)
 
-	@loggedmethod
 	def Build(self):
 		self._BuildParams()
 		self._BuildParamGroups()

@@ -88,6 +88,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		self.SetStatusText(None)
 
 	@property
+	def ProgressBar(self):
+		return self.ownerComp.op('bottom_bar/progress_bar')
+
+	@property
 	def _RemoteClient(self) -> remote_client.RemoteClient:
 		return self.ownerComp.par.Remoteclient.eval()
 
@@ -109,7 +113,6 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def GetModuleTypeSchema(self, typepath) -> 'Optional[schema.ModuleTypeSchema]':
 		return self.AppSchema.moduletypesbypath.get(typepath) if self.AppSchema else None
 
-	@loggedmethod
 	def RegisterModuleHost(self, modhost: 'module_host.ModuleHost'):
 		self.ModuleManager.RegisterModuleHost(modhost)
 
@@ -140,6 +143,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 
 	@loggedmethod
 	def OnDetach(self):
+		self.ClearTasks()
 		for o in self.ownerComp.ops('app_info', 'modules', 'params', 'param_parts', 'data_nodes'):
 			o.closeViewer()
 		self._ShowSchemaJson(None)
@@ -165,6 +169,9 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			return uibuilder
 		if hasattr(op, 'UiBuilder'):
 			return op.UiBuilder
+
+	def UpdateModuleWidths(self):
+		self.ModuleManager.UpdateModuleWidths()
 
 	@loggedmethod
 	def _BuildNodeMarkers(self):
@@ -629,7 +636,6 @@ class ModuleManager(app_components.ComponentBase):
 		for m in self.ownerComp.ops('mod__*'):
 			m.par.w = 100 if m.par.Collapsed else 250
 
-	@loggedmethod
 	def RegisterModuleHost(self, modhost: 'module_host.ModuleHost'):
 		if not modhost or not modhost.ModuleConnector:
 			return

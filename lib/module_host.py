@@ -375,7 +375,6 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 		self._RebuildParamControlTable()
 		dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
 
-	@loggedmethod
 	def BuildNodeMarkers(self):
 		dest = self.ownerComp.op('nodes_panel')
 		for marker in dest.ops('node__*'):
@@ -394,7 +393,6 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 				nodepos=[100, -200 * i])
 		dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
 
-	@loggedmethod
 	def UpdateModuleHeight(self):
 		if not self.ownerComp.par.Autoheight:
 			return

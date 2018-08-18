@@ -515,14 +515,14 @@ class UiBuilder:
 
 	def CreateLfoGenerator(
 			self, dest, name,
-			spec,  # type: schema.ModulationSourceSpec
+			spec=None,  # type: schema.ModulationSourceSpec
 			attrs: opattrs=None, **kwargs):
 		return CreateFromTemplate(
 			template=self.ownerComp.op('lfo_generator'),
 			dest=dest, name=name,
 			attrs=opattrs.merged(
 				opattrs(
-					parvals={
+					parvals=spec and {
 						'Name': spec.name,
 						'Play': spec.play,
 						'Sync': spec.sync,
