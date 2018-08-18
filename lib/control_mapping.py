@@ -138,14 +138,17 @@ class ControlMapper(app_components.ComponentBase, common.ActionsExt):
 						control=control.fullname,
 					)
 				self._LogEvent('Adding new mapping: {}'.format(mapping))
-				self.AddMappings([mapping])
+				self._AddMappings([mapping])
 		self._Rebuild()
 
 	@loggedmethod
 	def AddMappings(self, mappings: List[ControlMapping]):
+		self._AddMappings(mappings)
+		self._Rebuild()
+
+	def _AddMappings(self, mappings: List[ControlMapping]):
 		for mapping in mappings:
 			self.custommappings.mappings.append(mapping)
-		self._Rebuild()
 
 	@property
 	def _MappingTable(self):
