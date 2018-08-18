@@ -212,9 +212,9 @@ class RemoteConnection(common.ExtensionBase):
 		self._osceventsend.sendOSC(address, *values, asBundle=asBundle)
 
 class RemoteBase(common.ExtensionBase, common.ActionsExt, CommandHandler):
-	def __init__(self, ownerComp, actions=None, handlers=None):
+	def __init__(self, ownerComp, actions=None, handlers=None, autoinitparexec=True):
 		common.ExtensionBase.__init__(self, ownerComp)
-		common.ActionsExt.__init__(self, ownerComp, actions)
+		common.ActionsExt.__init__(self, ownerComp, actions, autoinitparexec=autoinitparexec)
 		CommandHandler.__init__(self, handlers)
 		self.Connected = tdu.Dependency(False)
 
