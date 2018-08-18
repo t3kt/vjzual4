@@ -113,7 +113,6 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def GetModuleTypeSchema(self, typepath) -> 'Optional[schema.ModuleTypeSchema]':
 		return self.AppSchema.moduletypesbypath.get(typepath) if self.AppSchema else None
 
-	@loggedmethod
 	def RegisterModuleHost(self, modhost: 'module_host.ModuleHost'):
 		self.ModuleManager.RegisterModuleHost(modhost)
 
@@ -637,7 +636,6 @@ class ModuleManager(app_components.ComponentBase):
 		for m in self.ownerComp.ops('mod__*'):
 			m.par.w = 100 if m.par.Collapsed else 250
 
-	@loggedmethod
 	def RegisterModuleHost(self, modhost: 'module_host.ModuleHost'):
 		if not modhost or not modhost.ModuleConnector:
 			return
