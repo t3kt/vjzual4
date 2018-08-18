@@ -506,6 +506,9 @@ class opattrs:
 			parexprs=None,
 			storage=None,
 			dropscript=None,
+			cloneimmune=None,
+			dockto=None,
+			showdocked=None,
 	):
 		self.order = order
 		self.nodepos = nodepos
@@ -515,6 +518,9 @@ class opattrs:
 		self.parexprs = parexprs  # type: Dict[str, str]
 		self.storage = storage  # type: Dict[str, Any]
 		self.dropscript = dropscript  # type: Union[OP, str]
+		self.cloneimmune = cloneimmune  # type: Union[bool, str]
+		self.dockto = dockto  # type: OP
+		self.showdocked = showdocked  # type: bool
 
 	def override(self, other: 'opattrs'):
 		if not other:
@@ -522,6 +528,11 @@ class opattrs:
 		if other.order is not None:
 			self.order = other.order
 		self.nodepos = other.nodepos or self.nodepos
+		if other.cloneimmune is not None:
+			self.cloneimmune = other.cloneimmune
+		self.dockto = other.dockto or self.dockto
+		if other.showdocked is not None:
+			self.showdocked = other.showdocked
 		if other.tags:
 			if self.tags:
 				self.tags.update(other.tags)
@@ -538,32 +549,40 @@ class opattrs:
 		self.parexprs = mergedicts(self.parexprs, other.parexprs)
 		return self
 
-	def applyto(self, comp):
+	def applyto(self, o: OP):
 		if self.order is not None:
-			comp.par.alignorder = self.order
+			o.par.alignorder = self.order
 		if self.parvals:
 			for key, val in self.parvals.items():
-				setattr(comp.par, key, val)
+				setattr(o.par, key, val)
 		if self.parexprs:
 			for key, expr in self.parexprs.items():
-				getattr(comp.par, key).expr = expr
+				getattr(o.par, key).expr = expr
 		if self.nodepos:
-			comp.nodeCenterX = self.nodepos[0]
-			comp.nodeCenterY = self.nodepos[1]
+			o.nodeCenterX = self.nodepos[0]
+			o.nodeCenterY = self.nodepos[1]
 		if self.tags:
-			comp.tags.update(self.tags)
+			o.tags.update(self.tags)
 		if self.panelparent:
-			self.panelparent.outputCOMPConnectors[0].connect(comp)
+			self.panelparent.outputCOMPConnectors[0].connect(o)
 		if self.dropscript:
-			comp.par.drop = 'legacy'
-			comp.par.dropscript = self.dropscript
+			o.par.drop = 'legacy'
+			o.par.dropscript = self.dropscript
 		if self.storage:
 			for key, val in self.storage.items():
 				if val is None:
-					comp.unstore(key)
+					o.unstore(key)
 				else:
-					comp.store(key, val)
-		return comp
+					o.store(key, val)
+		if self.cloneimmune == 'comp':
+			o.componentCloneImmune = True
+		elif self.cloneimmune is not None:
+			o.cloneImmune = self.cloneimmune
+		if self.dockto:
+			o.dock = self.dockto
+		if self.showdocked is not None:
+			o.showDocked = self.showdocked
+		return o
 
 	@classmethod
 	def merged(cls, *attrs, **kwargs):
