@@ -678,25 +678,36 @@ class ModuleManager(app_components.ComponentBase):
 			modhost.LoadState(modstates.get(modpath))
 
 
-# class StatusBar(app_components.ComponentBase, common.ActionsExt):
-# 	def __init__(self, ownerComp):
-# 		app_components.ComponentBase.__init__(self, ownerComp)
-# 		common.ActionsExt.__init__(self, ownerComp, actions={})
-# 		self._AutoInitActionParams()
-# 		self.cleartask = None
-#
-# 	def AddMessage(self, text, duration=2000):
-# 		pass
-#
-# 	def ClearStatus(self):
-# 		self._CancelClearTask()
-# 		pass
-#
-# 	def _SetText(self, text):
-# 		self.ownerComp.op('text').par.text = text or ''
-#
-# 	def _CancelClearTask(self):
-# 		if not self.cleartask:
-# 			return
-# 		self.cleartask.kill()
-# 		self.cleartask = None
+class StatusBar(app_components.ComponentBase, common.ActionsExt):
+	def __init__(self, ownerComp):
+		app_components.ComponentBase.__init__(self, ownerComp)
+		common.ActionsExt.__init__(self, ownerComp, actions={
+			'Clear': self.ClearStatus,
+		})
+		self._AutoInitActionParams()
+		self.cleartask = None
+
+	def AddMessage(self, text, temporary=False):
+		self._CancelClearTask()
+		self._SetText(text)
+		if temporary and text:
+			self._QueueClearTask()
+
+	def ClearStatus(self):
+		self._CancelClearTask()
+		self._SetText(None)
+
+	def _SetText(self, text):
+		self.ownerComp.op('text').par.text = text or ''
+
+	def _CancelClearTask(self):
+		if not self.cleartask:
+			return
+		self.cleartask.kill()
+		self.cleartask = None
+
+	def _QueueClearTask(self):
+		self.cleartask = td.run(
+			'op({!r}).ClearStatus()'.format(self.ownerComp.path),
+			delayMilliSeconds=2000,
+			delayRef=self.ownerComp)
