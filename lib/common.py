@@ -509,6 +509,7 @@ class opattrs:
 			cloneimmune=None,
 			dockto=None,
 			showdocked=None,
+			externaldata=None,
 	):
 		self.order = order
 		self.nodepos = nodepos
@@ -521,6 +522,7 @@ class opattrs:
 		self.cloneimmune = cloneimmune  # type: Union[bool, str]
 		self.dockto = dockto  # type: OP
 		self.showdocked = showdocked  # type: bool
+		self.externaldata = externaldata  # type: Dict[str, Any]
 
 	def override(self, other: 'opattrs'):
 		if not other:
@@ -543,6 +545,11 @@ class opattrs:
 				self.storage.update(other.storage)
 			else:
 				self.storage = dict(other.storage)
+		if other.externaldata:
+			if self.externaldata:
+				self.externaldata.update(other.externaldata)
+			else:
+				self.externaldata = dict(other.externaldata)
 		self.panelparent = other.panelparent or self.panelparent
 		self.dropscript = other.dropscript or self.dropscript
 		self.parvals = mergedicts(self.parvals, other.parvals)
@@ -582,6 +589,8 @@ class opattrs:
 			o.dock = self.dockto
 		if self.showdocked is not None:
 			o.showDocked = self.showdocked
+		if self.externaldata:
+			OPExternalStorage.Store(o, self.externaldata)
 		return o
 
 	@classmethod
@@ -786,21 +795,45 @@ class _OPExternalDataStorage:
 			return entry
 		return None
 
-	def Store(self, o: OP, key: str, value):
-		if not o or not o.valid:
+	def Store(self, o: OP, values: Dict[str, Any]):
+		if not o or not o.valid or not values:
 			return
-		entry = self._GetEntry(o, autocreate=value is not None)
-		if entry is None:
-			return
-		entry.data[key] = value
 
-	def Fetch(self, o: OP, key: str):
+		entry = self._GetEntry(o, autocreate=True)
+		entry.data.update(values)
+
+	def Fetch(self, o: OP, key: str, searchparents=False):
 		if not o or not o.valid:
 			return None
 		entry = self._GetEntry(o, autocreate=False)
+		if entry and key in entry.data:
+			return entry.data[key]
+		if searchparents and o.parent():
+			return self.Fetch(o.parent(), key=key, searchparents=True)
+
+	def Unstore(self, o: OP, key: str=None):
+		if not o or not o.valid:
+			return
+		entry = self._GetEntry(o, autocreate=False)
 		if entry is None:
-			return None
-		return entry.data.get(key)
+			return
+		if not key:
+			del self.entries[o.path]
+		else:
+			if key not in entry.data:
+				return
+			del entry.data[key]
+			if not entry.data:
+				del self.entries[o.path]
+
+	def RemoveByPathPrefix(self, pathprefix):
+		pathstoremove = [
+			path
+			for path in self.entries.keys()
+			if path.startswith(pathprefix)
+		]
+		for path in pathstoremove:
+			del self.entries[path]
 
 _OPStorageEntry = NamedTuple('_OPStorageEntry', [('opid', int), ('data', Dict[str, Any])])
 

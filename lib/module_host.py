@@ -23,6 +23,7 @@ except ImportError:
 cleandict, mergedicts = common.cleandict, common.mergedicts
 Future = common.Future
 loggedmethod = common.loggedmethod
+opattrs = common.opattrs
 
 try:
 	import menu
@@ -359,11 +360,14 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 				dest=dest,
 				name='par__' + parinfo.name,
 				parinfo=parinfo,
-				order=i,
-				nodepos=[100, -200 * i],
-				dropscript=dropscript if parinfo.mappable else None,
-				parexprs=mergedicts(
-					parinfo.advanced and {'display': 'parent.ModuleHost.par.Showadvanced'}
+				wrapperattrs=opattrs(
+					order=i,
+					nodepos=[100, -200 * i],
+					parexprs=mergedicts(
+						parinfo.advanced and {'display': 'parent.ModuleHost.par.Showadvanced'}
+					)),
+				ctrlattrs=opattrs(
+					dropscript=dropscript if parinfo.mappable else None,
 				),
 				addtocontrolmap=self.controlsbyparam,
 				modhostconnector=self.ModuleConnector)
@@ -619,6 +623,63 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 			return
 		mapper = apphost.ControlMapper
 		mapper.ToggleAutoMapModule(self.ModuleConnector.modpath)
+
+	def OnParameterClick(self, panelValue):
+		if not self.ModuleConnector:
+			return
+		source = panelValue.owner
+		if 'vjz4param' in source.tags:
+			parwrapper = source
+		elif hasattr(source.parent, 'ParamControl'):
+			parwrapper = source.parent.ParamControl
+		else:
+			self._LogEvent('Unable to find param wrapper for {}'.format(source))
+			return
+		paramschema = common.OPExternalStorage.Fetch(parwrapper, 'param')
+		if not paramschema:
+			self._LogEvent('Param schema not found for param wrapper: {}'.format(parwrapper))
+			return
+		partschema = common.OPExternalStorage.Fetch(source, 'parampart', searchparents=True)
+		sourceiscontrol = partschema and 'vjz4parctrl' in source.tags
+		if panelValue.name == 'lselect' and sourceiscontrol:
+			return
+		menu.fromMouse().Show(
+			items=self._GetParameterContextMenuItems(paramschema, partschema),
+			autoClose=True)
+
+	def _GetParameterContextMenuItems(
+			self,
+			paramschema: schema.ParamSchema,
+			partschema: Optional[schema.ParamPartSchema]):
+		if not self.ModuleConnector:
+			return []
+
+		partschemas = [partschema] if partschema else paramschema.parts
+
+		pars = []
+		for part in partschemas:
+			p = self.ModuleConnector.GetPar(part.name)
+			if p is not None:
+				pars.append(p)
+
+
+		def _reset():
+			for par in pars:
+				par.val = par.default
+
+		return [
+			menu.Item(
+				'Reset',
+				disabled=not pars,
+				callback=_reset),
+			menu.Divider(),
+			menu.Item(
+				'Show Param Schema',
+				callback=lambda: self.AppHost.ShowSchemaJson(paramschema)),
+			(partschema and len(paramschema.parts) > 1) and menu.Item(
+				'Show Param Part Schema',
+				callback=lambda: self.AppHost.ShowSchemaJson(partschema)),
+		]
 
 
 class ModuleHostConnector:

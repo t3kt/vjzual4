@@ -80,7 +80,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		self._AutoInitActionParams()
 		self.AppSchema = None  # type: schema.AppSchema
 		self.serverinfo = None  # type: schema.ServerInfo
-		self._ShowSchemaJson(None)
+		self.ShowSchemaJson(None)
 		self.nodeMarkersByPath = {}  # type: Dict[str, List[str]]
 		self.previewMarkers = []  # type: List[op]
 		self.statefilename = None
@@ -130,7 +130,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def OnAppSchemaLoaded(self, appschema: schema.AppSchema):
 		self.HighlightManager.ClearAllHighlights()
 		self.AppSchema = appschema
-		self._ShowSchemaJson(None)
+		self.ShowSchemaJson(None)
 		self.AddTaskBatch(
 			[
 				lambda: self.ModuleManager.Attach(appschema),
@@ -146,7 +146,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		self.ClearTasks()
 		for o in self.ownerComp.ops('app_info', 'modules', 'params', 'param_parts', 'data_nodes'):
 			o.closeViewer()
-		self._ShowSchemaJson(None)
+		self.ShowSchemaJson(None)
 		self.HighlightManager.ClearAllComponents()
 		for o in self.ownerComp.ops('nodes/node__*'):
 			o.destroy()
@@ -246,14 +246,14 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 				_viewItem('Data Nodes', 'data_nodes'),
 				menu.Item(
 					'Client Info',
-					callback=lambda: self._ShowSchemaJson(self._RemoteClient.BuildClientInfo())),
+					callback=lambda: self.ShowSchemaJson(self._RemoteClient.BuildClientInfo())),
 				menu.Item(
 					'Server Info',
 					disabled=self.serverinfo is None,
-					callback=lambda: self._ShowSchemaJson(self.serverinfo)),
+					callback=lambda: self.ShowSchemaJson(self.serverinfo)),
 				menu.Item(
 					'App State',
-					callback=lambda: self._ShowSchemaJson(self.BuildState())),
+					callback=lambda: self.ShowSchemaJson(self.BuildState())),
 				menu.Divider(),
 				menu.Item(
 					'Reload code',
@@ -290,11 +290,11 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			menu.Item(
 				'View Schema',
 				disabled=not modhost.ModuleConnector,
-				callback=lambda: self._ShowSchemaJson(modhost.ModuleConnector.modschema)
+				callback=lambda: self.ShowSchemaJson(modhost.ModuleConnector.modschema)
 			),
 			menu.Item(
 				'View State',
-				callback=lambda: self._ShowSchemaJson(modhost.BuildState())),
+				callback=lambda: self.ShowSchemaJson(modhost.BuildState())),
 			menu.Item(
 				'Save Preset',
 				disabled=not modhost.ModuleConnector or not modhost.ModuleConnector.modschema.masterpath,
@@ -328,9 +328,9 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			dat.appendRow([path] + sorted([marker.path for marker in markers]))
 
 	def ShowAppSchema(self):
-		self._ShowSchemaJson(self.AppSchema)
+		self.ShowSchemaJson(self.AppSchema)
 
-	def _ShowSchemaJson(self, info: 'Optional[common.BaseDataObject]'):
+	def ShowSchemaJson(self, info: 'Optional[common.BaseDataObject]'):
 		dat = self.ownerComp.op('schema_json')
 		if not info:
 			dat.text = ''
@@ -348,7 +348,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def _Disconnect(self):
 		self._RemoteClient.Detach()
 		self._RemoteClient.par.Active = False
-		self._ShowSchemaJson(None)
+		self.ShowSchemaJson(None)
 		self.ModuleManager.Detach()
 
 	def ShowConnectDialog(self):
@@ -560,6 +560,7 @@ class ModuleManager(app_components.ComponentBase):
 	@loggedmethod
 	def Detach(self):
 		self.appschema = None
+		common.OPExternalStorage.RemoveByPathPrefix(self.ownerComp.path + '/')
 		for m in self.ownerComp.ops('mod__*'):
 			m.destroy()
 		self.modulehostsbypath.clear()
