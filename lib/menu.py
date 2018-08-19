@@ -30,6 +30,21 @@ class Item:
 		self.hassubmenu = hassubmenu
 		self.callback = callback
 
+def ParToggleItem(
+		par,
+		text=None,
+		callback=None,
+		**kwargs):
+	def _callback():
+		par.val = not par
+		if callback:
+			callback()
+	return Item(
+		text or par.label,
+		checked=par.eval(),
+		callback=_callback,
+		**kwargs)
+
 class Divider:
 	pass
 

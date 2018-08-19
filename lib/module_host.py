@@ -362,10 +362,7 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 				parinfo=parinfo,
 				wrapperattrs=opattrs(
 					order=i,
-					nodepos=[100, -200 * i],
-					parexprs=mergedicts(
-						parinfo.advanced and {'display': 'parent.ModuleHost.par.Showadvanced'}
-					)),
+					nodepos=[100, -200 * i]),
 				ctrlattrs=opattrs(
 					dropscript=dropscript if parinfo.mappable else None,
 				),
@@ -377,6 +374,7 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 			if name in self.ModuleConnector.modschema.parampartsbyname
 		}
 		self._RebuildParamControlTable()
+		self.UpdateParameterVisiblity()
 		dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
 
 	def BuildNodeMarkers(self):
@@ -445,11 +443,13 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 				'Host Parameters',
 				callback=lambda: self.ownerComp.openParameters()),
 			menu.Divider(),
-			menu.Item(
-				'Show Advanced',
+			menu.ParToggleItem(
+				self.ownerComp.par.Showadvanced,
 				disabled=not self.ModuleConnector.modschema.hasadvanced,
-				checked=self.ownerComp.par.Showadvanced.eval(),
-				callback=lambda: setattr(self.ownerComp.par, 'Showadvanced', not self.ownerComp.par.Showadvanced)),
+				callback=self.UpdateParameterVisiblity),
+			menu.ParToggleItem(
+				self.ownerComp.par.Showhidden,
+				callback=self.UpdateParameterVisiblity),
 			menu.Divider(),
 		]
 		if hassubmods:
@@ -644,11 +644,12 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 		if panelValue.name == 'lselect' and sourceiscontrol:
 			return
 		menu.fromMouse().Show(
-			items=self._GetParameterContextMenuItems(paramschema, partschema),
+			items=self._GetParameterContextMenuItems(parwrapper, paramschema, partschema),
 			autoClose=True)
 
 	def _GetParameterContextMenuItems(
 			self,
+			parwrapper: COMP,
 			paramschema: schema.ParamSchema,
 			partschema: Optional[schema.ParamPartSchema]):
 		if not self.ModuleConnector:
@@ -663,15 +664,23 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 				pars.append(p)
 
 
-		def _reset():
+		def reset():
 			for par in pars:
 				par.val = par.default
+
+		def togglehidden():
+			parwrapper.par.Hidden = not parwrapper.par.Hidden
+			self.UpdateParameterVisiblity()
 
 		return [
 			menu.Item(
 				'Reset',
 				disabled=not pars,
-				callback=_reset),
+				callback=reset),
+			menu.Item(
+				'Hidden',
+				checked=parwrapper.par.Hidden,
+				callback=togglehidden),
 			menu.Divider(),
 			menu.Item(
 				'Show Param Schema',
@@ -680,6 +689,17 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 				'Show Param Part Schema',
 				callback=lambda: self.AppHost.ShowSchemaJson(partschema)),
 		]
+
+	def UpdateParameterVisiblity(self):
+		showadvanced = self.ownerComp.par.Showadvanced.eval()
+		showhidden = self.ownerComp.par.Showhidden.eval()
+		for parwrapper in self.ownerComp.ops('controls_panel/par__*'):
+			visible = True
+			if parwrapper.par.Advanced and not showadvanced:
+				visible = False
+			if parwrapper.par.Hidden and not showhidden:
+				visible = False
+			parwrapper.par.display = visible
 
 
 class ModuleHostConnector:
