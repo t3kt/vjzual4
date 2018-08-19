@@ -29,3 +29,8 @@ class ComponentBase(common.ExtensionBase):
 		uibuilder = apphost.UiBuilder if apphost else None
 		return uibuilder or getattr(op, 'UiBuilder', None)
 
+	def ShowInNetworkEditor(self):
+		editor = common.GetActiveEditor()
+		if editor:
+			editor.owner = self.ownerComp
+

@@ -225,7 +225,8 @@ class ModulationSourceManager(app_components.ComponentBase, common.ActionsExt):
 						nodepos=[400, 400 + -200 * effectiveindex],
 						parexprs={
 							'Showpreview': 'parent.SourceManager.par.Showpreview',
-						}
+						},
+						showdocked=True,
 					))
 				pass
 			else:
@@ -234,7 +235,7 @@ class ModulationSourceManager(app_components.ComponentBase, common.ActionsExt):
 			if not gen:
 				continue
 			self.sourcegens.append(gen)
-			onclick = common.CreateFromTemplate(
+			common.CreateFromTemplate(
 				template=onclicktemplate,
 				dest=dest,
 				name='genheadclick__{}'.format(effectiveindex),
@@ -243,20 +244,19 @@ class ModulationSourceManager(app_components.ComponentBase, common.ActionsExt):
 					parvals={
 						'active': True,
 						'panel': gen.op('panel_title'),
-					}
+					},
+					dockto=gen,
 				))
-			onclick.dock = gen
 			onchange = common.CreateFromTemplate(
 				template=onchangetemplate,
 				dest=dest,
 				name='genparchange__{}'.format(effectiveindex),
 				attrs=opattrs(
 					nodepos=[gen.nodeX - 200, gen.nodeY],
-					parvals={'op': gen}
+					parvals={'op': gen},
+					dockto=gen,
 				))
-			onchange.dock = gen
 			onchanges.append(onchange)
-			gen.showDocked = True
 			genspecpairs.append([gen, sourcespec])
 			sourcespec.AddToTable(
 				table,
@@ -343,8 +343,8 @@ class ModulationSourceManager(app_components.ComponentBase, common.ActionsExt):
 			menu.Item(
 				'Show previews',
 				checked=previewpar.eval(),
-				dividerafter=True,
 				callback=_togglepreviews),
+			menu.Divider(),
 			menu.Item(
 				'Add LFO',
 				callback=lambda: self.AddLfo()),

@@ -446,8 +446,8 @@ class ModuleStateManager(app_components.ComponentBase, common.ActionsExt):
 					callback=lambda: self.CaptureState(index=index)),
 				menu.Item(
 					'Rename state',
-					callback=lambda: self.RenameState(index),
-					dividerafter=True),
+					callback=lambda: self.RenameState(index)),
+				menu.Divider(),
 			]
 		items += [
 				menu.Item(
