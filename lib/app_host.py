@@ -532,9 +532,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		state = schema.AppState.ReadJsonFrom(filename)
 		self.LoadState(state)
 
-	def SetStatusText(self, text):
-		o = self.ownerComp.op('bottom_bar/status_bar/text')
-		o.par.text = text or ''
+	def SetStatusText(self, text, temporary=None):
+		statusbar = self.ownerComp.op('bottom_bar/status_bar')
+		if statusbar and hasattr(statusbar, 'SetStatus'):
+			statusbar.SetStatus(text, temporary=temporary)
 
 def _ParseAddress(text: str, defaulthost='localhost', defaultport=9500) -> Tuple[str, int]:
 	text = text and text.strip()
@@ -687,7 +688,9 @@ class StatusBar(app_components.ComponentBase, common.ActionsExt):
 		self._AutoInitActionParams()
 		self.cleartask = None
 
-	def AddMessage(self, text, temporary=False):
+	def SetStatus(self, text, temporary=None):
+		if temporary is None:
+			temporary = True
 		self._CancelClearTask()
 		self._SetText(text)
 		if temporary and text:
@@ -707,7 +710,7 @@ class StatusBar(app_components.ComponentBase, common.ActionsExt):
 		self.cleartask = None
 
 	def _QueueClearTask(self):
-		self.cleartask = td.run(
+		self.cleartask = mod.td.run(
 			'op({!r}).ClearStatus()'.format(self.ownerComp.path),
 			delayMilliSeconds=2000,
 			delayRef=self.ownerComp)
