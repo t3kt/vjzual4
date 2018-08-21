@@ -44,20 +44,14 @@ def _GetOrAdd(d, key, default):
 		d[key] = val = default
 	return val
 
-class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQueueExt):
+class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 	"""Base class for components that host modules, such as ModuleHost or ModuleEditor."""
 	def __init__(self, ownerComp):
 		app_components.ComponentBase.__init__(self, ownerComp)
 		common.TaskQueueExt.__init__(self, ownerComp)
-		common.ActionsExt.__init__(self, ownerComp, actions={
-			'Clearuistate': self.ClearUIState,
-			'Loaduistate': self.LoadUIState,
-			'Saveuistate': self.SaveUIState,
-		})
 		self.ModuleConnector = None  # type: ModuleHostConnector
 		self.controlsbyparam = {}  # type: Dict[str, COMP]
 		self.parampartsbycontrolpath = {}  # type: Dict[str, schema.ParamPartSchema]
-		self._AutoInitActionParams()
 		self.ownerComp.tags.add('vjz4modhost')
 
 		# trick pycharm
@@ -84,76 +78,6 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 	def OnTDPreSave(self):
 		for o in self.ownerComp.ops('controls_panel/par__*', 'sub_modules_panel/mod__*'):
 			o.destroy()
-
-	def _GetUIState(self, autoinit) -> Optional[DependDict]:
-		parent = self.ParentHost
-		if not parent:
-			if not autoinit and 'UIState' not in self.ownerComp.storage:
-				return None
-			uistate = _GetOrAdd(self.ownerComp.storage, 'UIState', DependDict)
-		else:
-			if hasattr(parent, 'UIState'):
-				parentstate = parent.UIState
-			else:
-				if not autoinit and 'UIState' not in parent.storage:
-					return None
-				parentstate = _GetOrAdd(parent.storage, 'UIState', DependDict)
-			if not autoinit and 'children' not in parentstate:
-				return None
-			children = _GetOrAdd(parentstate, 'children', DependDict)
-			modpath = self.ModulePath
-			if modpath and modpath in children:
-				uistate = children[modpath]
-			elif self.ownerComp.path in children:
-				uistate = children[self.ownerComp.path]
-			elif not autoinit:
-				return None
-			elif modpath:
-				uistate = children[modpath] = DependDict()
-			else:
-				uistate = children[self.ownerComp.path] = DependDict()
-		return uistate
-
-	@property
-	def UIState(self):
-		return self._GetUIState(autoinit=True)
-
-	def ClearUIState(self):
-		for m in self._SubModuleHosts:
-			m.ClearUIState()
-		parent = self.ParentHost
-		if not parent:
-			if 'UIState' in self.ownerComp.storage:
-				self.ownerComp.unstore('UIState')
-		else:
-			if 'UIState' not in parent.storage:
-				return
-			parentstate = parent.storage['UIState']
-			if 'children' not in parentstate:
-				return
-			children = parentstate['children']
-			modpath = self.ModulePath
-			if modpath and modpath in children:
-				del children[modpath]
-			if self.ownerComp.path in children:
-				del children[self.ownerComp.path]
-
-	def SaveUIState(self):
-		uistate = self.UIState
-		for name in ['Collapsed', 'Uimode']:
-			uistate[name] = getattr(self.ownerComp.par, name).eval()
-		for m in self._SubModuleHosts:
-			m.SaveUIState()
-
-	def LoadUIState(self):
-		uistate = self._GetUIState(autoinit=False)
-		if not uistate:
-			return
-		self.ownerComp.par.Collapsed = uistate.get('Collapsed', False)
-		if 'Uimode' in uistate and uistate['Uimode'] in self.ownerComp.par.Uimode.menuNames:
-			self.ownerComp.par.Uimode = uistate['Uimode']
-		for m in self._SubModuleHosts:
-			m.LoadUIState()
 
 	def BuildState(self):
 		return schema.ModuleHostState(
