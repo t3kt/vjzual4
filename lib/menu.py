@@ -170,7 +170,6 @@ class MenuField(common.ExtensionBase):
 		rawlabels = self.ownerComp.par.Menulabels.eval()
 		return _preparelist(rawlabels) or self._TargetPar.menuLabels
 
-	@common.loggedmethod
 	def OnClick(self, field):
 		names = self._MenuNames
 		labels = self._MenuLabels

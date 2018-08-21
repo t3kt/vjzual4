@@ -655,9 +655,6 @@ class ModuleManager(app_components.ComponentBase):
 			template = op.Vjz4.op('./module_chain_host')
 		return template
 
-	def GetModuleAdditionalMenuItems(self, modhost: module_host.ModuleHost):
-		return []
-
 	def UpdateModulePreviewStatus(self, modpath):
 		for modhost in self.modulehostsbypath.values():
 			header = modhost.op('module_header')
