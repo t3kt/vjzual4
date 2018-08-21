@@ -80,12 +80,16 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		self._AutoInitActionParams()
 		self.AppSchema = None  # type: schema.AppSchema
 		self.serverinfo = None  # type: schema.ServerInfo
-		self._ShowSchemaJson(None)
+		self.ShowSchemaJson(None)
 		self.nodeMarkersByPath = {}  # type: Dict[str, List[str]]
 		self.previewMarkers = []  # type: List[op]
 		self.statefilename = None
 		self.OnDetach()
 		self.SetStatusText(None)
+
+	@property
+	def ProgressBar(self):
+		return self.ownerComp.op('bottom_bar/progress_bar')
 
 	@property
 	def _RemoteClient(self) -> remote_client.RemoteClient:
@@ -109,7 +113,6 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def GetModuleTypeSchema(self, typepath) -> 'Optional[schema.ModuleTypeSchema]':
 		return self.AppSchema.moduletypesbypath.get(typepath) if self.AppSchema else None
 
-	@loggedmethod
 	def RegisterModuleHost(self, modhost: 'module_host.ModuleHost'):
 		self.ModuleManager.RegisterModuleHost(modhost)
 
@@ -127,7 +130,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def OnAppSchemaLoaded(self, appschema: schema.AppSchema):
 		self.HighlightManager.ClearAllHighlights()
 		self.AppSchema = appschema
-		self._ShowSchemaJson(None)
+		self.ShowSchemaJson(None)
 		self.AddTaskBatch(
 			[
 				lambda: self.ModuleManager.Attach(appschema),
@@ -140,9 +143,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 
 	@loggedmethod
 	def OnDetach(self):
+		self.ClearTasks()
 		for o in self.ownerComp.ops('app_info', 'modules', 'params', 'param_parts', 'data_nodes'):
 			o.closeViewer()
-		self._ShowSchemaJson(None)
+		self.ShowSchemaJson(None)
 		self.HighlightManager.ClearAllComponents()
 		for o in self.ownerComp.ops('nodes/node__*'):
 			o.destroy()
@@ -165,6 +169,9 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			return uibuilder
 		if hasattr(op, 'UiBuilder'):
 			return op.UiBuilder
+
+	def UpdateModuleWidths(self):
+		self.ModuleManager.UpdateModuleWidths()
 
 	@loggedmethod
 	def _BuildNodeMarkers(self):
@@ -194,12 +201,12 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 					callback=lambda: self.ShowConnectDialog()),
 				menu.Item(
 					'Disconnect',
-					dividerafter=True,
 					callback=lambda: self._Disconnect()),
+				menu.Divider(),
 				menu.Item(
 					'Connection Properties',
-					callback=lambda: self._RemoteClient.openParameters(),
-					dividerafter=True),
+					callback=lambda: self._RemoteClient.openParameters()),
+				menu.Divider(),
 				menu.Item(
 					'Load State',
 					callback=lambda: self.LoadStateFile(prompt=True)),
@@ -219,7 +226,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 					callback=lambda: self.LoadRemoteStoredState()),
 			]
 		elif name == 'view_menu':
-			items = self._GetSidePanelModeMenuItems()
+			items = self._GetSidePanelModeMenuItems() + [
+				menu.Divider(),
+				menu.ParToggleItem(self.ownerComp.par.Showhiddenmodules),
+			]
 		elif name == 'debug_menu':
 			def _viewItem(text, oppath):
 				return menu.Item(
@@ -233,20 +243,21 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 					callback=lambda: self.ShowAppSchema()),
 				_viewItem('App Info', 'app_info'),
 				_viewItem('Modules', 'modules'),
+				_viewItem('Module Types', 'module_types'),
 				_viewItem('Params', 'params'),
 				_viewItem('Param Parts', 'param_parts'),
 				_viewItem('Data Nodes', 'data_nodes'),
 				menu.Item(
 					'Client Info',
-					callback=lambda: self._ShowSchemaJson(self._RemoteClient.BuildClientInfo())),
+					callback=lambda: self.ShowSchemaJson(self._RemoteClient.BuildClientInfo())),
 				menu.Item(
 					'Server Info',
 					disabled=self.serverinfo is None,
-					callback=lambda: self._ShowSchemaJson(self.serverinfo)),
+					callback=lambda: self.ShowSchemaJson(self.serverinfo)),
 				menu.Item(
 					'App State',
-					callback=lambda: self._ShowSchemaJson(self.BuildState()),
-					dividerafter=True),
+					callback=lambda: self.ShowSchemaJson(self.BuildState())),
+				menu.Divider(),
 				menu.Item(
 					'Reload code',
 					callback=lambda: op.Vjz4.op('RELOAD_CODE').run()),
@@ -279,14 +290,15 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 
 	def GetModuleAdditionalMenuItems(self, modhost: module_host.ModuleHost):
 		items = [
+			menu.Divider(),
 			menu.Item(
 				'View Schema',
 				disabled=not modhost.ModuleConnector,
-				callback=lambda: self._ShowSchemaJson(modhost.ModuleConnector.modschema)
+				callback=lambda: self.ShowSchemaJson(modhost.ModuleConnector.modschema)
 			),
 			menu.Item(
 				'View State',
-				callback=lambda: self._ShowSchemaJson(modhost.BuildState())),
+				callback=lambda: self.ShowSchemaJson(modhost.BuildState())),
 			menu.Item(
 				'Save Preset',
 				disabled=not modhost.ModuleConnector or not modhost.ModuleConnector.modschema.masterpath,
@@ -320,9 +332,9 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			dat.appendRow([path] + sorted([marker.path for marker in markers]))
 
 	def ShowAppSchema(self):
-		self._ShowSchemaJson(self.AppSchema)
+		self.ShowSchemaJson(self.AppSchema)
 
-	def _ShowSchemaJson(self, info: 'Optional[common.BaseDataObject]'):
+	def ShowSchemaJson(self, info: 'Optional[common.BaseDataObject]'):
 		dat = self.ownerComp.op('schema_json')
 		if not info:
 			dat.text = ''
@@ -340,7 +352,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def _Disconnect(self):
 		self._RemoteClient.Detach()
 		self._RemoteClient.par.Active = False
-		self._ShowSchemaJson(None)
+		self.ShowSchemaJson(None)
 		self.ModuleManager.Detach()
 
 	def ShowConnectDialog(self):
@@ -524,9 +536,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		state = schema.AppState.ReadJsonFrom(filename)
 		self.LoadState(state)
 
-	def SetStatusText(self, text):
-		o = self.ownerComp.op('bottom_bar/status_bar/text')
-		o.par.text = text or ''
+	def SetStatusText(self, text, temporary=None):
+		statusbar = self.ownerComp.op('bottom_bar/status_bar')
+		if statusbar and hasattr(statusbar, 'SetStatus'):
+			statusbar.SetStatus(text, temporary=temporary)
 
 def _ParseAddress(text: str, defaulthost='localhost', defaultport=9500) -> Tuple[str, int]:
 	text = text and text.strip()
@@ -552,6 +565,7 @@ class ModuleManager(app_components.ComponentBase):
 	@loggedmethod
 	def Detach(self):
 		self.appschema = None
+		common.OPExternalStorage.RemoveByPathPrefix(self.ownerComp.path + '/')
 		for m in self.ownerComp.ops('mod__*'):
 			m.destroy()
 		self.modulehostsbypath.clear()
@@ -623,12 +637,12 @@ class ModuleManager(app_components.ComponentBase):
 	def _OnSubModuleHostsConnected(self):
 		self.SetStatusText('Module hosts connected')
 		self.UpdateModuleWidths()
+		self.UpdateModuleVisibility()
 
 	def UpdateModuleWidths(self):
 		for m in self.ownerComp.ops('mod__*'):
 			m.par.w = 100 if m.par.Collapsed else 250
 
-	@loggedmethod
 	def RegisterModuleHost(self, modhost: 'module_host.ModuleHost'):
 		if not modhost or not modhost.ModuleConnector:
 			return
@@ -640,9 +654,6 @@ class ModuleManager(app_components.ComponentBase):
 		if not template and hasattr(op, 'Vjz4'):
 			template = op.Vjz4.op('./module_chain_host')
 		return template
-
-	def GetModuleAdditionalMenuItems(self, modhost: module_host.ModuleHost):
-		return self.AppHost.GetModuleAdditionalMenuItems(modhost)
 
 	def UpdateModulePreviewStatus(self, modpath):
 		for modhost in self.modulehostsbypath.values():
@@ -669,26 +680,44 @@ class ModuleManager(app_components.ComponentBase):
 		for modpath, modhost in self.modulehostsbypath.items():
 			modhost.LoadState(modstates.get(modpath))
 
+	def UpdateModuleVisibility(self):
+		showhidden = self.AppHost.par.Showhiddenmodules.eval()
+		for modhost in self.modulehostsbypath.values():
+			modhost.par.display = showhidden or not modhost.par.Hidden
 
-# class StatusBar(app_components.ComponentBase, common.ActionsExt):
-# 	def __init__(self, ownerComp):
-# 		app_components.ComponentBase.__init__(self, ownerComp)
-# 		common.ActionsExt.__init__(self, ownerComp, actions={})
-# 		self._AutoInitActionParams()
-# 		self.cleartask = None
-#
-# 	def AddMessage(self, text, duration=2000):
-# 		pass
-#
-# 	def ClearStatus(self):
-# 		self._CancelClearTask()
-# 		pass
-#
-# 	def _SetText(self, text):
-# 		self.ownerComp.op('text').par.text = text or ''
-#
-# 	def _CancelClearTask(self):
-# 		if not self.cleartask:
-# 			return
-# 		self.cleartask.kill()
-# 		self.cleartask = None
+
+class StatusBar(app_components.ComponentBase, common.ActionsExt):
+	def __init__(self, ownerComp):
+		app_components.ComponentBase.__init__(self, ownerComp)
+		common.ActionsExt.__init__(self, ownerComp, actions={
+			'Clear': self.ClearStatus,
+		})
+		self._AutoInitActionParams()
+		self.cleartask = None
+
+	def SetStatus(self, text, temporary=None):
+		if temporary is None:
+			temporary = True
+		self._CancelClearTask()
+		self._SetText(text)
+		if temporary and text:
+			self._QueueClearTask()
+
+	def ClearStatus(self):
+		self._CancelClearTask()
+		self._SetText(None)
+
+	def _SetText(self, text):
+		self.ownerComp.op('text').par.text = text or ''
+
+	def _CancelClearTask(self):
+		if not self.cleartask:
+			return
+		self.cleartask.kill()
+		self.cleartask = None
+
+	def _QueueClearTask(self):
+		self.cleartask = mod.td.run(
+			'op({!r}).ClearStatus()'.format(self.ownerComp.path),
+			delayMilliSeconds=2000,
+			delayRef=self.ownerComp)

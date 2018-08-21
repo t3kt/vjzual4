@@ -1,4 +1,5 @@
 import copy
+import json
 from operator import attrgetter
 from os.path import commonprefix
 from typing import List, Dict, Optional, Tuple
@@ -14,6 +15,7 @@ except ImportError:
 	common = mod.common
 cleandict, excludekeys, mergedicts = common.cleandict, common.excludekeys, common.mergedicts
 trygetdictval = common.trygetdictval
+loggedmethod = common.loggedmethod
 
 def __dynamiclocalimport(module):
 	globs = globals()
@@ -30,23 +32,28 @@ except ImportError:
 	__dynamiclocalimport(schema)
 
 
-class AppSchemaBuilder:
+class AppSchemaBuilder(common.LoggableSubComponent):
 	def __init__(
 			self,
+			hostobj: common.LoggableBase,
 			appinfo: RawAppInfo,
 			modules: List[RawModuleInfo],
 			moduletypes: List[RawModuleInfo]):
+		super().__init__(hostobj=hostobj, logprefix='AppSchemaBuilder')
 		self.appinfo = appinfo
 		self.rawmodules = modules or []
 		self.rawmoduletypes = moduletypes or []
 		self.modules = OrderedDict()  # type: Dict[str, ModuleSchema]
+		self.moduletypeattrs = {}  # type: Dict[str, Dict[str, Any]]
 		self.moduletypes = OrderedDict()  # type: Dict[str, ModuleTypeSchema]
+		self.moduletypesbypath = {}  # type: Dict[str, ModuleTypeSchema]
 		self.implicitmoduletypes = OrderedDict()  # type: Dict[str, ModuleTypeSchema]
 
+	@loggedmethod
 	def Build(self):
 		self._BuildModuleSchemas()
 		self._BuildModuleTypeSchemas()
-		self._DeriveImplicitModuleTypes()
+		self._AssociateAndGenerateModuleTypes()
 		self._StripUnusedModuleTypes()
 		return AppSchema(
 			name=self.appinfo.name,
@@ -60,46 +67,77 @@ class AppSchemaBuilder:
 				if modschema.parentpath == self.appinfo.path
 			])
 
+	@loggedmethod
 	def _BuildModuleSchemas(self):
 		for modinfo in self.rawmodules:
-			self.modules[modinfo.path] = _ModuleSchemaBuilder(modinfo).Build()
+			modschema = _ModuleSchemaBuilder(
+				hostobj=self,
+				modinfo=modinfo,
+			).Build()
+			self.modules[modinfo.path] = modschema
+			self.moduletypeattrs[modinfo.path] = dict(modinfo.typeattrs or {})
 
+	@loggedmethod
 	def _BuildModuleTypeSchemas(self):
 		for modinfo in self.rawmoduletypes:
-			self.moduletypes[modinfo.path] = _ModuleTypeSchemaBuilder(modinfo).Build()
+			typeschema = _ModuleTypeSchemaBuilder(
+				hostobj=self,
+				modinfo=modinfo,
+			).Build()
+			self.moduletypes[typeschema.typeid] = typeschema
+			self.moduletypesbypath[typeschema.path] = typeschema
 
 	def _GetMatchingModuleType(self, modschema: ModuleSchema) -> Optional[ModuleTypeSchema]:
-		modtypes = []
-		for modtype in self.moduletypes.values():
-			if modschema.MatchesModuleType(modtype, exact=False):
-				modtypes.append(modtype)
+		self._LogBegin('_GetMatchingModuleType({})'.format(modschema.path))
+		try:
+			modtypes = []
+			for modtype in self.moduletypes.values():
+				if modschema.MatchesModuleType(modtype, exact=False):
+					modtypes.append(modtype)
 
-		modtypes = list(sorted(modtypes, key=attrgetter('isexplicit', 'paramcount'), reverse=True))
-		return modtypes[0] if modtypes else None
+			modtypes = list(sorted(modtypes, key=attrgetter('isexplicit', 'paramcount'), reverse=True))
+			self._LogEvent('matching types: {}'.format([m.typeid for m in modtypes]))
+			return modtypes[0] if modtypes else None
+		finally:
+			self._LogEnd()
 
-	def _DeriveImplicitModuleTypes(self):
+	@loggedmethod
+	def _AssociateAndGenerateModuleTypes(self):
 
 		for modschema in self.modules.values():
-			masterpath = modschema.masterpath
-			if masterpath and masterpath in self.moduletypes:
+			typeattrs = self.moduletypeattrs.get(modschema.path) or {}
+			typeid = typeattrs.get('typeid') or modschema.typeid
+			if typeid:
+				modschema.typeid = typeid
+			if typeid and typeid in self.moduletypes:
 				continue
+			masterpath = modschema.masterpath
+			if not typeid and masterpath and masterpath in self.moduletypesbypath:
+				typeschema = self.moduletypesbypath[masterpath]
+				modschema.typeid = typeschema.typeid
+				continue
+
 			modtype = self._GetMatchingModuleType(modschema)
 			if not modtype:
 				if not self._IsElligibleForImplicitModuleType(modschema):
+					self._LogEvent('module is not elligible for implicit module type: {}'.format(modschema.path))
 					continue
-				modtype = _ModuleSchemaAsType(modschema, implicit=True)
-				self.moduletypes[modtype.path] = modtype
+				modtype = _ModuleSchemaAsImplicitType(modschema, typeattrs=typeattrs)
+				self.moduletypes[modtype.typeid] = modtype
+			modschema.typeid = modtype.typeid
 			modschema.masterpath = modtype.path
 			modschema.masterisimplicit = True
 			modschema.masterispartialmatch = len(modschema.params) != len(modtype.params)
 
+	@loggedmethod
 	def _StripUnusedModuleTypes(self):
-		pathstoremove = set(self.moduletypes.keys())
+		typeidstoremove = set(self.moduletypes.keys())
 		for modschema in self.modules.values():
-			if modschema.masterpath and modschema.masterpath in pathstoremove:
-				pathstoremove.remove(modschema.masterpath)
-		for path in pathstoremove:
-			del self.moduletypes[path]
+			if modschema.typeid and modschema.typeid in typeidstoremove:
+				typeidstoremove.remove(modschema.typeid)
+		self._LogEvent('removing unused module types: {}'.format(typeidstoremove))
+		for typeid in typeidstoremove:
+			del self.moduletypes[typeid]
 
 	@staticmethod
 	def _IsElligibleForImplicitModuleType(modschema: ModuleSchema):
@@ -119,26 +157,35 @@ class AppSchemaBuilder:
 			return False
 		return True
 
-def _ModuleSchemaAsType(modschema: ModuleSchema, implicit=False):
-	if implicit:
-		name = '({})'.format(modschema.masterpath or modschema.name)
-		label = '({})'.format(modschema.masterpath) if modschema.masterpath else None
-		path = modschema.masterpath or modschema.path
-	else:
-		name, label, path = modschema.name, modschema.label, modschema.path
+def _ModuleSchemaAsImplicitType(modschema: ModuleSchema, typeattrs=None):
+	typeattrs = typeattrs or {}
+	typeid = typeattrs.get('typeid') or modschema.typeid or '~{}'.format(modschema.path)
+	name = '({})'.format(modschema.masterpath or modschema.name)
+	label = '({})'.format(modschema.masterpath) if modschema.masterpath else None
+	path = modschema.masterpath or modschema.path
 	return ModuleTypeSchema(
+		typeid=typeid,
 		name=name,
 		label=label,
 		path=path,
-		derivedfrompath=modschema.path if implicit else None,
+		description=typeattrs.get('description'),
+		version=typeattrs.get('version'),
+		website=typeattrs.get('website'),
+		author=typeattrs.get('author'),
+		derivedfrompath=modschema.path,
 		params=[
 			copy.deepcopy(parinfo)
 			for parinfo in modschema.params
 		])
 
 
-class _BaseModuleSchemaBuilder:
-	def __init__(self, modinfo: RawModuleInfo):
+class _BaseModuleSchemaBuilder(common.LoggableSubComponent):
+	def __init__(
+			self,
+			hostobj: AppSchemaBuilder,
+			logprefix: str,
+			modinfo: RawModuleInfo):
+		super().__init__(hostobj=hostobj, logprefix=logprefix)
 		self.modinfo = modinfo
 		self.params = []
 		self.groups = OrderedDict()  # type: Dict[str, ParamGroupSchema]
@@ -267,7 +314,7 @@ class _BaseModuleSchemaBuilder:
 		if self._IsVjzual3SpecialParam(name, page):
 			return None
 
-		return ParamSchema(
+		paramschema = ParamSchema(
 			name=name,
 			label=label,
 			style=parinfo.style,
@@ -283,6 +330,14 @@ class _BaseModuleSchemaBuilder:
 			groupname=trygetdictval(attrs, 'group', 'groupname', parse=str),
 			parts=[self._BuildParamPart(part) for part in partuplet],
 		)
+		self._TransformParam(paramschema)
+		return paramschema
+
+	def _TransformParam(self, paramschema: ParamSchema):
+		for matcher in _SpecialParamMatchers.allmatchers:
+			if matcher.ApplyTo(paramschema):
+				# self._LogEvent('Found match: {}'.format(matcher))
+				return
 
 	@staticmethod
 	def _BuildParamPart(part: RawParamInfo, attrs: Dict[str, str] = None):
@@ -363,8 +418,14 @@ class _BaseModuleSchemaBuilder:
 		raise NotImplementedError()
 
 class _ModuleSchemaBuilder(_BaseModuleSchemaBuilder):
-	def __init__(self, modinfo: RawModuleInfo):
-		super().__init__(modinfo)
+	def __init__(
+			self,
+			hostobj: AppSchemaBuilder,
+			modinfo: RawModuleInfo):
+		super().__init__(
+			hostobj=hostobj,
+			logprefix='ModuleSchemaBuilder',
+			modinfo=modinfo)
 		self.nodes = []  # type: List[DataNodeInfo]
 
 	def _BuildNodes(self):
@@ -396,17 +457,29 @@ class _ModuleSchemaBuilder(_BaseModuleSchemaBuilder):
 		)
 
 class _ModuleTypeSchemaBuilder(_BaseModuleSchemaBuilder):
-	def __init__(self, modinfo: RawModuleInfo):
-		super().__init__(modinfo)
+	def __init__(
+			self,
+			hostobj: AppSchemaBuilder,
+			modinfo: RawModuleInfo):
+		super().__init__(
+			hostobj=hostobj,
+			logprefix='ModuleTypeSchemaBuilder',
+			modinfo=modinfo)
 
 	def Build(self):
 		self._BuildParams()
 		self._BuildParamGroups()
 		modinfo = self.modinfo
+		typeattrs = modinfo.typeattrs or {}
 		return ModuleTypeSchema(
+			typeid=typeattrs.get('typeid'),
 			name=modinfo.name,
 			label=modinfo.label,
 			path=modinfo.path,
+			description=typeattrs.get('description'),
+			version=typeattrs.get('version'),
+			website=typeattrs.get('website'),
+			author=typeattrs.get('author'),
 			tags=self.tags,
 			params=self.params,
 			paramgroups=list(self._GetFilteredGroups()),
@@ -420,7 +493,9 @@ class _ParamSpec:
 			alternatenames=None,
 			style=None,
 			optional=False,
-			ignoremismatch=False):
+			ignoremismatch=False,
+			length=None,
+			specialtype=None):
 		self.name = name
 		self.possiblenames = set()
 		self.possiblenames.add(name)
@@ -436,11 +511,63 @@ class _ParamSpec:
 			self.styles = [style]
 		else:
 			self.styles = list(style)
+		if length is None:
+			self.lengths = None
+		elif isinstance(length, int):
+				self.lengths = [length]
+		else:
+			self.lengths = list(length)
+		self.specialtype = specialtype
 
 	def Matches(self, param: ParamSchema):
 		if self.styles and param.style not in self.styles:
 			return False
+		if self.lengths and len(param.parts) not in self.lengths:
+			return False
+		if self.specialtype and param.specialtype != self.specialtype:
+			return False
 		return True
+
+class _ParamMatcher:
+	def __init__(
+			self,
+			spec: _ParamSpec,
+			specialtype=None,
+			mappable=None,
+			hidden=None,
+			advanced=None,
+			allowpresets=None):
+		self.spec = spec
+		self.specialtype = specialtype
+		self.mappable = mappable
+		self.hidden = hidden
+		self.advanced = advanced
+		self.allowpresets = allowpresets
+
+	def ApplyTo(self, param: ParamSchema):
+		if not self.spec.Matches(param):
+			return False
+		if self.specialtype is not None:
+			param.specialtype = self.specialtype
+		if self.mappable is not None:
+			param.mappable = self.mappable
+		if self.hidden is not None:
+			param.hidden = self.hidden
+		if self.advanced is not None:
+			param.advanced = self.advanced
+		if self.allowpresets is not None:
+			param.allowpresets = self.allowpresets
+		return True
+
+	def __str__(self):
+		return json.dumps(cleandict({
+			'specialtype': self.specialtype,
+			'mappable': self.mappable,
+			'hidden': self.hidden,
+			'advanced': self.advanced,
+			'allowpresets': self.allowpresets,
+		}))
+
 
 class _ParamGroupMatcher:
 	def __init__(
@@ -498,9 +625,25 @@ feedbackGroupMatcher = _ParamGroupMatcher(
 	specialtype='feedback',
 	allowprefix=False,
 	paramspecs=[
-		_ParamSpec('Feedbackenabled', 'Toggle'),
-		_ParamSpec('Feedbacklevel', 'Float'),
-		_ParamSpec('Feedbacklevelexp', 'Float', optional=True),
-		_ParamSpec('Feedbackoperand', 'Menu'),
-		_ParamSpec('Feedbackblacklevel', 'Float', optional=True),
+		_ParamSpec('Feedbackenabled', style='Toggle'),
+		_ParamSpec('Feedbacklevel', style='Float'),
+		_ParamSpec('Feedbacklevelexp', style='Float', optional=True),
+		_ParamSpec('Feedbackoperand', style='Menu'),
+		_ParamSpec('Feedbackblacklevel', style='Float', optional=True),
 	])
+
+class _SpecialParamMatchers:
+	resolution = _ParamMatcher(
+		specialtype='resolution',
+		spec=_ParamSpec(
+			name='Renderres',
+			alternatenames=['Resolution', 'Res'],
+			style=['WH', 'Int'],
+			length=2),
+		advanced=True,
+		mappable=False,
+		allowpresets=False,
+	)
+
+	allmatchers = [resolution]
+

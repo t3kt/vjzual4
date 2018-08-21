@@ -17,15 +17,20 @@ class ComponentBase(common.ExtensionBase):
 	def AppHost(self) -> 'AppHost':
 		return getattr(self.ownerComp.parent, 'AppHost', None)
 
-	def SetStatusText(self, text):
+	def SetStatusText(self, text, temporary=None):
 		apphost = self.AppHost
 		if not apphost:
 			return
-		apphost.SetStatusText(text)
+		apphost.SetStatusText(text, temporary=temporary)
 
 	@property
 	def UiBuilder(self) -> 'UiBuilder':
 		apphost = self.AppHost
 		uibuilder = apphost.UiBuilder if apphost else None
 		return uibuilder or getattr(op, 'UiBuilder', None)
+
+	def ShowInNetworkEditor(self):
+		editor = common.GetActiveEditor()
+		if editor:
+			editor.owner = self.ownerComp
 

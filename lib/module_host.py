@@ -23,6 +23,7 @@ except ImportError:
 cleandict, mergedicts = common.cleandict, common.mergedicts
 Future = common.Future
 loggedmethod = common.loggedmethod
+opattrs = common.opattrs
 
 try:
 	import menu
@@ -359,11 +360,11 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 				dest=dest,
 				name='par__' + parinfo.name,
 				parinfo=parinfo,
-				order=i,
-				nodepos=[100, -200 * i],
-				dropscript=dropscript if parinfo.mappable else None,
-				parexprs=mergedicts(
-					parinfo.advanced and {'display': 'parent.ModuleHost.par.Showadvanced'}
+				wrapperattrs=opattrs(
+					order=i,
+					nodepos=[100, -200 * i]),
+				ctrlattrs=opattrs(
+					dropscript=dropscript if parinfo.mappable else None,
 				),
 				addtocontrolmap=self.controlsbyparam,
 				modhostconnector=self.ModuleConnector)
@@ -373,9 +374,9 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 			if name in self.ModuleConnector.modschema.parampartsbyname
 		}
 		self._RebuildParamControlTable()
+		self.UpdateParameterVisiblity()
 		dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
 
-	@loggedmethod
 	def BuildNodeMarkers(self):
 		dest = self.ownerComp.op('nodes_panel')
 		for marker in dest.ops('node__*'):
@@ -394,7 +395,6 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 				nodepos=[100, -200 * i])
 		dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
 
-	@loggedmethod
 	def UpdateModuleHeight(self):
 		if not self.ownerComp.par.Autoheight:
 			return
@@ -424,6 +424,8 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 
 		hassubmods = bool(self.ModuleConnector and self.ModuleConnector.modschema.childmodpaths)
 		items = [
+			menu.ParToggleItem(self.ownerComp.par.Hidden),
+			menu.Divider(),
 			menu.Item(
 				'Parameters',
 				disabled=not self.ModuleConnector.CanOpenParameters,
@@ -435,15 +437,22 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 			menu.Item(
 				'Edit Master',
 				disabled=not self.ModuleConnector.CanEditModuleMaster,
-				callback=lambda: self.ModuleConnector.EditModuleMaster(),
-				dividerafter=True),
+				callback=lambda: self.ModuleConnector.EditModuleMaster()),
 			menu.Item(
-				'Show Advanced',
+				'Edit Host',
+				callback=lambda: self.ShowInNetworkEditor()),
+			menu.Item(
+				'Host Parameters',
+				callback=lambda: self.ownerComp.openParameters()),
+			menu.Divider(),
+			menu.ParToggleItem(
+				self.ownerComp.par.Showadvanced,
 				disabled=not self.ModuleConnector.modschema.hasadvanced,
-				checked=self.ownerComp.par.Showadvanced.eval(),
-				callback=lambda: setattr(self.ownerComp.par, 'Showadvanced', not self.ownerComp.par.Showadvanced),
-				dividerafter=True),
-			# _MenuItem('Host Parameters', callback=lambda: self.ownerComp.openParameters()),
+				callback=self.UpdateParameterVisiblity),
+			menu.ParToggleItem(
+				self.ownerComp.par.Showhidden,
+				callback=self.UpdateParameterVisiblity),
+			menu.Divider(),
 		]
 		if hassubmods:
 			items += [
@@ -616,6 +625,83 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 			return
 		mapper = apphost.ControlMapper
 		mapper.ToggleAutoMapModule(self.ModuleConnector.modpath)
+
+	def OnParameterClick(self, panelValue):
+		if not self.ModuleConnector:
+			return
+		source = panelValue.owner
+		if 'vjz4param' in source.tags:
+			parwrapper = source
+		elif hasattr(source.parent, 'ParamControl'):
+			parwrapper = source.parent.ParamControl
+		else:
+			self._LogEvent('Unable to find param wrapper for {}'.format(source))
+			return
+		paramschema = common.OPExternalStorage.Fetch(parwrapper, 'param')
+		if not paramschema:
+			self._LogEvent('Param schema not found for param wrapper: {}'.format(parwrapper))
+			return
+		partschema = common.OPExternalStorage.Fetch(source, 'parampart', searchparents=True)
+		sourceiscontrol = partschema and 'vjz4parctrl' in source.tags
+		if panelValue.name == 'lselect' and sourceiscontrol:
+			return
+		menu.fromMouse().Show(
+			items=self._GetParameterContextMenuItems(parwrapper, paramschema, partschema),
+			autoClose=True)
+
+	def _GetParameterContextMenuItems(
+			self,
+			parwrapper: COMP,
+			paramschema: schema.ParamSchema,
+			partschema: Optional[schema.ParamPartSchema]):
+		if not self.ModuleConnector:
+			return []
+
+		partschemas = [partschema] if partschema else paramschema.parts
+
+		pars = []
+		for part in partschemas:
+			p = self.ModuleConnector.GetPar(part.name)
+			if p is not None:
+				pars.append(p)
+
+
+		def reset():
+			for par in pars:
+				par.val = par.default
+
+		def togglehidden():
+			parwrapper.par.Hidden = not parwrapper.par.Hidden
+			self.UpdateParameterVisiblity()
+
+		return [
+			menu.Item(
+				'Reset',
+				disabled=not pars,
+				callback=reset),
+			menu.Item(
+				'Hidden',
+				checked=parwrapper.par.Hidden,
+				callback=togglehidden),
+			menu.Divider(),
+			menu.Item(
+				'Show Param Schema',
+				callback=lambda: self.AppHost.ShowSchemaJson(paramschema)),
+			(partschema and len(paramschema.parts) > 1) and menu.Item(
+				'Show Param Part Schema',
+				callback=lambda: self.AppHost.ShowSchemaJson(partschema)),
+		]
+
+	def UpdateParameterVisiblity(self):
+		showadvanced = self.ownerComp.par.Showadvanced.eval()
+		showhidden = self.ownerComp.par.Showhidden.eval()
+		for parwrapper in self.ownerComp.ops('controls_panel/par__*'):
+			visible = True
+			if parwrapper.par.Advanced and not showadvanced:
+				visible = False
+			if parwrapper.par.Hidden and not showhidden:
+				visible = False
+			parwrapper.par.display = visible
 
 
 class ModuleHostConnector:

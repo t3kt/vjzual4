@@ -1,12 +1,10 @@
 import copy
-from typing import Dict, List
+from typing import List
 
 print('vjz4/control_modulation.py loading')
 
 if False:
 	from _stubs import *
-	from app_host import AppHost
-	import ui_builder
 
 
 try:
@@ -140,10 +138,6 @@ class ModulationManager(app_components.ComponentBase, common.ActionsExt):
 		self.SourceManager.ClearSources()
 
 	@loggedmethod
-	def AddSource(self, spec: schema.ModulationSourceSpec):
-		self.SourceManager.AddSource(spec)
-
-	@loggedmethod
 	def ClearMappings(self):
 		self.Mapper.ClearMappings()
 
@@ -151,6 +145,44 @@ class ModulationManager(app_components.ComponentBase, common.ActionsExt):
 	def AddMapping(self, mapping: schema.ModulationMapping):
 		self.Mapper.AddMapping(mapping)
 
+class _ModulationGenerator(common.ExtensionBase):
+	@property
+	def SourceType(self):
+		raise NotImplementedError()
+
+	def BuildSourceSpec(self) -> schema.ModulationSourceSpec:
+		raise NotImplementedError()
+
+	def LoadSourceSpec(self, sourcespec: schema.ModulationSourceSpec):
+		raise NotImplementedError()
+
+class LfoGenerator(_ModulationGenerator):
+	@property
+	def SourceType(self):
+		return 'lfo'
+
+	def BuildSourceSpec(self):
+		return schema.ModulationSourceSpec(
+			name=self.ownerComp.par.Name.eval(),
+			sourcetype='lfo',
+			play=self.ownerComp.par.Play.eval(),
+			sync=self.ownerComp.par.Sync.eval(),
+			syncperiod=self.ownerComp.par.Syncperiod.eval(),
+			freeperiod=self.ownerComp.par.Freeperiod.eval(),
+			shape=self.ownerComp.par.Shape.eval(),
+			phase=self.ownerComp.par.Phase.eval(),
+			bias=self.ownerComp.par.Bias.eval(),
+		)
+
+	def LoadSourceSpec(self, sourcespec: schema.ModulationSourceSpec):
+		self.ownerComp.par.Name = sourcespec.name or ''
+		self.ownerComp.par.Play = sourcespec.play
+		self.ownerComp.par.Sync = sourcespec.sync
+		self.ownerComp.par.Syncperiod = sourcespec.syncperiod
+		self.ownerComp.par.Freeperiod = sourcespec.freeperiod
+		self.ownerComp.par.Shape = sourcespec.shape
+		self.ownerComp.par.Phase = sourcespec.phase
+		self.ownerComp.par.Bias = sourcespec.bias
 
 class ModulationSourceManager(app_components.ComponentBase, common.ActionsExt):
 	def __init__(self, ownerComp):
@@ -160,25 +192,93 @@ class ModulationSourceManager(app_components.ComponentBase, common.ActionsExt):
 			'Addlfo': lambda: self.AddLfo(),
 		})
 		self._AutoInitActionParams()
-		self.sourcespecs = []  # type: List[schema.ModulationSourceSpec]
-		self.sourcegens = {}  # type: Dict[str, OP]
-		self._BuildSourcesTable()
-		self._BuildSourceGenerators()
+		self.sourcegens = []  # type: List[_ModulationGenerator]
+		self.ClearSources()
 
 	def GetSourceSpecs(self):
-		return copy.deepcopy(self.sourcespecs)
+		return [
+			sourcegen.BuildSourceSpec()
+			for sourcegen in self.sourcegens
+		]
 
 	@common.simpleloggedmethod
 	def AddSources(self, sourcespecs: List[schema.ModulationSourceSpec]):
 		if not sourcespecs:
 			return
-		for spec in self.sourcespecs:
-			self.AddSource(spec)
 
-	def GetSourceSpec(self, name):
-		for spec in self.sourcespecs:
-			if spec.name == name:
-				return spec
+		dest = self.ownerComp.op('sources_panel')
+		onclicktemplate = dest.op('__source_gen_header_click_template')
+		onchangetemplate = dest.op('__source_gen_par_change_template')
+		genspecpairs = []
+		uibuilder = self.UiBuilder
+		indexoffset = len(self.sourcegens)
+		table = self._SourcesTable
+		onchanges = []
+		for i, sourcespec in enumerate(sourcespecs):
+			effectiveindex = indexoffset + i
+			if sourcespec.sourcetype == 'lfo':
+				gen = uibuilder.CreateLfoGenerator(
+					dest=dest,
+					name='gen__{}'.format(effectiveindex),
+					attrs=opattrs(
+						order=effectiveindex,
+						nodepos=[400, 400 + -200 * effectiveindex],
+						parexprs={
+							'Showpreview': 'parent.SourceManager.par.Showpreview',
+						},
+						showdocked=True,
+					))
+				pass
+			else:
+				self._LogEvent('Unsupported source generator type: {}'.format(sourcespec.sourcetype))
+				continue
+			if not gen:
+				continue
+			self.sourcegens.append(gen)
+			common.CreateFromTemplate(
+				template=onclicktemplate,
+				dest=dest,
+				name='genheadclick__{}'.format(effectiveindex),
+				attrs=opattrs(
+					nodepos=[gen.nodeX - 400, gen.nodeY],
+					parvals={
+						'active': True,
+						'panel': gen.op('panel_title'),
+					},
+					dockto=gen,
+				))
+			onchange = common.CreateFromTemplate(
+				template=onchangetemplate,
+				dest=dest,
+				name='genparchange__{}'.format(effectiveindex),
+				attrs=opattrs(
+					nodepos=[gen.nodeX - 200, gen.nodeY],
+					parvals={'op': gen},
+					dockto=gen,
+				))
+			onchanges.append(onchange)
+			genspecpairs.append([gen, sourcespec])
+			sourcespec.AddToTable(
+				table,
+				attrs={'genpath': gen.path})
+		if not genspecpairs:
+			return
+
+		def _makeInitTask(g, s):
+			return lambda: g.LoadSourceSpec(s)
+
+		def _makeActivateTask(o):
+			return lambda: setattr(o.par, 'active', True)
+
+		return self.AppHost.AddTaskBatch(
+			[
+				_makeInitTask(g, s)
+				for g, s in genspecpairs
+			] + [
+				_makeActivateTask(o)
+				for o in onchanges
+			],
+			autostart=True)
 
 	@property
 	def _ModulationManager(self) -> ModulationManager:
@@ -192,104 +292,46 @@ class ModulationSourceManager(app_components.ComponentBase, common.ActionsExt):
 		dat = self._SourcesTable
 		dat.clear()
 		dat.appendRow(schema.ModulationSourceSpec.tablekeys + ['genpath'])
-		for spec in self.sourcespecs:
-			spec.AddToTable(dat)
-
-	@loggedmethod
-	def _BuildSourceGenerators(self):
-		dest = self.ownerComp.op('sources_panel')
-		for o in dest.ops('gen__*', 'genheadclick__*'):
-			o.destroy()
-		self.sourcegens.clear()
-		table = self._SourcesTable
-		for i, spec in enumerate(self.sourcespecs):
-			gen = self._BuildSourceGenerator(spec, i)
-			if gen:
-				self.sourcegens[spec.name] = gen
-			table[spec.name, 'genpath'] = gen.path if gen else ''
-
-	def _BuildSourceGenerator(self, spec: schema.ModulationSourceSpec, i):
-		uibuilder = self.UiBuilder
-		dest = self.ownerComp.op('sources_panel')
-		table = self._SourcesTable
-		table[spec.name, 'genpath'] = ''
-		if spec.sourcetype == 'lfo':
-			gen = uibuilder.CreateLfoGenerator(
-				dest=dest,
-				name='gen__' + spec.name,
-				spec=spec,
-				attrs=opattrs(
-					order=i,
-					nodepos=[200, 400 + -200 * i],
-					parexprs={
-						'Showpreview': 'parent.SourceManager.par.Showpreview',
-					}
-				))
-		else:
-			self._LogEvent('Unsupported source type: {!r}'.format(spec.sourcetype))
-			return None
-		common.CreateFromTemplate(
-			template=dest.op('__source_gen_header_click_template'),
-			dest=dest,
-			name='genheadclick__' + spec.name,
-			attrs=opattrs(
-				nodepos=[0, 400 + -200 * i],
-				parvals={
-					'active': True,
-					'panel': '{}/panel_title'.format(gen.name)
-				}
-			))
-		return gen
+		for gen in self.sourcegens:
+			spec = gen.BuildSourceSpec()
+			spec.AddToTable(dat, attrs={'genpath': gen.path})
 
 	@loggedmethod
 	def ClearSources(self):
-		self.sourcespecs.clear()
+		dest = self.ownerComp.op('sources_panel')
+		for o in dest.ops('gen__*', 'genheadclick__*', 'genparchange__*'):
+			if o.valid:
+				o.destroy()
+		self.sourcegens.clear()
 		self._BuildSourcesTable()
-		self._BuildSourceGenerators()
-
-	@loggedmethod
-	def AddSource(self, spec: schema.ModulationSourceSpec):
-		# TODO: handle duplicate names
-		if not spec.name:
-			raise Exception('Spec does not have a name')
-		if spec.name in self.sourcegens:
-			raise Exception('Duplicate spec name: {}'.format(spec.name))
-		self.sourcespecs.append(spec)
-		spec.AddToTable(self._SourcesTable)
-		gen = self._BuildSourceGenerator(spec, len(self.sourcespecs) - 1)
-		if gen:
-			self.sourcegens[spec.name] = gen
-			self._SourcesTable[spec.name, 'genpath'] = gen.path
 
 	@loggedmethod
 	def AddLfo(self, name=None):
 		if not name:
-			name = 'lfo{}'.format(len(self.sourcespecs) + 1)
-		self.AddSource(
+			name = 'lfo{}'.format(len(self.sourcegens) + 1)
+		self.AddSources([
 			schema.ModulationSourceSpec(
 				name=name,
-				sourcetype='lfo'))
+				sourcetype='lfo')
+		])
 
 	@loggedmethod
 	def RemoveSource(self, name):
-		spec = None
-		for s in self.sourcespecs:
-			if s.name == name:
-				spec = s
+		gen = None
+		for g in self.sourcegens:
+			if g.par.Name == name:
+				gen = g
 				break
-		if not spec:
+		if not gen:
+			self._LogEvent('Source not found: {}'.format(name))
 			return
-		onclick = self.ownerComp.op('sources_panel/genheadclick__' + name)
-		if onclick:
-			onclick.destroy()
-		gen = self.sourcegens.get(name)
-		if gen:
-			gen.destroy()
-			del self.sourcegens[name]
+		for o in gen.docked:
+			o.destroy()
+		gen.destroy()
+		self.sourcegens.remove(gen)
 		table = self._SourcesTable
 		if table.row(name) is not None:
 			table.deleteRow(name)
-		self.sourcespecs.remove(spec)
 
 	def ShowHeaderContextMenu(self):
 		previewpar = self.ownerComp.par.Showpreview
@@ -301,14 +343,14 @@ class ModulationSourceManager(app_components.ComponentBase, common.ActionsExt):
 			menu.Item(
 				'Show previews',
 				checked=previewpar.eval(),
-				dividerafter=True,
 				callback=_togglepreviews),
+			menu.Divider(),
 			menu.Item(
 				'Add LFO',
 				callback=lambda: self.AddLfo()),
 			menu.Item(
 				'Clear sources',
-				disabled=not self.sourcespecs,
+				disabled=not self.sourcegens,
 				callback=self.ClearSources),
 		]
 		menu.fromMouse().Show(
@@ -326,6 +368,13 @@ class ModulationSourceManager(app_components.ComponentBase, common.ActionsExt):
 					callback=lambda: self.RemoveSource(name)),
 			],
 			autoClose=True)
+
+	@loggedmethod
+	def OnGenParChange(self, gen):
+		if gen not in self.sourcegens:
+			return
+		self._BuildSourcesTable()
+		self._ModulationManager.Mapper.InitializeChannelProcessing()
 
 
 class ModulationMapper(app_components.ComponentBase, common.ActionsExt):
@@ -375,11 +424,15 @@ class ModulationMapper(app_components.ComponentBase, common.ActionsExt):
 		multsettings = MappingProcessorSettings()
 		oversettings = MappingProcessorSettings()
 		sourcemanager = self._ModulationManager.SourceManager
+		sourcespecs = {
+			s.name: s
+			for s in sourcemanager.GetSourceSpecs()
+		}
 		if self.mappings.enable and apphost and apphost.AppSchema:
 			for mapping in self.mappings.mappings:
 				if not mapping.enable or not mapping.path or not mapping.param or not mapping.source:
 					continue
-				sourcespec = sourcemanager.GetSourceSpec(mapping.source)
+				sourcespec = sourcespecs.get(mapping.source)
 				if not sourcespec:
 					continue
 				parampart = apphost.GetParamPartSchema(mapping.path, mapping.param)

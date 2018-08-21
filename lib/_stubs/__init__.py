@@ -79,7 +79,7 @@ class td:
 	error = _TD_ERROR
 
 	@staticmethod
-	def run(codeorwhatever, delayFrames=0): pass
+	def run(codeorwhatever, delayFrames=0, delayMilliSeconds=0, delayRef=None): pass
 
 del _TD_ERROR
 
