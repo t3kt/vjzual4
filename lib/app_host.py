@@ -226,7 +226,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 					callback=lambda: self.LoadRemoteStoredState()),
 			]
 		elif name == 'view_menu':
-			items = self._GetSidePanelModeMenuItems()
+			items = self._GetSidePanelModeMenuItems() + [
+				menu.Divider(),
+				menu.ParToggleItem(self.ownerComp.par.Showhiddenmodules),
+			]
 		elif name == 'debug_menu':
 			def _viewItem(text, oppath):
 				return menu.Item(
@@ -287,6 +290,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 
 	def GetModuleAdditionalMenuItems(self, modhost: module_host.ModuleHost):
 		items = [
+			menu.Divider(),
 			menu.Item(
 				'View Schema',
 				disabled=not modhost.ModuleConnector,
@@ -633,6 +637,7 @@ class ModuleManager(app_components.ComponentBase):
 	def _OnSubModuleHostsConnected(self):
 		self.SetStatusText('Module hosts connected')
 		self.UpdateModuleWidths()
+		self.UpdateModuleVisibility()
 
 	def UpdateModuleWidths(self):
 		for m in self.ownerComp.ops('mod__*'):
@@ -651,7 +656,7 @@ class ModuleManager(app_components.ComponentBase):
 		return template
 
 	def GetModuleAdditionalMenuItems(self, modhost: module_host.ModuleHost):
-		return self.AppHost.GetModuleAdditionalMenuItems(modhost)
+		return []
 
 	def UpdateModulePreviewStatus(self, modpath):
 		for modhost in self.modulehostsbypath.values():
@@ -677,6 +682,11 @@ class ModuleManager(app_components.ComponentBase):
 			return
 		for modpath, modhost in self.modulehostsbypath.items():
 			modhost.LoadState(modstates.get(modpath))
+
+	def UpdateModuleVisibility(self):
+		showhidden = self.AppHost.par.Showhiddenmodules.eval()
+		for modhost in self.modulehostsbypath.values():
+			modhost.par.display = showhidden or not modhost.par.Hidden
 
 
 class StatusBar(app_components.ComponentBase, common.ActionsExt):

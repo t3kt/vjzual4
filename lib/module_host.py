@@ -424,6 +424,8 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 
 		hassubmods = bool(self.ModuleConnector and self.ModuleConnector.modschema.childmodpaths)
 		items = [
+			menu.ParToggleItem(self.ownerComp.par.Hidden),
+			menu.Divider(),
 			menu.Item(
 				'Parameters',
 				disabled=not self.ModuleConnector.CanOpenParameters,
