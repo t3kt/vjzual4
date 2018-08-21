@@ -133,9 +133,13 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.Schem
 		try:
 			self.Detach()
 			info = self.BuildClientInfo()
-			return self.Connection.SendRequest('connect', info.ToJsonDict()).then(
-				success=self._OnConfirmConnect,
-				failure=self._OnConnectFailure)
+			# this is an ugly hack...
+			return self.AppHost.AddTaskBatch([
+				lambda: None,
+				lambda: self.Connection.SendRequest('connect', info.ToJsonDict()).then(
+					success=self._OnConfirmConnect,
+					failure=self._OnConnectFailure),
+			])
 		finally:
 			self._LogEnd()
 
@@ -168,7 +172,7 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.Schem
 		_ApplyParVal(self.ownerComp.par.Localaddress, info.address)
 		_ApplyParVal(self.ownerComp.par.Commandsendport, info.cmdsend)
 		_ApplyParVal(self.ownerComp.par.Commandreceiveport, info.cmdrecv)
-		_ApplyParVal(connpar.Oscendport, info.oscsend)
+		_ApplyParVal(connpar.Oscsendport, info.oscsend)
 		_ApplyParVal(connpar.Oscreceiveport, info.oscrecv)
 		_ApplyParVal(connpar.Osceventsendport, info.osceventsend)
 		_ApplyParVal(connpar.Osceventreceiveport, info.osceventrecv)
@@ -461,5 +465,4 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.Schem
 		self.ProxyManager.SetParamValue(modpath, name, args[0])
 
 def _ApplyParVal(par, val):
-	if val is not None:
-		par.val = val
+	common.UpdateParValue(par, val, resetmissing=False)

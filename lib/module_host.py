@@ -24,6 +24,7 @@ cleandict, mergedicts = common.cleandict, common.mergedicts
 Future = common.Future
 loggedmethod = common.loggedmethod
 opattrs = common.opattrs
+UpdateParValue = common.UpdateParValue
 
 try:
 	import menu
@@ -82,27 +83,25 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 	def BuildState(self):
 		return schema.ModuleHostState(
 			collapsed=self.ownerComp.par.Collapsed.eval(),
+			hidden=self.ownerComp.par.Hidden.eval(),
+			showadvancedparams=self.ownerComp.par.Showadvanced.eval(),
+			showhiddenparams=self.ownerComp.par.Showhidden.eval(),
 			uimode=self.ownerComp.par.Uimode.eval(),
 			currentstate=self.ModuleConnector and schema.ModuleState(params=self.ModuleConnector.GetParVals()),
 			states=self.ModuleConnector and self.StateManager.BuildStates())
 
 	@loggedmethod
-	def LoadState(self, modstate: schema.ModuleHostState):
+	def LoadState(self, modstate: schema.ModuleHostState, resetmissing=True):
 		if not modstate:
 			return
-		if modstate.collapsed is not None:
-			self.ownerComp.par.Collapsed = modstate.collapsed
-		if modstate.uimode and modstate.uimode in self.ownerComp.par.Uimode.menuNames:
-			self.ownerComp.par.Uimode = modstate.uimode
+		UpdateParValue(self.ownerComp.par.Collapsed, modstate.collapsed, resetmissing=resetmissing)
+		UpdateParValue(self.ownerComp.par.Uimode, modstate.uimode, resetmissing=resetmissing)
+		UpdateParValue(self.ownerComp.par.Showhidden, modstate.showhiddenparams, resetmissing=resetmissing)
+		UpdateParValue(self.ownerComp.par.Showadvanced, modstate.showadvancedparams, resetmissing=resetmissing)
 		if not self.ModuleConnector:
 			return
 		self.ModuleConnector.SetParVals(modstate.currentstate.params)
 		self.StateManager.LoadStates(modstate.states)
-
-	@property
-	def ParentHost(self) -> 'ModuleHost':
-		parent = getattr(self.ownerComp.parent, 'ModuleHost', None)
-		return parent or self.AppHost
 
 	@property
 	def ModulePath(self):
@@ -132,10 +131,6 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 	@property
 	def StateManager(self) -> 'ModuleStateManager':
 		return self.ownerComp.op('states')
-
-	@property
-	def _SubModuleHosts(self) -> 'List[ModuleHost]':
-		return self.ownerComp.ops('sub_modules_panel/mod__*')
 
 	@property
 	def _ModuleHostTemplate(self):
@@ -493,7 +488,7 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 		self.UpdateModuleHeight()
 
 	def _SetSubModuleHostPars(self, name, val):
-		for m in self._SubModuleHosts:
+		for m in self.ownerComp.ops('sub_modules_panel/mod__*'):
 			setattr(m.par, name, val)
 
 	def PreviewPrimaryNode(self):
