@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 print('vjz4/module_host.py loading')
 
@@ -52,6 +52,7 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 		common.TaskQueueExt.__init__(self, ownerComp)
 		self.ModuleConnector = None  # type: ModuleHostConnector
 		self.controlsbyparam = {}  # type: Dict[str, COMP]
+		self.wrappersbyparam = {}  # type: Dict[str, COMP]
 		self.parampartsbycontrolpath = {}  # type: Dict[str, schema.ParamPartSchema]
 		self.ownerComp.tags.add('vjz4modhost')
 
@@ -266,8 +267,9 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 		uibuilder = self.UiBuilder
 		for ctrl in dest.ops('par__*'):
 			ctrl.destroy()
-		self.controlsbyparam = {}
-		self.parampartsbycontrolpath = {}
+		self.controlsbyparam.clear()
+		self.wrappersbyparam.clear()
+		self.parampartsbycontrolpath.clear()
 		if not self.ModuleConnector or not uibuilder:
 			self._RebuildParamControlTable()
 			return
@@ -286,6 +288,7 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 					dropscript=dropscript if parinfo.mappable else None,
 				),
 				addtocontrolmap=self.controlsbyparam,
+				addtowrappermap=self.wrappersbyparam,
 				modhostconnector=self.ModuleConnector)
 		self.parampartsbycontrolpath = {
 			ctrl.path: self.ModuleConnector.modschema.parampartsbyname[name]
@@ -295,6 +298,41 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 		self._RebuildParamControlTable()
 		self.UpdateParameterVisiblity()
 		dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
+
+	# def GetParamWrapper(self, paramname):
+	# 	return self.wrappersbyparam.get(paramname)
+	#
+	# def GetParamPartControl(self, partname):
+	# 	return self.controlsbyparam.get(partname)
+
+	def SetLearnHighlight(self, paramname: Optional[str], partname: Optional[str]):
+		if not self.ModuleConnector:
+			return
+		for wrapperparname, wrapper in self.wrappersbyparam.items():
+			wrapper.par.Learnactive = paramname and wrapperparname == paramname
+		for ctrlpartname, ctrl in self.controlsbyparam.items():
+			active = partname and ctrlpartname == partname
+			if active:
+				opattrs(
+					parvals={
+						'borderar': 0.5,
+						'borderag': 1,
+						'borderab': 0.6,
+						'leftborder': 'bordera',
+						'rightborder': 'bordera',
+						'bottomborder': 'bordera',
+						'topborder': 'bordera',
+					}
+				).applyto(ctrl)
+			else:
+				opattrs(
+					parvals={
+						'leftborder': 'off',
+						'rightborder': 'off',
+						'bottomborder': 'off',
+						'topborder': 'off',
+					}
+				).applyto(ctrl)
 
 	def BuildNodeMarkers(self):
 		dest = self.ownerComp.op('nodes_panel')
@@ -524,17 +562,22 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 		sourceop = sourceparent.op(dropName)
 		if not sourceop:
 			return
-		controlinfo = common.OPExternalStorage.Fetch(sourceop, 'controlinfo')  # type: schema.DeviceControlInfo
-		if 'vjz4mappable' not in ctrl.tags or ctrl.path not in self.parampartsbycontrolpath or not controlinfo:
+
+		parcontext = self._GetParameterComponentContext(ctrl)
+		if not parcontext:
 			self._LogEvent('Control does not support mapping: {}'.format(ctrl))
 			return
-		parampart = self.parampartsbycontrolpath[ctrl.path]
-		if 'vjz4ctrlmarker' not in sourceop.tags:
+		partschema = parcontext['partschema']
+		if not partschema:
+			self._LogEvent('Control does not support mapping: {}'.format(ctrl))
+			return
+		controlinfo = common.OPExternalStorage.Fetch(sourceop, 'controlinfo')  # type: schema.DeviceControlInfo
+		if 'vjz4ctrlmarker' not in sourceop.tags or not controlinfo:
 			self._LogEvent('Unsupported drop source: {}'.format(sourceop))
 			return
 		self.AppHost.ControlMapper.AddOrReplaceMappingForParam(
 			modpath=self.ModuleConnector.modpath,
-			paramname=parampart.name,
+			paramname=partschema.name,
 			control=controlinfo)
 
 	@loggedmethod
@@ -545,10 +588,7 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 		mapper = apphost.ControlMapper
 		mapper.ToggleAutoMapModule(self.ModuleConnector.modpath)
 
-	def OnParameterClick(self, panelValue):
-		if not self.ModuleConnector:
-			return
-		source = panelValue.owner
+	def _GetParameterComponentContext(self, source):
 		if 'vjz4param' in source.tags:
 			parwrapper = source
 		elif hasattr(source.parent, 'ParamControl'):
@@ -562,6 +602,23 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 			return
 		partschema = common.OPExternalStorage.Fetch(source, 'parampart', searchparents=True)
 		sourceiscontrol = partschema and 'vjz4parctrl' in source.tags
+		return {
+			'parwrapper': parwrapper,
+			'paramschema': paramschema,
+			'partschema': partschema,
+			'sourceiscontrol': sourceiscontrol
+		}
+
+	def OnParameterClick(self, panelValue):
+		if not self.ModuleConnector:
+			return
+		parcontext = self._GetParameterComponentContext(panelValue.owner)
+		if not parcontext:
+			return
+		parwrapper = parcontext['parwrapper']
+		paramschema = parcontext['paramschema']
+		partschema = parcontext['partschema']
+		sourceiscontrol = parcontext['sourceiscontrol']
 		if panelValue.name == 'lselect' and sourceiscontrol:
 			return
 		menu.fromMouse().Show(
@@ -593,7 +650,7 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 			parwrapper.par.Hidden = not parwrapper.par.Hidden
 			self.UpdateParameterVisiblity()
 
-		return [
+		items = [
 			menu.Item(
 				'Reset',
 				disabled=not pars,
@@ -603,6 +660,14 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 				checked=parwrapper.par.Hidden,
 				callback=togglehidden),
 			menu.Divider(),
+		]
+		items += self.AppHost.GetModuleParameterAdditionalMenuItems(
+			modhost=self,
+			paramschema=paramschema,
+			partschema=partschema,
+		) or []
+		items += [
+			menu.Divider(),
 			menu.Item(
 				'Show Param Schema',
 				callback=lambda: self.AppHost.ShowSchemaJson(paramschema)),
@@ -610,6 +675,7 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 				'Show Param Part Schema',
 				callback=lambda: self.AppHost.ShowSchemaJson(partschema)),
 		]
+		return items
 
 	def UpdateParameterVisiblity(self):
 		showadvanced = self.ownerComp.par.Showadvanced.eval()
