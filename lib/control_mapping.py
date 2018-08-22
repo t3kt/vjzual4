@@ -4,8 +4,6 @@ print('vjz4/control_mapping.py loading')
 
 if False:
 	from _stubs import *
-	from app_host import AppHost
-	from ui_builder import UiBuilder
 	from module_host import ModuleHost
 	from control_devices import MidiDevice
 
@@ -34,9 +32,14 @@ try:
 except ImportError:
 	menu = mod.menu
 
-class ControlMapper(common.ExtensionBase, common.ActionsExt):
+try:
+	import app_components
+except ImportError:
+	app_components = mod.app_components
+
+class ControlMapper(app_components.ComponentBase, common.ActionsExt):
 	def __init__(self, ownerComp):
-		common.ExtensionBase.__init__(self, ownerComp)
+		app_components.ComponentBase.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions={
 			'Clearmappings': self.ClearMappings,
 		})
@@ -50,7 +53,7 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 			self.ownerComp.par.Selectedmapping = -1
 		self._BuildMappingTable()
 		self._BuildMappingMarkers()
-		self._InitializeChannelProcessing()
+		self.InitializeChannelProcessing()
 		self._UpdateEditor()
 
 	@property
@@ -60,20 +63,6 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 	@AutoMapDeviceName.setter
 	def AutoMapDeviceName(self, value):
 		self.ownerComp.par.Automapdevice = value or ''
-
-	@property
-	def AppHost(self):
-		apphost = getattr(self.ownerComp.parent, 'AppHost', None)  # type: AppHost
-		return apphost
-
-	@property
-	def UiBuilder(self):
-		apphost = self.AppHost
-		uibuilder = apphost.UiBuilder if apphost else None  # type: UiBuilder
-		if uibuilder:
-			return uibuilder
-		if hasattr(op, 'UiBuilder'):
-			return op.UiBuilder
 
 	@property
 	def _DeviceManager(self):
@@ -149,14 +138,17 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 						control=control.fullname,
 					)
 				self._LogEvent('Adding new mapping: {}'.format(mapping))
-				self.AddMappings([mapping])
+				self._AddMappings([mapping])
 		self._Rebuild()
 
 	@loggedmethod
 	def AddMappings(self, mappings: List[ControlMapping]):
+		self._AddMappings(mappings)
+		self._Rebuild()
+
+	def _AddMappings(self, mappings: List[ControlMapping]):
 		for mapping in mappings:
 			self.custommappings.mappings.append(mapping)
-		self._Rebuild()
 
 	@property
 	def _MappingTable(self):
@@ -192,7 +184,8 @@ class ControlMapper(common.ExtensionBase, common.ActionsExt):
 		if anychanged:
 			self._Rebuild(clearselected=False)
 
-	def _InitializeChannelProcessing(self):
+	@loggedmethod
+	def InitializeChannelProcessing(self):
 		ctrlnames = []
 		parampaths = []
 		lowvalues = []

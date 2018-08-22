@@ -1,12 +1,14 @@
 import json
 from operator import itemgetter
-from typing import Dict, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 print('vjz4/app_host.py loading')
 
 if False:
 	from _stubs import *
 	from highlighting import HighlightManager
+	from remote import CommandMessage
+	from control_modulation import ModulationManager
 
 try:
 	import ui_builder
@@ -57,7 +59,11 @@ try:
 	import app_state
 except ImportError:
 	app_state = mod.app_state
-AppState = app_state.AppState
+
+try:
+	import app_components
+except ImportError:
+	app_components = mod.app_components
 
 class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, common.TaskQueueExt):
 	def __init__(self, ownerComp):
@@ -68,22 +74,27 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			'Showappschema': self.ShowAppSchema,
 			'Savestate': lambda: self.SaveStateFile(),
 			'Savestateas': lambda: self.SaveStateFile(prompt=True),
+			'Storeremotestate': lambda: self.StoreRemoteState(),
+			'Loadremotestate': lambda: self.LoadRemoteStoredState(),
 		})
 		self._AutoInitActionParams()
 		self.AppSchema = None  # type: schema.AppSchema
-		self._ShowSchemaJson(None)
+		self.serverinfo = None  # type: schema.ServerInfo
+		self.ShowSchemaJson(None)
 		self.nodeMarkersByPath = {}  # type: Dict[str, List[str]]
 		self.previewMarkers = []  # type: List[op]
-		self.modulehostsbypath = {}  # type: Dict[str, module_host.ModuleHost]
 		self.statefilename = None
+		self.statetoload = None  # type: schema.AppState
 		self.OnDetach()
+		self.SetStatusText(None)
+
+	@property
+	def ProgressBar(self):
+		return self.ownerComp.op('bottom_bar/progress_bar')
 
 	@property
 	def _RemoteClient(self) -> remote_client.RemoteClient:
 		return self.ownerComp.par.Remoteclient.eval()
-
-	def GetAppSchema(self):
-		return self.AppSchema
 
 	def GetModuleSchema(self, modpath) -> 'Optional[schema.ModuleSchema]':
 		return self.AppSchema and self.AppSchema.modulesbypath.get(modpath)
@@ -103,67 +114,63 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def GetModuleTypeSchema(self, typepath) -> 'Optional[schema.ModuleTypeSchema]':
 		return self.AppSchema.moduletypesbypath.get(typepath) if self.AppSchema else None
 
-	@loggedmethod
 	def RegisterModuleHost(self, modhost: 'module_host.ModuleHost'):
-		if not modhost or not modhost.ModuleConnector:
-			return
-		self.modulehostsbypath[modhost.ModuleConnector.modpath] = modhost
+		self.ModuleManager.RegisterModuleHost(modhost)
 
 	def GetModuleHost(self, modpath) -> 'Optional[module_host.ModuleHost]':
-		return self.modulehostsbypath.get(modpath)
+		return self.ModuleManager.GetModuleHost(modpath)
 
 	def ClearModuleAutoMapStatuses(self):
-		for modhost in self.modulehostsbypath.values():
-			modhost.par.Automap = False
+		self.ModuleManager.ClearModuleAutoMapStatuses()
+
+	@loggedmethod
+	def OnConnected(self, serverinfo: schema.ServerInfo):
+		self.serverinfo = serverinfo
 
 	@loggedmethod
 	def OnAppSchemaLoaded(self, appschema: schema.AppSchema):
 		self.HighlightManager.ClearAllHighlights()
 		self.AppSchema = appschema
-		self._ShowSchemaJson(None)
-		self._BuildSubModuleHosts().then(
-			success=lambda _: self.AddTaskBatch(
-				[
-					lambda: self._BuildNodeMarkers(),
-					lambda: self._RegisterNodeMarkers(),
-					# temporarily disabling the mapping editors
-					# lambda: self._InitializeMappings(),
-				],
-				autostart=True))
+		self.ShowSchemaJson(None)
+
+		def _continueloadingstate():
+			if not self.statetoload:
+				return
+			return self.LoadState(self.statetoload)
+
+		self.AddTaskBatch(
+			[
+				lambda: self.ModuleManager.Attach(appschema),
+				lambda: self._BuildNodeMarkers(),
+				lambda: self._RegisterNodeMarkers(),
+				lambda: self.ControlMapper.InitializeChannelProcessing(),
+				lambda: self.ModulationManager.Mapper.InitializeChannelProcessing(),
+				_continueloadingstate,
+				lambda: self.SetStatusText('App schema loading completed'),
+			],
+			autostart=True)
 
 	@loggedmethod
 	def OnDetach(self):
+		self.ClearTasks()
 		for o in self.ownerComp.ops('app_info', 'modules', 'params', 'param_parts', 'data_nodes'):
 			o.closeViewer()
-		self._ShowSchemaJson(None)
+		self.ShowSchemaJson(None)
 		self.HighlightManager.ClearAllComponents()
 		for o in self.ownerComp.ops('nodes/node__*'):
 			o.destroy()
 		self.AppSchema = None
 		self.nodeMarkersByPath.clear()
-		self.modulehostsbypath.clear()
+		self.ModuleManager.Detach()
 		self._BuildNodeMarkerTable()
 		self.SetPreviewSource(None)
 		common.OPExternalStorage.CleanOrphans()
+		self.statetoload = None
 		mod.td.run('op({!r}).SetAutoMapModule(None)'.format(self.ControlMapper.path), delayFrames=1)
+		self.SetStatusText('Detached from client')
 
 	def OnTDPreSave(self):
-		for o in self.ownerComp.ops('modules_panel/mod__*'):
-			o.destroy()
-
-	@loggedmethod
-	def _InitializeMappings(self):
-		if not self.AppSchema:
-			return
-		mapper = self.ControlMapper
-		# TODO: initialize mappings
-
-	@property
-	def _ModuleHostTemplate(self):
-		template = self.ownerComp.par.Modulehosttemplate.eval()
-		if not template and hasattr(op, 'Vjz4'):
-			template = op.Vjz4.op('./module_chain_host')
-		return template
+		pass
 
 	@property
 	def UiBuilder(self):
@@ -173,55 +180,8 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		if hasattr(op, 'UiBuilder'):
 			return op.UiBuilder
 
-	@loggedmethod
-	def _BuildSubModuleHosts(self):
-		dest = self.ownerComp.op('modules_panel')
-		for m in dest.ops('mod__*'):
-			m.destroy()
-		if not self.AppSchema:
-			return Future.immediate()
-		template = self._ModuleHostTemplate
-		if not template:
-			return Future.immediate()
-		hostconnectorpairs = []
-		for i, modschema in enumerate(self.AppSchema.childmodules):
-			self._LogEvent('creating host for sub module {}'.format(modschema.path))
-			host = dest.copy(template, name='mod__' + modschema.name)  # type: module_host.ModuleHost
-			host.par.Uibuilder.expr = 'parent.AppHost.par.Uibuilder or ""'
-			host.par.Modulehosttemplate = 'op({!r})'.format(template.path)
-			host.par.Autoheight = False
-			host.par.hmode = 'fixed'
-			host.par.vmode = 'fill'
-			host.par.w = 250
-			host.par.alignorder = i
-			host.nodeX = 100
-			host.nodeY = -100 * i
-			connector = self.ProxyManager.GetModuleProxyHost(modschema, self.AppSchema)
-			hostconnectorpairs.append([host, connector])
-
-		def _makeInitTask(h, c):
-			return lambda: self._InitSubModuleHost(h, c)
-
-		return self.AddTaskBatch(
-			[
-				_makeInitTask(host, connector)
-				for host, connector in hostconnectorpairs
-			] + [
-				lambda: self._OnSubModuleHostsConnected()
-			],
-			autostart=True)
-
-	@loggedmethod
-	def _InitSubModuleHost(self, host, connector):
-		return host.AttachToModuleConnector(connector)
-
-	@loggedmethod
-	def _OnSubModuleHostsConnected(self):
-		self.UpdateModuleWidths()
-
 	def UpdateModuleWidths(self):
-		for m in self.ownerComp.ops('modules_panel/mod__*'):
-			m.par.w = 100 if m.par.Collapsed else 250
+		self.ModuleManager.UpdateModuleWidths()
 
 	@loggedmethod
 	def _BuildNodeMarkers(self):
@@ -251,24 +211,38 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 					callback=lambda: self.ShowConnectDialog()),
 				menu.Item(
 					'Disconnect',
-					dividerafter=True,
 					callback=lambda: self._Disconnect()),
+				menu.Divider(),
 				menu.Item(
 					'Connection Properties',
-					callback=lambda: self._RemoteClient.openParameters(),
-					dividerafter=True),
+					callback=lambda: self._RemoteClient.openParameters()),
+				menu.Divider(),
 				menu.Item(
 					'Load State',
 					callback=lambda: self.LoadStateFile(prompt=True)),
+				menu.Item(
+					'Load State and Connect',
+					callback=lambda: self.LoadStateFile(prompt=True, connecttoclient=True)),
 				menu.Item(
 					'Save State',
 					callback=lambda: self.SaveStateFile()),
 				menu.Item(
 					'Save State As',
-					callback=lambda: self.SaveStateFile(prompt=True))
+					callback=lambda: self.SaveStateFile(prompt=True)),
+				menu.Item(
+					'Save State on Server',
+					disabled=not self.serverinfo or not self.serverinfo.allowlocalstatestorage,
+					callback=lambda: self.StoreRemoteState()),
+				menu.Item(
+					'Load State from Server',
+					disabled=not self.serverinfo or not self.serverinfo.allowlocalstatestorage,
+					callback=lambda: self.LoadRemoteStoredState()),
 			]
 		elif name == 'view_menu':
-			items = self._GetSidePanelModeMenuItems()
+			items = self._GetSidePanelModeMenuItems() + [
+				menu.Divider(),
+				menu.ParToggleItem(self.ownerComp.par.Showhiddenmodules),
+			]
 		elif name == 'debug_menu':
 			def _viewItem(text, oppath):
 				return menu.Item(
@@ -282,16 +256,24 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 					callback=lambda: self.ShowAppSchema()),
 				_viewItem('App Info', 'app_info'),
 				_viewItem('Modules', 'modules'),
+				_viewItem('Module Types', 'module_types'),
 				_viewItem('Params', 'params'),
 				_viewItem('Param Parts', 'param_parts'),
 				_viewItem('Data Nodes', 'data_nodes'),
 				menu.Item(
+					'Client Info',
+					callback=lambda: self.ShowSchemaJson(self._RemoteClient.BuildClientInfo())),
+				menu.Item(
+					'Server Info',
+					disabled=self.serverinfo is None,
+					callback=lambda: self.ShowSchemaJson(self.serverinfo)),
+				menu.Item(
 					'App State',
-					callback=lambda: self._ShowSchemaJson(self.BuildState()),
-					dividerafter=True),
+					callback=lambda: self.ShowSchemaJson(self.BuildState())),
+				menu.Divider(),
 				menu.Item(
 					'Reload code',
-					callback=lambda: op.Vjz4.op('RELOAD_CODE').run())
+					callback=lambda: op.Vjz4.op('RELOAD_CODE').run()),
 			]
 		else:
 			return
@@ -321,14 +303,15 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 
 	def GetModuleAdditionalMenuItems(self, modhost: module_host.ModuleHost):
 		items = [
+			menu.Divider(),
 			menu.Item(
 				'View Schema',
 				disabled=not modhost.ModuleConnector,
-				callback=lambda: self._ShowSchemaJson(modhost.ModuleConnector.modschema)
+				callback=lambda: self.ShowSchemaJson(modhost.ModuleConnector.modschema)
 			),
 			menu.Item(
 				'View State',
-				callback=lambda: self._ShowSchemaJson(modhost.BuildState())),
+				callback=lambda: self.ShowSchemaJson(modhost.BuildState())),
 			menu.Item(
 				'Save Preset',
 				disabled=not modhost.ModuleConnector or not modhost.ModuleConnector.modschema.masterpath,
@@ -362,9 +345,9 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			dat.appendRow([path] + sorted([marker.path for marker in markers]))
 
 	def ShowAppSchema(self):
-		self._ShowSchemaJson(self.AppSchema)
+		self.ShowSchemaJson(self.AppSchema)
 
-	def _ShowSchemaJson(self, info: 'Optional[common.BaseDataObject]'):
+	def ShowSchemaJson(self, info: 'Optional[common.BaseDataObject]'):
 		dat = self.ownerComp.op('schema_json')
 		if not info:
 			dat.text = ''
@@ -382,10 +365,8 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def _Disconnect(self):
 		self._RemoteClient.Detach()
 		self._RemoteClient.par.Active = False
-		self._ShowSchemaJson(None)
-		dest = self.ownerComp.op('modules_panel')
-		for m in dest.ops('mod__*'):
-			m.destroy()
+		self.ShowSchemaJson(None)
+		self.ModuleManager.Detach()
 
 	def ShowConnectDialog(self):
 		def _ok(text):
@@ -410,6 +391,8 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			activepar=client.par.Secondaryvideoreceiveactive,
 			command='setSecondaryVideoSrc')
 		self.ownerComp.op('nodes/preview_panel').par.display = hassource
+		if hassource:
+			self.ownerComp.par.Sidepanelmode = 'nodes'
 		for marker in self.previewMarkers:
 			if hasattr(marker.par, 'Previewactive'):
 				marker.par.Previewactive = False
@@ -423,12 +406,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 					marker.par.Previewactive = True
 		else:
 			modpath = None
-		for host in self._AllModuleHosts:
-			header = host.op('module_header')
-			if host.ModuleConnector and modpath and host.ModuleConnector.modpath == modpath:
-				header.par.Previewactive = True
-			else:
-				header.par.Previewactive = False
+		self.ModuleManager.UpdateModulePreviewStatus(modpath)
 
 	def _GetNodeVideoPath(self, path):
 		if not self.AppSchema:
@@ -445,10 +423,6 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		sourcepar.val = path or ''
 		activepar.val = bool(vidpath)
 		return bool(vidpath)
-
-	@property
-	def _AllModuleHosts(self):
-		return self.ownerComp.op('modules_panel').findChildren(tags=['vjz4modhost'], maxDepth=None)
 
 	@property
 	def DeviceManager(self) -> 'control_devices.DeviceManager':
@@ -470,16 +444,20 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 	def HighlightManager(self) -> 'HighlightManager':
 		return self.ownerComp.op('highlight_manager')
 
+	@property
+	def ModulationManager(self) -> 'ModulationManager':
+		return self.ownerComp.op('modulation')
+
+	@property
+	def ModuleManager(self) -> 'ModuleManager':
+		return self.ownerComp.op('modules_panel')
+
 	def BuildState(self):
-		modstates = {}
-		if self.AppSchema:
-			for modhost in self._AllModuleHosts:
-				if modhost.ModuleConnector:
-					modstates[modhost.ModuleConnector.modpath] = modhost.BuildState()
-		return AppState(
+		return schema.AppState(
 			client=self._RemoteClient.BuildClientInfo(),
-			modstates=modstates,
-			presets=self.PresetManager.GetPresets())
+			modstates=self.ModuleManager.BuildModStates(),
+			presets=self.PresetManager.GetPresets(),
+			modsources=self.ModulationManager.GetSourceSpecs())
 
 	@loggedmethod
 	def SaveStateFile(self, filename=None, prompt=False):
@@ -497,22 +475,84 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		state.WriteJsonTo(filename)
 		ui.status = 'Saved state to {}'.format(filename)
 
+	@loggedmethod
+	def StoreRemoteState(self):
+		appstate = self.BuildState()
+
+		def _success(response: 'CommandMessage'):
+			self._LogEvent('StoredRemoteState() - success({})'.format(response.ToBriefStr()))
+			ui.status = response.arg
+
+		def _failure(response: 'CommandMessage'):
+			self._LogBegin('StoredRemoteState() - failure({})'.format(response.ToBriefStr()))
+			try:
+				raise Exception(response.arg)
+			finally:
+				self._LogEnd()
+
+		self._RemoteClient.StoreRemoteAppState(appstate).then(
+			success=_success,
+			failure=_failure)
+
+	@loggedmethod
+	def LoadRemoteStoredState(self):
+		def _success(response: 'CommandMessage'):
+			self._LogBegin('LoadRemoteStoredState() - success({})'.format(response.ToBriefStr()))
+			try:
+				if not response.arg:
+					self._LogEvent('No app state!')
+					return
+				stateobj, info = response.arg['state'], response.arg['info']
+				appstate = schema.AppState.FromJsonDict(stateobj)
+				ui.status = info
+				self.LoadState(appstate, connecttoclient=False)
+			finally:
+				self._LogEnd()
+
+		def _failure(response: 'CommandMessage'):
+			self._LogBegin('LoadRemoteStoredState() - failure({})'.format(response.ToBriefStr()))
+			try:
+				raise Exception(response.arg)
+			finally:
+				self._LogEnd()
+
+		self._RemoteClient.RetrieveRemoteStoredAppState().then(
+			success=_success,
+			failure=_failure)
+
 	@simpleloggedmethod
-	def LoadState(self, state: AppState):
-		state = state or AppState()
+	def LoadState(self, state: schema.AppState, connecttoclient=False):
+		state = state or schema.AppState()
 
-		if state.client:
-			self._LogEvent('Ignoring client info in app state (for now...)')
-
-		for modhost in self._AllModuleHosts:
-			modstate = state.GetModuleState(modhost.ModuleConnector.modpath, create=False) if modhost.ModuleConnector else None
-			modhost.LoadState(modstate)
+		if connecttoclient:
+			if state.client:
+				self._LogEvent('Connecting to client from app state')
+				self._ConnectToClientAndLoadState(state)
+				return
+			else:
+				self._LogEvent('No client info in app state')
+		self.ModuleManager.LoadModStates(state.modstates)
 		if state.presets:
 			self.PresetManager.ClearPresets()
 			self.PresetManager.AddPresets(state.presets)
+		self.ModulationManager.ClearSources()
+		self.ModulationManager.AddSources(state.modsources)
+
+	@simpleloggedmethod
+	def _ConnectToClientAndLoadState(self, state: schema.AppState):
+		self.statetoload = state
+
+		def _onsuccess(_):
+			self.SetStatusText('Connected to client from app state')
+
+		def _onfailure(_):
+			self.statetoload = None
+			self.SetStatusText('Failed to connect to client from app state')
+
+		self._RemoteClient.SetClientInfo(state.client).then(_onsuccess, _onfailure)
 
 	@loggedmethod
-	def LoadStateFile(self, filename=None, prompt=False):
+	def LoadStateFile(self, filename=None, prompt=False, connecttoclient=False):
 		if prompt or not filename:
 			filename = ui.chooseFile(
 				load=True,
@@ -523,8 +563,13 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			return
 		self.statefilename = filename
 		self._LogEvent('Loading app state from {}'.format(filename))
-		state = AppState.ReadJsonFrom(filename)
-		self.LoadState(state)
+		state = schema.AppState.ReadJsonFrom(filename)
+		self.LoadState(state, connecttoclient=connecttoclient)
+
+	def SetStatusText(self, text, temporary=None):
+		statusbar = self.ownerComp.op('bottom_bar/status_bar')
+		if statusbar and hasattr(statusbar, 'SetStatus'):
+			statusbar.SetStatus(text, temporary=temporary)
 
 def _ParseAddress(text: str, defaulthost='localhost', defaultport=9500) -> Tuple[str, int]:
 	text = text and text.strip()
@@ -539,3 +584,170 @@ def _ParseAddress(text: str, defaulthost='localhost', defaultport=9500) -> Tuple
 	host, porttext = text.rsplit(':', maxsplit=1)
 	port = parseint(porttext)
 	return (host or defaulthost), (port or defaultport)
+
+class ModuleManager(app_components.ComponentBase):
+	def __init__(self, ownerComp):
+		app_components.ComponentBase.__init__(self, ownerComp)
+		self.modulehostsbypath = {}  # type: Dict[str, module_host.ModuleHost]
+		self.appschema = None  # type: schema.AppSchema
+		self.Detach()
+
+	@loggedmethod
+	def Detach(self):
+		self.appschema = None
+		common.OPExternalStorage.RemoveByPathPrefix(self.ownerComp.path + '/')
+		for m in self.ownerComp.ops('mod__*'):
+			m.destroy()
+		self.modulehostsbypath.clear()
+
+	@loggedmethod
+	def Attach(self, appschema: schema.AppSchema):
+		self.appschema = appschema
+		return self._BuildSubModuleHosts()
+
+	def GetModuleHost(self, modpath) -> 'Optional[module_host.ModuleHost]':
+		return self.modulehostsbypath.get(modpath)
+
+	def ClearModuleAutoMapStatuses(self):
+		for modhost in self.modulehostsbypath.values():
+			modhost.par.Automap = False
+
+	@property
+	def ProxyManager(self):
+		return self.AppHost.ProxyManager
+
+	def AddTaskBatch(self, tasks: List[Callable], autostart=True):
+		return self.AppHost.AddTaskBatch(tasks, autostart=autostart)
+
+	@loggedmethod
+	def _BuildSubModuleHosts(self):
+		self.SetStatusText('Building module hosts...')
+		dest = self.ownerComp
+		for m in dest.ops('mod__*'):
+			m.destroy()
+		if not self.appschema:
+			return Future.immediate()
+		template = self._ModuleHostTemplate
+		if not template:
+			return Future.immediate()
+		hostconnectorpairs = []
+		for i, modschema in enumerate(self.appschema.childmodules):
+			self._LogEvent('creating host for sub module {}'.format(modschema.path))
+			host = dest.copy(template, name='mod__' + modschema.name)  # type: module_host.ModuleHost
+			host.par.Uibuilder.expr = 'parent.AppHost.par.Uibuilder or ""'
+			host.par.Modulehosttemplate = 'op({!r})'.format(template.path)
+			host.par.Autoheight = False
+			host.par.hmode = 'fixed'
+			host.par.vmode = 'fill'
+			host.par.w = 250
+			host.par.alignorder = i
+			host.nodeX = 100
+			host.nodeY = -100 * i
+			connector = self.ProxyManager.GetModuleProxyHost(modschema, self.appschema)
+			hostconnectorpairs.append([host, connector])
+
+		def _makeInitTask(h, c):
+			return lambda: self._InitSubModuleHost(h, c)
+
+		self.SetStatusText('Attaching module hosts...')
+		return self.AddTaskBatch(
+			[
+				_makeInitTask(host, connector)
+				for host, connector in hostconnectorpairs
+			] + [
+				lambda: self._OnSubModuleHostsConnected()
+			],
+			autostart=True)
+
+	@loggedmethod
+	def _InitSubModuleHost(self, host, connector):
+		return host.AttachToModuleConnector(connector)
+
+	@loggedmethod
+	def _OnSubModuleHostsConnected(self):
+		self.SetStatusText('Module hosts connected')
+		self.UpdateModuleWidths()
+		self.UpdateModuleVisibility()
+
+	def UpdateModuleWidths(self):
+		for m in self.ownerComp.ops('mod__*'):
+			m.par.w = 100 if m.par.Collapsed else 250
+
+	def RegisterModuleHost(self, modhost: 'module_host.ModuleHost'):
+		if not modhost or not modhost.ModuleConnector:
+			return
+		self.modulehostsbypath[modhost.ModuleConnector.modpath] = modhost
+
+	@property
+	def _ModuleHostTemplate(self):
+		template = self.ownerComp.par.Modulehosttemplate.eval()
+		if not template and hasattr(op, 'Vjz4'):
+			template = op.Vjz4.op('./module_chain_host')
+		return template
+
+	def UpdateModulePreviewStatus(self, modpath):
+		for modhost in self.modulehostsbypath.values():
+			header = modhost.op('module_header')
+			if modhost.ModuleConnector and modpath and modhost.ModuleConnector.modpath == modpath:
+				header.par.Previewactive = True
+			else:
+				header.par.Previewactive = False
+
+	@loggedmethod
+	def BuildModStates(self) -> 'Dict[str, schema.ModuleHostState]':
+		if not self.appschema:
+			return {}
+		return {
+			modpath: modhost.BuildState()
+			for modpath, modhost in self.modulehostsbypath.items()
+			if modhost.ModuleConnector
+		}
+
+	@simpleloggedmethod
+	def LoadModStates(self, modstates: 'Dict[str, schema.ModuleHostState]'):
+		if not modstates or not self.appschema:
+			return
+		for modpath, modhost in self.modulehostsbypath.items():
+			modhost.LoadState(modstates.get(modpath))
+
+	def UpdateModuleVisibility(self):
+		showhidden = self.AppHost.par.Showhiddenmodules.eval()
+		for modhost in self.modulehostsbypath.values():
+			modhost.par.display = showhidden or not modhost.par.Hidden
+
+
+class StatusBar(app_components.ComponentBase, common.ActionsExt):
+	def __init__(self, ownerComp):
+		app_components.ComponentBase.__init__(self, ownerComp)
+		common.ActionsExt.__init__(self, ownerComp, actions={
+			'Clear': self.ClearStatus,
+		})
+		self._AutoInitActionParams()
+		self.cleartask = None
+
+	def SetStatus(self, text, temporary=None):
+		if temporary is None:
+			temporary = True
+		self._CancelClearTask()
+		self._SetText(text)
+		if temporary and text:
+			self._QueueClearTask()
+
+	def ClearStatus(self):
+		self._CancelClearTask()
+		self._SetText(None)
+
+	def _SetText(self, text):
+		self.ownerComp.op('text').par.text = text or ''
+
+	def _CancelClearTask(self):
+		if not self.cleartask:
+			return
+		self.cleartask.kill()
+		self.cleartask = None
+
+	def _QueueClearTask(self):
+		self.cleartask = mod.td.run(
+			'op({!r}).ClearStatus()'.format(self.ownerComp.path),
+			delayMilliSeconds=2000,
+			delayRef=self.ownerComp)

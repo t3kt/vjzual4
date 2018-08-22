@@ -111,7 +111,11 @@ class ModuleProxyManager(common.ExtensionBase, common.ActionsExt):
 		pageindices = {}
 		params = modschema.params or []
 		for param in params:
-			self._AddParam(proxycomp, param, modschema)
+			try:
+				self._AddParam(proxycomp, param, modschema)
+			except TypeError as e:
+				self._LogEvent('Error setting up proxy for param: {}\n {!r}'.format(e, param))
+				raise e
 			if param.pagename and param.pageindex is not None:
 				pageindices[param.pagename] = param.pageindex
 		sortedpagenames = [pn for pn, pi in sorted(pageindices.items(), key=lambda x: x[1]) if pi is not None]
@@ -229,8 +233,8 @@ class ModuleProxyManager(common.ExtensionBase, common.ActionsExt):
 			partuplet[0].default = param.parts[0].default
 		elif style in ('Menu', 'StrMenu'):
 			partuplet[0].default = param.parts[0].default
-			partuplet[0].menuNames = param.parts[0].menunames
-			partuplet[0].menuLabels = param.parts[0].menulabels
+			partuplet[0].menuNames = param.parts[0].menunames or []
+			partuplet[0].menuLabels = param.parts[0].menulabels or []
 
 	def SetParamValue(self, modpath, name, value):
 		proxy = self.GetProxy(modpath)
@@ -257,14 +261,27 @@ class _ProxyModuleHostConnector(module_host.ModuleHostConnector):
 
 	def GetPar(self, name): return getattr(self.proxy.par, name, None)
 
-	def GetParVals(self, paramnames=None):
-		if paramnames is None:
-			paramnames = self.modschema.parampartnames
+	def GetParVals(self, mappableonly=False, presetonly=False, onlyparamnames=None):
+		partnames = []
+		for param in self.modschema.params:
+			if onlyparamnames and param.name not in onlyparamnames:
+				continue
+			if mappableonly and not param.mappable:
+				continue
+			if presetonly and not param.allowpresets:
+				continue
+			for part in param.parts:
+				partnames.append(part.name)
+			pass
 		return {
 			p.name: p.eval()
-			for p in self.proxy.pars(*paramnames)
+			for p in self.proxy.pars(*partnames)
 			if not p.isPulse and not p.isMomentary
 		}
+
+	def GetState(self, presetonly=False, onlyparamnames=None):
+
+		return schema.ModuleState(params=self.GetParVals(presetonly=presetonly, onlyparamnames=onlyparamnames))
 
 	def SetParVals(self, parvals=None, resetmissing=False):
 		if not parvals:
