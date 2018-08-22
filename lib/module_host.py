@@ -601,6 +601,8 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 			self._LogEvent('Param schema not found for param wrapper: {}'.format(parwrapper))
 			return
 		partschema = common.OPExternalStorage.Fetch(source, 'parampart', searchparents=True)
+		if not partschema and len(paramschema.parts) == 1:
+			partschema = paramschema.parts[0]
 		sourceiscontrol = partschema and 'vjz4parctrl' in source.tags
 		return {
 			'parwrapper': parwrapper,
