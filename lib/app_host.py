@@ -84,6 +84,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		self.nodeMarkersByPath = {}  # type: Dict[str, List[str]]
 		self.previewMarkers = []  # type: List[op]
 		self.statefilename = None
+		self.statetoload = None  # type: schema.AppState
 		self.OnDetach()
 		self.SetStatusText(None)
 
@@ -131,6 +132,12 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		self.HighlightManager.ClearAllHighlights()
 		self.AppSchema = appschema
 		self.ShowSchemaJson(None)
+
+		def _continueloadingstate():
+			if not self.statetoload:
+				return
+			return self.LoadState(self.statetoload)
+
 		self.AddTaskBatch(
 			[
 				lambda: self.ModuleManager.Attach(appschema),
@@ -138,6 +145,8 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 				lambda: self._RegisterNodeMarkers(),
 				lambda: self.ControlMapper.InitializeChannelProcessing(),
 				lambda: self.ModulationManager.Mapper.InitializeChannelProcessing(),
+				_continueloadingstate,
+				lambda: self.SetStatusText('App schema loading completed'),
 			],
 			autostart=True)
 
@@ -156,6 +165,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		self._BuildNodeMarkerTable()
 		self.SetPreviewSource(None)
 		common.OPExternalStorage.CleanOrphans()
+		self.statetoload = None
 		mod.td.run('op({!r}).SetAutoMapModule(None)'.format(self.ControlMapper.path), delayFrames=1)
 		self.SetStatusText('Detached from client')
 
@@ -210,6 +220,9 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 				menu.Item(
 					'Load State',
 					callback=lambda: self.LoadStateFile(prompt=True)),
+				menu.Item(
+					'Load State and Connect',
+					callback=lambda: self.LoadStateFile(prompt=True, connecttoclient=True)),
 				menu.Item(
 					'Save State',
 					callback=lambda: self.SaveStateFile()),
@@ -492,7 +505,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 				stateobj, info = response.arg['state'], response.arg['info']
 				appstate = schema.AppState.FromJsonDict(stateobj)
 				ui.status = info
-				self.LoadState(appstate)
+				self.LoadState(appstate, connecttoclient=False)
 			finally:
 				self._LogEnd()
 
@@ -508,12 +521,16 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 			failure=_failure)
 
 	@simpleloggedmethod
-	def LoadState(self, state: schema.AppState):
+	def LoadState(self, state: schema.AppState, connecttoclient=False):
 		state = state or schema.AppState()
 
-		if state.client:
-			self._LogEvent('Ignoring client info in app state (for now...)')
-
+		if connecttoclient:
+			if state.client:
+				self._LogEvent('Connecting to client from app state')
+				self._ConnectToClientAndLoadState(state)
+				return
+			else:
+				self._LogEvent('No client info in app state')
 		self.ModuleManager.LoadModStates(state.modstates)
 		if state.presets:
 			self.PresetManager.ClearPresets()
@@ -521,8 +538,21 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		self.ModulationManager.ClearSources()
 		self.ModulationManager.AddSources(state.modsources)
 
+	@simpleloggedmethod
+	def _ConnectToClientAndLoadState(self, state: schema.AppState):
+		self.statetoload = state
+
+		def _onsuccess(_):
+			self.SetStatusText('Connected to client from app state')
+
+		def _onfailure(_):
+			self.statetoload = None
+			self.SetStatusText('Failed to connect to client from app state')
+
+		self._RemoteClient.SetClientInfo(state.client).then(_onsuccess, _onfailure)
+
 	@loggedmethod
-	def LoadStateFile(self, filename=None, prompt=False):
+	def LoadStateFile(self, filename=None, prompt=False, connecttoclient=False):
 		if prompt or not filename:
 			filename = ui.chooseFile(
 				load=True,
@@ -534,7 +564,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		self.statefilename = filename
 		self._LogEvent('Loading app state from {}'.format(filename))
 		state = schema.AppState.ReadJsonFrom(filename)
-		self.LoadState(state)
+		self.LoadState(state, connecttoclient=connecttoclient)
 
 	def SetStatusText(self, text, temporary=None):
 		statusbar = self.ownerComp.op('bottom_bar/status_bar')

@@ -453,6 +453,19 @@ def trygetdictval(d: Dict, *keys, default=None, parse=None):
 			return parse(val) if parse else val
 	return default
 
+def _CanApplyValueToPar(par, value):
+	if par is None or value is None:
+		return False
+	if par.isMenu and not par.isString and value not in par.menuNames:
+		return False
+	return True
+
+def UpdateParValue(par, value, resetmissing=True, default=None):
+	if _CanApplyValueToPar(par, value):
+			par.val = value
+	elif resetmissing:
+		par.val = default if default is not None else par.default
+
 def GetCustomPage(o, name):
 	if not o:
 		return None

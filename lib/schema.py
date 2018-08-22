@@ -1198,14 +1198,20 @@ class ModuleHostState(BaseDataObject):
 	def __init__(
 			self,
 			collapsed=None,
+			hidden=None,
 			uimode=None,
+			showhiddenparams=None,
+			showadvancedparams=None,
 			currentstate: 'ModuleState'=None,
 			currentstateindex=0,
 			states: 'List[ModuleState]'=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.collapsed = collapsed
+		self.hidden = hidden
 		self.uimode = uimode
+		self.showhiddenparams = showhiddenparams
+		self.showadvancedparams = showadvancedparams
 		self.currentstateindex = currentstateindex or 0
 		self.currentstate = currentstate or ModuleState()
 		self.states = states or []  # type: List[ModuleState]
@@ -1215,7 +1221,10 @@ class ModuleHostState(BaseDataObject):
 			self.otherattrs,
 			{
 				'collapsed': self.collapsed,
+				'hidden': self.hidden,
 				'uimode': self.uimode,
+				'showhiddenparams': self.showhiddenparams,
+				'showadvancedparams': self.showadvancedparams,
 				'currentstate': self.currentstate.ToJsonDict(),
 				'currentstateindex': self.currentstateindex,
 				'states': ModuleState.ToJsonDicts(self.states),
