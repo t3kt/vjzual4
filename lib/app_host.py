@@ -320,6 +320,14 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		items += self.ControlMapper.GetModuleAdditionalMenuItems(modhost)
 		return items
 
+	def GetModuleParameterAdditionalMenuItems(
+			self,
+			modhost: module_host.ModuleHost,
+			paramschema: schema.ParamSchema,
+			partschema: schema.ParamPartSchema):
+		return self.ControlMapper.GetModuleParameterAdditionalMenuItems(
+			modhost, paramschema, partschema)
+
 	def GetDeviceAdditionalMenuItems(self, device: control_devices.MidiDevice):
 		return self.ControlMapper.GetDeviceAdditionalMenuItems(device)
 
@@ -714,6 +722,12 @@ class ModuleManager(app_components.ComponentBase):
 		showhidden = self.AppHost.par.Showhiddenmodules.eval()
 		for modhost in self.modulehostsbypath.values():
 			modhost.par.display = showhidden or not modhost.par.Hidden
+
+	def ForEachModuleHost(self, action: 'Callable[[module_host.ModuleHost]]'):
+		if not self.appschema:
+			return
+		for modhost in self.modulehostsbypath.values():
+			action(modhost)
 
 
 class StatusBar(app_components.ComponentBase, common.ActionsExt):

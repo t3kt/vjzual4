@@ -51,6 +51,9 @@ class DeviceManager(app_components.ComponentBase, common.ActionsExt):
 		self.controlsbyname = {}  # type: Dict[str, DeviceControlInfo]
 		self.AttachDevices()
 
+	def GetControlInfo(self, ctrlname):
+		return self.controlsbyname.get(ctrlname)
+
 	@loggedmethod
 	def AttachDevices(self):
 		self.DetachDevices()
@@ -165,6 +168,9 @@ class DeviceManager(app_components.ComponentBase, common.ActionsExt):
 
 	def GetDevice(self, devname) -> 'Optional[MidiDevice]':
 		return self.devicesbyname.get(devname)
+
+	def GetDevices(self) -> 'Dict[str, MidiDevice]':
+		return self.devicesbyname
 
 
 class MidiDevice(app_components.ComponentBase, common.ActionsExt):
