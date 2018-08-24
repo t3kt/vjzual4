@@ -598,6 +598,7 @@ class ModuleManager(app_components.ComponentBase):
 		app_components.ComponentBase.__init__(self, ownerComp)
 		self.modulehostsbypath = {}  # type: Dict[str, module_host.ModuleHost]
 		self.appschema = None  # type: schema.AppSchema
+		self.moduleloadfuture = None  # type: Future
 		self.Detach()
 
 	@loggedmethod
@@ -630,6 +631,7 @@ class ModuleManager(app_components.ComponentBase):
 	@loggedmethod
 	def _BuildSubModuleHosts(self):
 		self.SetStatusText('Building module hosts...')
+		self.moduleloadfuture = None
 		dest = self.ownerComp
 		for m in dest.ops('mod__*'):
 			m.destroy()
@@ -654,18 +656,22 @@ class ModuleManager(app_components.ComponentBase):
 			connector = self.ProxyManager.GetModuleProxyHost(modschema, self.appschema)
 			hostconnectorpairs.append([host, connector])
 
+		if not hostconnectorpairs:
+			self._LogEvent('No module hosts to connect')
+			return Future.immediate()
+
 		def _makeInitTask(h, c):
 			return lambda: self._InitSubModuleHost(h, c)
 
 		self.SetStatusText('Attaching module hosts...')
-		return self.AddTaskBatch(
+		self.moduleloadfuture = Future()
+		self.AddTaskBatch(
 			[
 				_makeInitTask(host, connector)
 				for host, connector in hostconnectorpairs
-			] + [
-				lambda: self._OnSubModuleHostsConnected()
 			],
 			autostart=True)
+		return self.moduleloadfuture
 
 	@loggedmethod
 	def _InitSubModuleHost(self, host, connector):
@@ -676,6 +682,7 @@ class ModuleManager(app_components.ComponentBase):
 		self.SetStatusText('Module hosts connected')
 		self.UpdateModuleWidths()
 		self.UpdateModuleVisibility()
+		self.moduleloadfuture.resolve()
 
 	def UpdateModuleWidths(self):
 		for m in self.ownerComp.ops('mod__*'):
@@ -685,6 +692,8 @@ class ModuleManager(app_components.ComponentBase):
 		if not modhost or not modhost.ModuleConnector:
 			return
 		self.modulehostsbypath[modhost.ModuleConnector.modpath] = modhost
+		if len(self.modulehostsbypath) >= len(self.AppHost.AppSchema.modules):
+			self._OnSubModuleHostsConnected()
 
 	@property
 	def _ModuleHostTemplate(self):
@@ -763,5 +772,5 @@ class StatusBar(app_components.ComponentBase, common.ActionsExt):
 	def _QueueClearTask(self):
 		self.cleartask = mod.td.run(
 			'op({!r}).ClearStatus()'.format(self.ownerComp.path),
-			delayMilliSeconds=2000,
+			delayMilliSeconds=5000,
 			delayRef=self.ownerComp)
