@@ -44,7 +44,6 @@ class DeviceManager(app_components.ComponentBase, common.ActionsExt):
 			'Attachdevices': self.AttachDevices,
 			'Detachdevices': self.DetachDevices,
 		})
-		self._AutoInitActionParams()
 		self.devices = []  # type: List[MidiDevice]
 		self.devicesbyname = {}  # type: Dict[str, MidiDevice]
 		self.controls = []  # type: List[DeviceControlInfo]
@@ -178,7 +177,6 @@ class MidiDevice(app_components.ComponentBase, common.ActionsExt):
 		app_components.ComponentBase.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions={
 		})
-		self._AutoInitActionParams()
 		self.Controls = []  # type: List[DeviceControlInfo]
 		self.markers = {}  # type: Dict[str, OP]
 		self.highlightedmarker = None  # type: OP

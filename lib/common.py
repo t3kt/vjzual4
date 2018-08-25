@@ -150,7 +150,7 @@ class ActionsExt:
 	An extension class for a component that has some number of actions which can be invoked using
 	auto-generated pulse parameters on the extension's COMP.
 	"""
-	def __init__(self, ownerComp, actions=None, autoinitparexec=True):
+	def __init__(self, ownerComp, actions=None, autoinitparexec=True, autoinitactionparams=True):
 		self.ownerComp = ownerComp
 		self.Actions = actions or {}
 		parexec = ownerComp.op('perform_action_on_pulse')
@@ -164,6 +164,8 @@ class ActionsExt:
 			parexec.par.valuechange = False
 			parexec.par.onpulse = True
 			parexec.text = 'def onPulse(par): par.owner.PerformAction(par.name)'
+		if autoinitactionparams:
+			self._AutoInitActionParams()
 
 	def PerformAction(self, name):
 		if name not in self.Actions:

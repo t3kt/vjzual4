@@ -63,7 +63,6 @@ class RemoteServer(remote.RemoteBase, remote.OscEventHandler):
 				'storeAppState': self._StoreAppState,
 				'retrieveAppState': self._RetrieveStoredAppState,
 			})
-		self._AutoInitActionParams()
 		self.Settings = _ServerSettingAccessor(ownerComp)
 		self.AppRoot = None
 		self._AllModulePaths = []

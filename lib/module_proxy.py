@@ -30,10 +30,6 @@ class ModuleProxyManager(common.ExtensionBase, common.ActionsExt):
 		common.ActionsExt.__init__(self, ownerComp, actions={
 			'Clearproxies': self.ClearProxies,
 		}, autoinitparexec=False)
-		self._AutoInitActionParams()
-		if False:
-			self.par = ExpandoStub()
-			self.par.Rootpath = ''
 
 	@property
 	def _ProxyPathTable(self):

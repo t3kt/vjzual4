@@ -112,7 +112,6 @@ class ModulationManager(app_components.ComponentBase, common.ActionsExt):
 		app_components.ComponentBase.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions={
 		})
-		self._AutoInitActionParams()
 		self.mappings = schema.ModulationMappingSet()
 
 	@property
@@ -191,7 +190,6 @@ class ModulationSourceManager(app_components.ComponentBase, common.ActionsExt):
 			'Clearsources': self.ClearSources,
 			'Addlfo': lambda: self.AddLfo(),
 		})
-		self._AutoInitActionParams()
 		self.sourcegens = []  # type: List[_ModulationGenerator]
 		self.ClearSources()
 
@@ -383,7 +381,6 @@ class ModulationMapper(app_components.ComponentBase, common.ActionsExt):
 		common.ActionsExt.__init__(self, ownerComp, actions={
 			'Clearmappings': self.ClearMappings,
 		})
-		self._AutoInitActionParams()
 		self.mappings = schema.ModulationMappingSet()
 		self._BuildMappingsTable()
 

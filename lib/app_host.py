@@ -77,7 +77,6 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			'Storeremotestate': lambda: self.StoreRemoteState(),
 			'Loadremotestate': lambda: self.LoadRemoteStoredState(),
 		})
-		self._AutoInitActionParams()
 		self.AppSchema = None  # type: schema.AppSchema
 		self.serverinfo = None  # type: schema.ServerInfo
 		self.ShowSchemaJson(None)
@@ -745,7 +744,6 @@ class StatusBar(app_components.ComponentBase, common.ActionsExt):
 		common.ActionsExt.__init__(self, ownerComp, actions={
 			'Clear': self.ClearStatus,
 		})
-		self._AutoInitActionParams()
 		self.cleartask = None
 
 	def SetStatus(self, text, temporary=None):

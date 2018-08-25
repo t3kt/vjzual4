@@ -50,8 +50,7 @@ class PresetManager(app_components.ComponentBase, common.ActionsExt):
 		app_components.ComponentBase.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions={
 			'Clearpresets': self.ClearPresets,
-		}, autoinitparexec=True)
-		self._AutoInitActionParams()
+		})
 		self.presets = []  # type: List[schema.ModulePreset]
 		self._BuildPresetTable()
 		self._BuildPresetMarkers()
@@ -246,7 +245,6 @@ class ModuleStateManager(app_components.ComponentBase, common.ActionsExt):
 			'Clearstates': self.ClearStates,
 			'Capturestate': lambda: self.CaptureState(),
 		})
-		self._AutoInitActionParams()
 		self.statemarkers = []  # type: List[COMP]
 
 	@property

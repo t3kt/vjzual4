@@ -42,9 +42,7 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 				'Fixmessedupdrywetswitchoops': self.FixMessedUpDryWetSwitchOops,
 				'Generatetypeid': self.GenerateModuleTypeId,
 				'Reloadcode': self.ReloadCode,
-			},
-			autoinitparexec=True)
-		self._AutoInitActionParams()
+			})
 
 	@staticmethod
 	def ReloadCode():

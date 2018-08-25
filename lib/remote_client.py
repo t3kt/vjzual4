@@ -68,7 +68,6 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase):
 				'appInfo': self._OnReceiveAppInfo,
 				'modInfo': self._OnReceiveModuleInfo,
 			})
-		self._AutoInitActionParams()
 		self.rawAppInfo = None  # type: schema.RawAppInfo
 		self.rawModuleInfos = []  # type: List[schema.RawModuleInfo]
 		self.rawModuleTypeInfos = []  # type: List[schema.RawModuleInfo]

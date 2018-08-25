@@ -43,7 +43,6 @@ class ControlMapper(app_components.ComponentBase, common.ActionsExt):
 		common.ActionsExt.__init__(self, ownerComp, actions={
 			'Clearmappings': self.ClearMappings,
 		})
-		self._AutoInitActionParams()
 		self.custommappings = ControlMappingSet()
 		self.automappings = None  # type: Optional[ControlMappingSet]
 		self.learnstate = None  # type: Optional[_LearnState]
