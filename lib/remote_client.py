@@ -44,7 +44,7 @@ except ImportError:
 	app_components = mod.app_components
 
 
-class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.SchemaProvider):
+class RemoteClient(remote.RemoteBase, app_components.ComponentBase):
 	"""
 	Client which connects to a TD project that includes a RemoteServer, queries it for information about the project,
 	and facilitates communication between the two TD instances.

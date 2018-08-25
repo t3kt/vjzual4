@@ -31,11 +31,6 @@ try:
 except ImportError:
 	menu = mod.menu
 
-try:
-	from TDStoreTools import DependDict, DependList
-except ImportError:
-	from _stubs.TDStoreTools import DependDict, DependList
-
 def _GetOrAdd(d, key, default):
 	if key in d:
 		return d[key]
@@ -55,11 +50,6 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 		self.wrappersbyparam = {}  # type: Dict[str, COMP]
 		self.parampartsbycontrolpath = {}  # type: Dict[str, schema.ParamPartSchema]
 		self.ownerComp.tags.add('vjz4modhost')
-
-		# trick pycharm
-		if False:
-			self.par = object()
-			self.storage = {}
 
 	@property
 	def _Params(self):

@@ -1155,39 +1155,39 @@ class AppState(BaseDataObject):
 	def __init__(
 			self,
 			client: ClientInfo=None,
-			modstates: 'Dict[str, ModuleHostState]' =None,
+			modulestates: 'Dict[str, ModuleHostState]' =None,
 			presets: 'List[ModulePreset]'=None,
-			modsources: 'List[ModulationSourceSpec]'=None,
+			modulationsources: 'List[ModulationSourceSpec]'=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.client = client
-		self.modstates = modstates or {}
+		self.modulestates = modulestates or {}
 		self.presets = presets or []
-		self.modsources = modsources or []
+		self.modulationsources = modulationsources or []
 
 	def ToJsonDict(self):
 		return cleandict(mergedicts(
 			self.otherattrs,
 			{
 				'client': self.client.ToJsonDict() if self.client else None,
-				'modstates': ModuleHostState.ToJsonDictMap(self.modstates),
+				'modulestates': ModuleHostState.ToJsonDictMap(self.modulestates),
 				'presets': ModulePreset.ToJsonDicts(self.presets),
-				'modsources': ModulationSourceSpec.ToJsonDicts(self.modsources),
+				'modulationsources': ModulationSourceSpec.ToJsonDicts(self.modulationsources),
 			}))
 
 	@classmethod
 	def FromJsonDict(cls, obj):
 		return cls(
 			client=ClientInfo.FromOptionalJsonDict(obj.get('client')),
-			modstates=ModuleHostState.FromJsonDictMap(obj.get('modstates')),
+			modulestates=ModuleHostState.FromJsonDictMap(obj.get('modulestates')),
 			presets=ModulePreset.FromJsonDicts(obj.get('presets')),
-			modsources=ModulationSourceSpec.FromJsonDicts(obj.get('modsources')),
-			**excludekeys(obj, ['client', 'modstates', 'presets', 'modsources']))
+			modulationsources=ModulationSourceSpec.FromJsonDicts(obj.get('modulationsources')),
+			**excludekeys(obj, ['client', 'modulestates', 'presets', 'modulationsources']))
 
 	def GetModuleState(self, path, create=False):
-		if path not in self.modstates and create:
-			self.modstates[path] = ModuleHostState()
-		return self.modstates.get(path)
+		if path not in self.modulestates and create:
+			self.modulestates[path] = ModuleHostState()
+		return self.modulestates.get(path)
 
 
 class ModuleHostState(BaseDataObject):
@@ -1345,8 +1345,4 @@ class ModulationSourceSpec(BaseDataObject):
 			'phase': self.phase,
 			'bias': self.bias,
 		}))
-
-class SchemaProvider:
-	def GetModuleSchema(self, modpath) -> Optional[ModuleSchema]:
-		raise NotImplementedError()
 

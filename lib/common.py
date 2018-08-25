@@ -76,7 +76,9 @@ class ExtensionBase(LoggableBase):
 		self.path = ownerComp.path
 		self.op = ownerComp.op
 		self.ops = ownerComp.ops
+		# trick pycharm
 		if False:
+			self.storage = {}
 			self.docked = []
 			self.destroy = ownerComp.destroy
 
