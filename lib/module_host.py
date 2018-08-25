@@ -51,11 +51,6 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 		self.parampartsbycontrolpath = {}  # type: Dict[str, schema.ParamPartSchema]
 		self.ownerComp.tags.add('vjz4modhost')
 
-		# trick pycharm
-		if False:
-			self.par = object()
-			self.storage = {}
-
 	@property
 	def _Params(self):
 		return self.ModuleConnector and self.ModuleConnector.modschema.params or []

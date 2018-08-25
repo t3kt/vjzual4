@@ -463,9 +463,9 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 	def BuildState(self):
 		return schema.AppState(
 			client=self._RemoteClient.BuildClientInfo(),
-			modstates=self.ModuleManager.BuildModStates(),
+			modulestates=self.ModuleManager.BuildModStates(),
 			presets=self.PresetManager.GetPresets(),
-			modsources=self.ModulationManager.GetSourceSpecs())
+			modulationsources=self.ModulationManager.GetSourceSpecs())
 
 	@loggedmethod
 	def SaveStateFile(self, filename=None, prompt=False):
@@ -539,12 +539,12 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 				return
 			else:
 				self._LogEvent('No client info in app state')
-		self.ModuleManager.LoadModStates(state.modstates)
+		self.ModuleManager.LoadModStates(state.modulestates)
 		if state.presets:
 			self.PresetManager.ClearPresets()
 			self.PresetManager.AddPresets(state.presets)
 		self.ModulationManager.ClearSources()
-		self.ModulationManager.AddSources(state.modsources)
+		self.ModulationManager.AddSources(state.modulationsources)
 
 	@simpleloggedmethod
 	def _ConnectToClientAndLoadState(self, state: schema.AppState):
