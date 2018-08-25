@@ -12,6 +12,7 @@ try:
 except ImportError:
 	common = mod.common
 cleandict, mergedicts = common.cleandict, common.mergedicts
+Future = common.Future
 
 class CommandMessage(namedtuple('CommandMessage', ['cmd', 'arg', 'cmdid', 'kind'])):
 	COMMAND = 'cmd'
@@ -103,59 +104,6 @@ class OscEventHandler:
 	def HandleOscEvent(self, address, args):
 		raise NotImplementedError()
 
-class ResponseFuture:
-	def __init__(self, onlisten=None, oninvoke=None):
-		self._successcallback = None  # type: Callable
-		self._failurecallback = None  # type: Callable
-		self._resolved = False
-		self._result = None
-		self._error = None
-		self._onlisten = onlisten  # type: Callable
-		self._oninvoke = oninvoke  # type: Callable
-
-	def then(self, success=None, failure=None):
-		if self._successcallback or self._failurecallback:
-			raise Exception('ResponseFuture already has callbacks set')
-		if self._onlisten:
-			self._onlisten()
-		self._successcallback = success
-		self._failurecallback = failure
-		if self._resolved:
-			self._invoke()
-
-	def _invoke(self):
-		if self._error is not None:
-			if self._failurecallback:
-				self._failurecallback(self._error)
-		else:
-			if self._successcallback:
-				self._successcallback(self._result)
-		if self._oninvoke:
-			self._oninvoke()
-
-	def _resolve(self, result, error):
-		if self._resolved:
-			raise Exception('ResponseFuture has already been resolved')
-		self._resolved = True
-		self._result = result
-		self._error = error
-		if self._successcallback or self._failurecallback:
-			self._invoke()
-
-	def resolve(self, result=None):
-		self._resolve(result, None)
-
-	def fail(self, error):
-		self._resolve(None, error)
-
-	def __str__(self):
-		if not self._resolved:
-			return '{}[unresolved]'.format(self.__class__.__name__)
-		if self._error is not None:
-			return '{}[error: {!r}]'.format(self.__class__.__name__, self._error)
-		else:
-			return '{}[success: {!r}]'.format(self.__class__.__name__, self._result)
-
 class RemoteConnection(common.ExtensionBase):
 	def __init__(self, ownerComp, commandhandler=None, osceventhandler=None):
 		super().__init__(ownerComp)
@@ -165,10 +113,13 @@ class RemoteConnection(common.ExtensionBase):
 		self._commandlog = ownerComp.op('command_log')
 		self._commandhandler = commandhandler  # type: CommandHandler
 		self._nextcmdid = 1
-		self._responsefutures = {}  # type: Dict[int, ResponseFuture]
+		self._responsefutures = {}  # type: Dict[int, Future]
 		self._osceventhandler = osceventhandler  # type: OscEventHandler
 		if False:
 			self.par = ExpandoStub()
+
+	def ClearResponseTasks(self):
+		self._responsefutures.clear()
 
 	def HandleOscEvent(self, address, args):
 		if self._osceventhandler:
@@ -179,7 +130,7 @@ class RemoteConnection(common.ExtensionBase):
 			*messages):
 		self._sendport.send(*messages, terminator='\n')
 
-	def _AddResponseFuture(self, cmdid, resp: ResponseFuture):
+	def _AddResponseFuture(self, cmdid, resp: Future):
 		self._responsefutures[cmdid] = resp
 
 	def _RemoveResponseFuture(self, cmdid):
@@ -187,10 +138,10 @@ class RemoteConnection(common.ExtensionBase):
 			del self._responsefutures[cmdid]
 
 	def _SendCommandMessage(self, cmdmesg: CommandMessage):
-		self._LogEvent('_SendCommandMessage({})'.format(cmdmesg))
+		self._LogEvent('_SendCommandMessage({})'.format(cmdmesg.ToBriefStr()))
 		self.SendRawCommandMessages(json.dumps(cmdmesg.ToJsonDict()))
 		if cmdmesg.isRequest:
-			responsefuture = ResponseFuture(
+			responsefuture = Future(
 				onlisten=lambda: self._AddResponseFuture(cmdmesg.cmdid, responsefuture),
 				oninvoke=lambda: self._RemoveResponseFuture(cmdmesg.cmdid))
 			return responsefuture
@@ -223,6 +174,13 @@ class RemoteConnection(common.ExtensionBase):
 					self._LogEvent('RouteCommandMessage() - no response handler waiting for {}'.format(cmdmesg.ToBriefStr()))
 					return
 				resp = self._responsefutures[cmdmesg.cmdid]
+				if resp.isresolved:
+					self._LogEvent(
+						'ERROR: Already have a response for command id {}:\nprevious response: {}\nnew response: {}'.format(
+							cmdmesg.cmdid, resp.result, cmdmesg.arg))
+					return
+				# else:
+				# 	self._LogEvent('OMG response future is not resolved so this should be ok: {}'.format(resp))
 				if cmdmesg.isError:
 					resp.fail(cmdmesg.arg)
 				else:
@@ -254,9 +212,9 @@ class RemoteConnection(common.ExtensionBase):
 		self._osceventsend.sendOSC(address, *values, asBundle=asBundle)
 
 class RemoteBase(common.ExtensionBase, common.ActionsExt, CommandHandler):
-	def __init__(self, ownerComp, actions=None, handlers=None):
+	def __init__(self, ownerComp, actions=None, handlers=None, autoinitparexec=True):
 		common.ExtensionBase.__init__(self, ownerComp)
-		common.ActionsExt.__init__(self, ownerComp, actions)
+		common.ActionsExt.__init__(self, ownerComp, actions, autoinitparexec=autoinitparexec)
 		CommandHandler.__init__(self, handlers)
 		self.Connected = tdu.Dependency(False)
 

@@ -1,5 +1,7 @@
 # trick pycharm
 
+from typing import List as _List
+
 class _Expando:
 	def __init__(self):
 		pass
@@ -14,6 +16,7 @@ PaneType.NETWORKEDITOR = None
 
 class project:
 	name = ''
+	folder = ''
 
 class _Parent:
 	def __call__(self, *args, **kwargs):
@@ -24,6 +27,7 @@ class _Parent:
 
 class op:
 	def __init__(self, arg=None):
+		self.id = 0
 		self.path = ''
 		self.name = ''
 		self.par = _Expando()
@@ -32,6 +36,13 @@ class op:
 		self.op = op
 		self.storage = {}
 		self.isCOMP = False
+		self.isTOP = False
+		self.isCHOP = False
+		self.depth = 0
+		self.tags = set()
+		self.valid = True
+
+	def destroy(self): pass
 
 	def ops(self, *args): return [op()]
 
@@ -41,9 +52,17 @@ class op:
 
 	def closeViewer(self): pass
 
-	def unstore(self, name): pass
+	def store(self, key, value): pass
 
-	def findChildren(self, maxDepth=1, tags=None): return []
+	def unstore(self, keys1, *morekeys): pass
+
+	def findChildren(self, maxDepth=1, tags=None) -> '_List[op]': pass
+
+	def addScriptError(self, msg): pass
+
+	def copy(self, o: 'op', name=None) -> 'op': pass
+
+	def create(self, OPtype, name, initialize=True) -> 'op': pass
 
 	TDResources = _Expando()
 
@@ -63,7 +82,7 @@ class td:
 	error = _TD_ERROR
 
 	@staticmethod
-	def run(codeorwhatever, delayFrames=0): pass
+	def run(codeorwhatever, delayFrames=0, delayMilliSeconds=0, delayRef=None): pass
 
 del _TD_ERROR
 
@@ -97,7 +116,8 @@ ParMode.CONSTANT = ParMode.EXPRESSION = ParMode.EXPORT = 0
 ExpandoStub = _Expando
 
 class Par:
-	pass
+	def eval(self):
+		return None
 
 OP = op
 
@@ -106,10 +126,12 @@ class DAT(OP):
 
 COMP = OP
 CHOP = OP
+SOP = OP
 
-baseCOMP = COMP
-parameterexecuteDAT = textDAT = DAT
+baseCOMP = panelCOMP = COMP
+evaluateDAT = mergeDAT = nullDAT = parameterexecuteDAT = tableDAT = textDAT = scriptDAT = DAT
 parameterCHOP = nullCHOP = selectCHOP = CHOP
+scriptSOP = SOP
 
 class app:
 	name = ''
