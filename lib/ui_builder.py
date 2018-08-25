@@ -6,19 +6,17 @@ if False:
 	from _stubs import *
 	from _stubs.PopDialogExt import PopDialogExt
 	from module_host import ModuleHostConnector
+	import schema
 
 try:
 	import common
+	from common import mergedicts, UpdateOP, CreateFromTemplate, opattrs
 except ImportError:
 	common = mod.common
-cleandict, mergedicts = common.cleandict, common.mergedicts
-UpdateOP, CreateFromTemplate = common.UpdateOP, common.CreateFromTemplate
-opattrs = common.opattrs
-
-try:
-	import schema
-except ImportError:
-	schema = mod.schema
+	mergedicts = common.mergedicts
+	UpdateOP = common.UpdateOP
+	CreateFromTemplate = common.CreateFromTemplate
+	opattrs = common.opattrs
 
 class UiBuilder:
 	def __init__(self, ownerComp):
@@ -454,7 +452,7 @@ class UiBuilder:
 
 	def CreateMappingMarker(
 			self, dest, name,
-			mapping: schema.ControlMapping,
+			mapping,  # type: schema.ControlMapping,
 			attrs: opattrs=None, **kwargs):
 		return CreateFromTemplate(
 			template=self.ownerComp.op('mapping_marker'),
@@ -596,37 +594,3 @@ def _DropScriptParVals(dropscript: 'Optional[DAT]'=None):
 		'drop': 'legacy',
 		'dropscript': dropscript.path
 	}
-
-# TODO: move dialog stuff elsewhere
-
-def _getPopDialog():
-	dialog = op.TDResources.op('popDialog')  # type: PopDialogExt
-	return dialog
-
-def ShowPromptDialog(
-		title=None,
-		text=None,
-		default='',
-		textentry=True,
-		oktext='OK',
-		canceltext='Cancel',
-		ok: Callable=None,
-		cancel: Callable=None):
-	def _callback(info):
-		if info['buttonNum'] == 1:
-			if ok:
-				if not text:
-					ok()
-				else:
-					ok(info.get('enteredText'))
-		elif info['buttonNum'] == 2:
-			if cancel:
-				cancel()
-	_getPopDialog().Open(
-		title=title,
-		text=text,
-		textEntry=False if not textentry else (default or ''),
-		buttons=[oktext, canceltext],
-		enterButton=1, escButton=2, escOnClickAway=True,
-		callback=_callback)
-

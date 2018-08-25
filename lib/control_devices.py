@@ -5,7 +5,6 @@ print('vjz4/control_devices.py loading')
 
 if False:
 	from _stubs import *
-	from ui_builder import UiBuilder
 
 try:
 	import common

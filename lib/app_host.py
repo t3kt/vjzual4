@@ -17,13 +17,20 @@ except ImportError:
 UiBuilder = ui_builder.UiBuilder
 
 try:
+	import ui
+except ImportError:
+	ui = mod.ui
+
+try:
 	import common
+	from common import parseint, Future, loggedmethod, customloggedmethod, simpleloggedmethod
 except ImportError:
 	common = mod.common
-parseint = common.parseint
-Future = common.Future
-loggedmethod = common.loggedmethod
-customloggedmethod, simpleloggedmethod = common.customloggedmethod, common.simpleloggedmethod
+	parseint = common.parseint
+	Future = common.Future
+	loggedmethod = common.loggedmethod
+	customloggedmethod = common.customloggedmethod
+	simpleloggedmethod = common.simpleloggedmethod
 
 try:
 	import control_devices
@@ -380,7 +387,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			host, port = _ParseAddress(text)
 			self._ConnectTo(host, port)
 		client = self._RemoteClient
-		ui_builder.ShowPromptDialog(
+		ui.ShowPromptDialog(
 			title='Connect to app',
 			text='host:port',
 			oktext='Connect',
@@ -470,7 +477,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 	def SaveStateFile(self, filename=None, prompt=False):
 		filename = filename or self.statefilename
 		if prompt or not filename:
-			filename = ui.chooseFile(
+			filename = mod.td.ui.chooseFile(
 				load=False,
 				start=filename or project.folder,
 				fileTypes=['json'],
@@ -561,7 +568,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 	@loggedmethod
 	def LoadStateFile(self, filename=None, prompt=False, connecttoclient=False):
 		if prompt or not filename:
-			filename = ui.chooseFile(
+			filename = mod.td.ui.chooseFile(
 				load=True,
 				start=filename or project.folder,
 				fileTypes=['json'],
@@ -731,44 +738,3 @@ class ModuleManager(app_components.ComponentBase):
 		for modhost in self.modulehostsbypath.values():
 			modhost.par.display = showhidden or not modhost.par.Hidden
 
-	def ForEachModuleHost(self, action: 'Callable[[module_host.ModuleHost]]'):
-		if not self.appschema:
-			return
-		for modhost in self.modulehostsbypath.values():
-			action(modhost)
-
-
-class StatusBar(app_components.ComponentBase, common.ActionsExt):
-	def __init__(self, ownerComp):
-		app_components.ComponentBase.__init__(self, ownerComp)
-		common.ActionsExt.__init__(self, ownerComp, actions={
-			'Clear': self.ClearStatus,
-		})
-		self.cleartask = None
-
-	def SetStatus(self, text, temporary=None):
-		if temporary is None:
-			temporary = True
-		self._CancelClearTask()
-		self._SetText(text)
-		if temporary and text:
-			self._QueueClearTask()
-
-	def ClearStatus(self):
-		self._CancelClearTask()
-		self._SetText(None)
-
-	def _SetText(self, text):
-		self.ownerComp.op('text').par.text = text or ''
-
-	def _CancelClearTask(self):
-		if not self.cleartask:
-			return
-		self.cleartask.kill()
-		self.cleartask = None
-
-	def _QueueClearTask(self):
-		self.cleartask = mod.td.run(
-			'op({!r}).ClearStatus()'.format(self.ownerComp.path),
-			delayMilliSeconds=5000,
-			delayRef=self.ownerComp)

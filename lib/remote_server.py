@@ -11,11 +11,12 @@ if False:
 
 try:
 	import common
+	from common import CreateOP, trygetpar, loggedmethod
 except ImportError:
 	common = mod.common
-CreateOP = common.CreateOP
-trygetpar = common.trygetpar
-loggedmethod = common.loggedmethod
+	CreateOP = common.CreateOP
+	trygetpar = common.trygetpar
+	loggedmethod = common.loggedmethod
 
 try:
 	import remote

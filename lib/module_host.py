@@ -1,4 +1,4 @@
-from typing import Callable, Dict, List, Optional
+from typing import Dict, List, Optional
 
 print('vjz4/module_host.py loading')
 
@@ -18,13 +18,15 @@ except ImportError:
 
 try:
 	import common
+	from common import cleandict, mergedicts, Future, loggedmethod, opattrs, UpdateParValue
 except ImportError:
 	common = mod.common
-cleandict, mergedicts = common.cleandict, common.mergedicts
-Future = common.Future
-loggedmethod = common.loggedmethod
-opattrs = common.opattrs
-UpdateParValue = common.UpdateParValue
+	cleandict = common.cleandict
+	mergedicts = common.mergedicts
+	Future = common.Future
+	loggedmethod = common.loggedmethod
+	opattrs = common.opattrs
+	UpdateParValue = common.UpdateParValue
 
 try:
 	import menu
@@ -557,7 +559,7 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 		if not parcontext:
 			self._LogEvent('Control does not support mapping: {}'.format(ctrl))
 			return
-		partschema = parcontext['partschema']
+		partschema = parcontext['partschema']  # type: schema.ParamPartSchema
 		if not partschema:
 			self._LogEvent('Control does not support mapping: {}'.format(ctrl))
 			return

@@ -11,14 +11,16 @@ if False:
 
 try:
 	import common
+	from common import loggedmethod, customloggedmethod, simpleloggedmethod, cleandict, mergedicts, excludekeys, opattrs
 except ImportError:
 	common = mod.common
-
-cleandict, excludekeys, mergedicts = common.cleandict, common.excludekeys, common.mergedicts
-BaseDataObject = common.BaseDataObject
-loggedmethod = common.loggedmethod
-customloggedmethod, simpleloggedmethod = common.customloggedmethod, common.simpleloggedmethod
-opattrs = common.opattrs
+	loggedmethod = common.loggedmethod
+	customloggedmethod = common.customloggedmethod
+	simpleloggedmethod = common.simpleloggedmethod
+	cleandict = common.cleandict
+	excludekeys = common.excludekeys
+	mergedicts = common.mergedicts
+	opattrs = common.opattrs
 
 try:
 	import schema
@@ -29,6 +31,11 @@ try:
 	import ui_builder
 except ImportError:
 	ui_builder = mod.ui_builder
+
+try:
+	import ui
+except ImportError:
+	ui = mod.ui
 
 try:
 	import app_components
@@ -150,7 +157,7 @@ class PresetManager(app_components.ComponentBase, common.ActionsExt):
 			self._LogEvent('Module host does not support saving presets: {}'.format(modhost))
 			return
 
-		ui_builder.ShowPromptDialog(
+		ui.ShowPromptDialog(
 			title='Save preset',
 			text='Preset name',
 			oktext='Save', canceltext='Cancel',
@@ -192,7 +199,7 @@ class PresetManager(app_components.ComponentBase, common.ActionsExt):
 			self._BuildPresetTable()
 			self._BuildPresetMarkers()
 
-		ui_builder.ShowPromptDialog(
+		ui.ShowPromptDialog(
 			title='Overwrite preset {}?',
 			textentry=False,
 			oktext='Overwrite',
@@ -368,7 +375,7 @@ class ModuleStateManager(app_components.ComponentBase, common.ActionsExt):
 				self._UpdateStateMarker(marker, state)
 
 		if promptforname:
-			ui_builder.ShowPromptDialog(
+			ui.ShowPromptDialog(
 				title='Capture module state',
 				text='State name',
 				oktext='Capture', canceltext='Cancel',
@@ -408,7 +415,7 @@ class ModuleStateManager(app_components.ComponentBase, common.ActionsExt):
 		def _updatename(name):
 			marker.par.Name = name
 
-		ui_builder.ShowPromptDialog(
+		ui.ShowPromptDialog(
 			title='Rename module state',
 			text='State name',
 			oktext='Rename', canceltext='Cancel',
