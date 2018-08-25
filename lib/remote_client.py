@@ -473,10 +473,8 @@ class _RemoteClient_2(remote.RemoteBase, app_components.ComponentBase):
 		self.Connected.val = False
 		self.ServerInfo = None
 
-		pass
-
 	@loggedmethod
-	def Connect(self, host=None, port=None) -> 'Future':
+	def Connect(self, host=None, port=None) -> 'Future[schema.ServerInfo]':
 		if host is None:
 			host = self.ownerComp.par.Address.eval()
 		else:
@@ -488,14 +486,20 @@ class _RemoteClient_2(remote.RemoteBase, app_components.ComponentBase):
 		self.Disconnect()
 		self.SetStatusText('Connecting to {}:{}'.format(host, port), log=True)
 		info = self.BuildClientInfo()
+		resultfuture = Future()
 
-		return self.Connection.SendRequest('connect', info.ToJsonDict()).then(
-			success=self._OnConfirmConnect,
-			failure=self._OnConnectFailure,
+		def _onfailure(cmdmesg: remote.CommandMessage):
+			self.SetStatusText('Connect attempt failed')
+			self._LogEvent('Connect failed: {}'.format(cmdmesg))
+			resultfuture.fail(cmdmesg.arg or 'Connect attempt failed')
+
+		self.Connection.SendRequest('connect', info.ToJsonDict()).then(
+			success=lambda cmdmesg: self._OnConnectSuccess(cmdmesg, resultfuture),
+			failure=_onfailure,
 		)
+		return resultfuture
 
-	@loggedmethod
-	def _OnConfirmConnect(self, cmdmesg: remote.CommandMessage):
+	def _OnConnectSuccess(self, cmdmesg: remote.CommandMessage, resultfuture: Future):
 		self.Connected.val = True
 		if not cmdmesg.arg:
 			self._LogEvent('No server info!')
@@ -503,13 +507,15 @@ class _RemoteClient_2(remote.RemoteBase, app_components.ComponentBase):
 		else:
 			serverinfo = schema.ServerInfo.FromJsonDict(cmdmesg.arg)  # type: schema.ServerInfo
 		if serverinfo.version is not None and serverinfo.version != self._Version:
-			raise Exception('Client/server version mismatch! client: {}, server: {}'.format(
-				self._Version, serverinfo.version))
-		self.SetStatusText('Connected to server')
+			error = 'Client/server version mismatch! client: {}, server: {}'.format(
+				self._Version, serverinfo.version)
+			self.SetStatusText(error, log=True)
+			resultfuture.fail(error)
+			return
 		self.ServerInfo = serverinfo
-
-	def _OnConnectFailure(self, cmdmesg: remote.CommandMessage):
-		self._LogEvent('_OnConnectFailure({})'.format(cmdmesg))
+		self._LogEvent('Connected to server: {}'.format(serverinfo))
+		self.SetStatusText('Connected to server')
+		resultfuture.resolve(serverinfo)
 
 	@property
 	def _Version(self):
@@ -529,6 +535,108 @@ class _RemoteClient_2(remote.RemoteBase, app_components.ComponentBase):
 				primaryvidrecv=self.ownerComp.par.Primaryvideoreceivename.eval() or None,
 				secondaryvidrecv=self.ownerComp.par.Secondaryvideoreceivename.eval() or None
 			)
+
+	@loggedmethod
+	def SetClientInfo(self, info: schema.ClientInfo) -> 'Future[schema.ServerInfo]':
+		if not info or (not info.address and not info.cmdsend):
+			self.Disconnect()
+			return Future.immediateerror('No/incomplete client info')
+		connpar = self.Connection.par
+		_ApplyParVal(self.ownerComp.par.Localaddress, info.address)
+		_ApplyParVal(self.ownerComp.par.Commandsendport, info.cmdsend)
+		_ApplyParVal(self.ownerComp.par.Commandreceiveport, info.cmdrecv)
+		_ApplyParVal(connpar.Oscsendport, info.oscsend)
+		_ApplyParVal(connpar.Oscreceiveport, info.oscrecv)
+		_ApplyParVal(connpar.Osceventsendport, info.osceventsend)
+		_ApplyParVal(connpar.Osceventreceiveport, info.osceventrecv)
+		_ApplyParVal(self.ownerComp.par.Primaryvideoreceivename, info.primaryvidrecv)
+		_ApplyParVal(self.ownerComp.par.Secondaryvideoreceivename, info.secondaryvidrecv)
+		return self.Connect(host=info.address, port=info.cmdsend)
+
+	@loggedmethod
+	def QueryAppInfo(self) -> 'Future[schema.RawAppInfo]':
+		if not self.Connected:
+			return Future.immediateerror('Not connected')
+		resultfuture = Future()
+
+		def _onfailure(cmdmesg: remote.CommandMessage):
+			self.SetStatusText('Query app info failed')
+			self._LogEvent('Query app info failed: {}'.format(cmdmesg))
+			resultfuture.fail(cmdmesg.arg or 'Query app info failed')
+
+		def _onsuccess(cmdmesg: remote.CommandMessage):
+			self.SetStatusText('Retrieved app info')
+			self._LogEvent('Received app info: {!r}'.format(cmdmesg.arg))
+			try:
+				appinfo = schema.RawAppInfo.FromJsonDict(cmdmesg.arg)
+			except Exception as err:
+				resultfuture.fail(err)
+			else:
+				resultfuture.resolve(appinfo)
+
+		self.Connection.SendRequest('queryApp').then(
+			success=_onsuccess,
+			failure=_onfailure
+		)
+		return resultfuture
+
+	@loggedmethod
+	def QueryModuleInfo(self, modpath) -> 'Future[schema.RawModuleInfo]':
+		if not self.Connected:
+			return Future.immediateerror('Not connected')
+		resultfuture = Future()
+
+		def _onfailure(cmdmesg: remote.CommandMessage):
+			self.SetStatusText('Query module info ({}) failed'.format(modpath))
+			self._LogEvent('Query module info ({}) failed: {}'.format(modpath, cmdmesg))
+			resultfuture.fail(cmdmesg.arg or 'Query module info ({}) failed'.format(modpath))
+
+		def _onsuccess(cmdmesg: remote.CommandMessage):
+			self._LogEvent('Retrieved module info ({}): {}'.format(modpath, cmdmesg.arg))
+			try:
+				modinfo = schema.RawModuleInfo.FromJsonDict(cmdmesg.arg)
+			except Exception as error:
+				resultfuture.fail(error)
+			else:
+				resultfuture.resolve(modinfo)
+
+		self.Connection.SendRequest('queryMod', modpath).then(
+			success=_onsuccess,
+			failure=_onfailure
+		)
+		return resultfuture
+
+	@loggedmethod
+	def QueryModuleState(self, modpath, params: List[str]) -> 'Future[schema.ModuleState]':
+		if not params:
+			return Future.immediate(schema.ModuleState())
+		resultfuture = Future()
+
+		def _onfailure(cmdmesg: remote.CommandMessage):
+			self.SetStatusText('Query module state ({}) failed'.format(modpath))
+			self._LogEvent('Query module state ({}) failed: {}'.format(modpath, cmdmesg.arg))
+			resultfuture.fail(cmdmesg.arg or 'Query module state ({}) failed'.format(modpath))
+
+		def _onsuccess(cmdmesg: remote.CommandMessage):
+			self._LogEvent('Received module state ({})'.format(modpath))
+			if not cmdmesg.arg:
+				resultfuture.fail('Empty/missing module state')
+				return
+			if not isinstance(cmdmesg.arg, dict):
+				resultfuture.fail('Invalid module state: {}'.format(cmdmesg.arg))
+				return
+			vals = cmdmesg.arg.get('vals')
+			if not vals:
+				self._LogEvent('Module state ({}) has no vals'.format(modpath))
+				resultfuture.resolve(schema.ModuleState())
+			else:
+				resultfuture.resolve(schema.ModuleState(params=dict(vals)))
+
+		self.Connection.SendRequest('queryModState', {'path': modpath, 'params': params}).then(
+			success=_onsuccess,
+			failure=_onfailure
+		)
+		return resultfuture
 
 def _ApplyParVal(par, val):
 	common.UpdateParValue(par, val, resetmissing=False)

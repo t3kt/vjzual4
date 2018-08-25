@@ -1,11 +1,13 @@
 import datetime
 import json
-from typing import Any, Callable, Dict, List, NamedTuple, Iterable, Set, Union, Optional
+from typing import Any, Callable, Dict, Generic, List, NamedTuple, Iterable, Set, TypeVar, Union, Optional
 
 print('vjz4/common.py loading')
 
 if False:
 	from _stubs import *
+
+T = TypeVar('T')
 
 def Log(msg, file=None):
 	print(
@@ -277,18 +279,18 @@ class _TaskBatch:
 		self.results = []
 		self.future = Future()
 
-class Future:
+class Future(Generic[T]):
 	def __init__(self, onlisten=None, oninvoke=None):
-		self._successcallbacks = []  # type: List[Callable]
+		self._successcallbacks = []  # type: List[Callable[[T]]]
 		self._failurecallbacks = []  # type: List[Callable]
 		self._resolved = False
 		self._canceled = False
-		self._result = None
+		self._result = None  # type: Optional[T]
 		self._error = None
 		self._onlisten = onlisten  # type: Callable
 		self._oninvoke = oninvoke  # type: Callable
 
-	def then(self, success=None, failure=None):
+	def then(self, success: Callable[[T]]=None, failure: Callable=None):
 		if not self._successcallbacks and not self._failurecallbacks:
 			if self._onlisten:
 				self._onlisten()
@@ -312,7 +314,7 @@ class Future:
 		if self._oninvoke:
 			self._oninvoke()
 
-	def _resolve(self, result, error):
+	def _resolve(self, result: T, error):
 		if self._canceled:
 			return
 		if self._resolved:
@@ -323,7 +325,7 @@ class Future:
 		if self._successcallbacks or self._failurecallbacks:
 			self._invoke()
 
-	def resolve(self, result=None):
+	def resolve(self, result: Optional[T]=None):
 		self._resolve(result, None)
 		return self
 
@@ -341,7 +343,7 @@ class Future:
 		return self._resolved
 
 	@property
-	def result(self):
+	def result(self) -> T:
 		return self._result
 
 	def __str__(self):
@@ -355,7 +357,7 @@ class Future:
 			return '{}[success: {!r}]'.format(self.__class__.__name__, self._result)
 
 	@classmethod
-	def immediate(cls, value=None, onlisten=None, oninvoke=None):
+	def immediate(cls, value: T=None, onlisten=None, oninvoke=None) -> 'Future[T]':
 		future = cls(onlisten=onlisten, oninvoke=oninvoke)
 		future.resolve(value)
 		return future
@@ -373,7 +375,7 @@ class Future:
 		return cls.immediate(obj)
 
 	@classmethod
-	def all(cls, *futures: 'Future', onlisten=None, oninvoke=None):
+	def all(cls, *futures: 'Future', onlisten=None, oninvoke=None) -> 'Future[List]':
 		if not futures:
 			return cls.immediate([], onlisten=onlisten, oninvoke=oninvoke)
 		merged = cls(onlisten=onlisten, oninvoke=oninvoke)
