@@ -7,11 +7,6 @@ print('vjz4/common.py loading')
 if False:
 	from _stubs import *
 
-try:
-	import td
-except ImportError:
-	pass
-
 def Log(msg, file=None):
 	print(
 		'[%s]' % datetime.datetime.now().strftime('%H:%M:%S'),
@@ -220,7 +215,7 @@ class TaskQueueExt:
 	def _QueueRunNextTask(self):
 		if not self._TaskBatches:
 			return
-		td.run('op({!r}).RunNextTask()'.format(self.ownerComp.path), delayFrames=1)
+		mod.td.run('op({!r}).RunNextTask()'.format(self.ownerComp.path), delayFrames=1)
 
 	def RunNextTask(self):
 		if not self._TaskBatches:
@@ -233,18 +228,24 @@ class TaskQueueExt:
 			return
 		result = task()
 
-		def _onfinish(*_):
+		def _onsuccess(r):
+			batch.results.append(r)
 			if not batch.tasks:
 				if not batch.future.isresolved:
-					batch.future.resolve()
+					batch.future.resolve(batch.results)
+			self._QueueRunNextTask()
+
+		def _onfailure(err):
+			batch.tasks.clear()
+			batch.future.fail(err)
 			self._QueueRunNextTask()
 
 		if isinstance(result, Future):
 			result.then(
-				success=_onfinish,
-				failure=_onfinish)
+				success=_onsuccess,
+				failure=_onfailure)
 		else:
-			_onfinish()
+			_onsuccess(result)
 
 	def _PopNextTask(self):
 		while self._TaskBatches:
@@ -274,6 +275,7 @@ class _TaskBatch:
 	def __init__(self, tasks: List[Callable]):
 		self.total = len(tasks)
 		self.tasks = tasks
+		self.results = []
 		self.future = Future()
 
 class Future:
