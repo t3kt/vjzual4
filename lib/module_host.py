@@ -31,11 +31,6 @@ try:
 except ImportError:
 	menu = mod.menu
 
-try:
-	from TDStoreTools import DependDict, DependList
-except ImportError:
-	from _stubs.TDStoreTools import DependDict, DependList
-
 def _GetOrAdd(d, key, default):
 	if key in d:
 		return d[key]

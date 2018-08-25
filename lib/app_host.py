@@ -1,14 +1,14 @@
 import json
 from operator import itemgetter
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 print('vjz4/app_host.py loading')
 
 if False:
 	from _stubs import *
-	from highlighting import HighlightManager
+	import highlighting
 	from remote import CommandMessage
-	from control_modulation import ModulationManager
+	import control_modulation
 
 try:
 	import ui_builder
@@ -65,7 +65,7 @@ try:
 except ImportError:
 	app_components = mod.app_components
 
-class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, common.TaskQueueExt):
+class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 	def __init__(self, ownerComp):
 		common.ExtensionBase.__init__(self, ownerComp)
 		common.TaskQueueExt.__init__(self, ownerComp)
@@ -93,7 +93,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		return self.ownerComp.op('bottom_bar/progress_bar')
 
 	@property
-	def _RemoteClient(self) -> remote_client.RemoteClient:
+	def _RemoteClient(self) -> 'Union[remote_client.RemoteClient, COMP]':
 		return self.ownerComp.par.Remoteclient.eval()
 
 	def GetModuleSchema(self, modpath) -> 'Optional[schema.ModuleSchema]':
@@ -449,11 +449,11 @@ class AppHost(common.ExtensionBase, common.ActionsExt, schema.SchemaProvider, co
 		return self._RemoteClient.ProxyManager
 
 	@property
-	def HighlightManager(self) -> 'HighlightManager':
+	def HighlightManager(self) -> 'highlighting.HighlightManager':
 		return self.ownerComp.op('highlight_manager')
 
 	@property
-	def ModulationManager(self) -> 'ModulationManager':
+	def ModulationManager(self) -> 'control_modulation.ModulationManager':
 		return self.ownerComp.op('modulation')
 
 	@property

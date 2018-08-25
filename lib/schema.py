@@ -1346,7 +1346,3 @@ class ModulationSourceSpec(BaseDataObject):
 			'bias': self.bias,
 		}))
 
-class SchemaProvider:
-	def GetModuleSchema(self, modpath) -> Optional[ModuleSchema]:
-		raise NotImplementedError()
-

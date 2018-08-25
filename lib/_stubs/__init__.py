@@ -61,6 +61,9 @@ class op:
 
 	def addScriptError(self, msg): pass
 
+	def copy(self, o: 'op', name=None) -> 'op':
+		pass
+
 	TDResources = _Expando()
 
 op.TDResources = _Expando()
