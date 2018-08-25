@@ -468,5 +468,67 @@ class _RemoteClient_2(remote.RemoteBase, app_components.ComponentBase):
 		remote.RemoteBase.__init__(self, ownerComp)
 		self.ServerInfo = None  # type: schema.ServerInfo
 
+	@loggedmethod
+	def Disconnect(self):
+		self.Connected.val = False
+		self.ServerInfo = None
+
+		pass
+
+	@loggedmethod
+	def Connect(self, host=None, port=None) -> 'Future':
+		if host is None:
+			host = self.ownerComp.par.Address.eval()
+		else:
+			self.ownerComp.par.Address = host
+		if port is None:
+			port = self.ownerComp.par.Commandsendport.eval()
+		else:
+			self.ownerComp.par.Commandsendport = port
+		self.Disconnect()
+		self.SetStatusText('Connecting to {}:{}'.format(host, port), log=True)
+		info = self.BuildClientInfo()
+
+		return self.Connection.SendRequest('connect', info.ToJsonDict()).then(
+			success=self._OnConfirmConnect,
+			failure=self._OnConnectFailure,
+		)
+
+	@loggedmethod
+	def _OnConfirmConnect(self, cmdmesg: remote.CommandMessage):
+		self.Connected.val = True
+		if not cmdmesg.arg:
+			self._LogEvent('No server info!')
+			serverinfo = schema.ServerInfo()
+		else:
+			serverinfo = schema.ServerInfo.FromJsonDict(cmdmesg.arg)  # type: schema.ServerInfo
+		if serverinfo.version is not None and serverinfo.version != self._Version:
+			raise Exception('Client/server version mismatch! client: {}, server: {}'.format(
+				self._Version, serverinfo.version))
+		self.SetStatusText('Connected to server')
+		self.ServerInfo = serverinfo
+
+	def _OnConnectFailure(self, cmdmesg: remote.CommandMessage):
+		self._LogEvent('_OnConnectFailure({})'.format(cmdmesg))
+
+	@property
+	def _Version(self):
+		return 1
+
+	def BuildClientInfo(self):
+		connpar = self.Connection.par
+		return schema.ClientInfo(
+				version=self._Version,
+				address=self.ownerComp.par.Localaddress.eval() or self.ownerComp.par.Localaddress.default,
+				cmdsend=self.ownerComp.par.Commandsendport.eval(),
+				cmdrecv=self.ownerComp.par.Commandreceiveport.eval(),
+				oscsend=connpar.Oscsendport.eval(),
+				oscrecv=connpar.Oscreceiveport.eval(),
+				osceventsend=connpar.Osceventsendport.eval(),
+				osceventrecv=connpar.Osceventreceiveport.eval(),
+				primaryvidrecv=self.ownerComp.par.Primaryvideoreceivename.eval() or None,
+				secondaryvidrecv=self.ownerComp.par.Secondaryvideoreceivename.eval() or None
+			)
+
 def _ApplyParVal(par, val):
 	common.UpdateParValue(par, val, resetmissing=False)

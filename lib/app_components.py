@@ -17,11 +17,13 @@ class ComponentBase(common.ExtensionBase):
 	def AppHost(self) -> 'app_host.AppHost':
 		return getattr(self.ownerComp.parent, 'AppHost', None)
 
-	def SetStatusText(self, text, temporary=None):
+	def SetStatusText(self, text, temporary=None, log=False):
 		apphost = self.AppHost
 		if not apphost:
 			return
 		apphost.SetStatusText(text, temporary=temporary)
+		if alsolog:
+			self._LogEvent(text)
 
 	@property
 	def UiBuilder(self) -> 'ui_builder.UiBuilder':
