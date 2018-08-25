@@ -22,7 +22,7 @@ class ComponentBase(common.ExtensionBase):
 		if not apphost:
 			return
 		apphost.SetStatusText(text, temporary=temporary)
-		if alsolog:
+		if log:
 			self._LogEvent(text)
 
 	@property
