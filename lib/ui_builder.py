@@ -353,6 +353,7 @@ class UiBuilder:
 			self, dest, name,
 			parinfo,  # type: schema.ParamSchema
 			addtocontrolmap=None,  # type: Dict[str, COMP]
+			addtowrappermap=None,  # type: Dict[str, COMP]
 			dropscript=None,  # type: Optional[DAT]
 			modhostconnector=None,  # type: ModuleHostConnector
 			ctrlattrs: opattrs=None,
@@ -380,6 +381,8 @@ class UiBuilder:
 				),
 				wrapperattrs
 			))
+		if addtowrappermap is not None:
+			addtowrappermap[parinfo.name] = wrapper
 		ctrlname = 'ctrl'
 
 		if parinfo.style in ('Float', 'Int') and len(parinfo.parts) == 1:
