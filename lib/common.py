@@ -259,12 +259,11 @@ class TaskQueueExt:
 				return task, batch
 		return None, None
 
-	def AddTaskBatch(self, tasks: List[Callable], autostart=True):
+	def AddTaskBatch(self, tasks: List[Callable]) -> 'Future':
 		batch = _TaskBatch(tasks)
 		self._TaskBatches.append(batch)
 		self._UpdateProgress()
-		if autostart:
-			self._QueueRunNextTask()
+		self._QueueRunNextTask()
 		return batch.future
 
 	def ClearTasks(self):

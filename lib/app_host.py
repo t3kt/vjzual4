@@ -153,8 +153,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 				lambda: self.ModulationManager.Mapper.InitializeChannelProcessing(),
 				_continueloadingstate,
 				lambda: self.SetStatusText('App schema loading completed'),
-			],
-			autostart=True)
+			])
 
 	@loggedmethod
 	def OnDetach(self):
@@ -631,9 +630,6 @@ class ModuleManager(app_components.ComponentBase):
 	def ProxyManager(self):
 		return self.AppHost.ProxyManager
 
-	def AddTaskBatch(self, tasks: List[Callable], autostart=True):
-		return self.AppHost.AddTaskBatch(tasks, autostart=autostart)
-
 	@loggedmethod
 	def _BuildSubModuleHosts(self):
 		self.SetStatusText('Building module hosts...')
@@ -671,12 +667,11 @@ class ModuleManager(app_components.ComponentBase):
 
 		self.SetStatusText('Attaching module hosts...')
 		self.moduleloadfuture = Future()
-		self.AddTaskBatch(
+		self.AppHost.AddTaskBatch(
 			[
 				_makeInitTask(host, connector)
 				for host, connector in hostconnectorpairs
-			],
-			autostart=True)
+			])
 		return self.moduleloadfuture
 
 	@loggedmethod

@@ -491,8 +491,7 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 				for hostconnpair in hostconnectorpairs
 			] + [
 				lambda: self._OnSubModuleHostsConnected()
-			],
-			autostart=True)
+			])
 
 	@loggedmethod
 	def _CreateSubModuleHost(self, connector, i):

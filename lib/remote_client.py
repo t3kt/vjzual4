@@ -229,7 +229,7 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase):
 					for path in sorted(appinfo.modpaths)
 				] + [
 					lambda: self._OnAllModulesReceived()
-				], autostart=True)
+				])
 		finally:
 			self._LogEnd()
 
@@ -343,8 +343,7 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase):
 				for modpath in masterpaths
 			] + [
 				lambda: self._OnAllModuleTypesReceived(),
-			],
-			autostart=True)
+			])
 
 	@loggedmethod
 	def _OnAllModuleTypesReceived(self):
@@ -375,8 +374,7 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase):
 				for m in self.AppSchema.modules
 			] + [
 				lambda: self.NotifyAppSchemaLoaded(),
-			],
-			autostart=True)
+			])
 
 	@loggedmethod
 	def BuildModuleProxies(self):
@@ -462,6 +460,13 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase):
 		self._LogEvent('HandleOscEvent({!r}, {!r})'.format(address, args))
 		modpath, name = address.split(':', maxsplit=1)
 		self.ProxyManager.SetParamValue(modpath, name, args[0])
+
+
+class _RemoteClient_2(remote.RemoteBase, app_components.ComponentBase):
+	def __init__(self, ownerComp):
+		app_components.ComponentBase.__init__(self, ownerComp)
+		remote.RemoteBase.__init__(self, ownerComp)
+		self.ServerInfo = None  # type: schema.ServerInfo
 
 def _ApplyParVal(par, val):
 	common.UpdateParValue(par, val, resetmissing=False)

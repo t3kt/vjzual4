@@ -1,10 +1,9 @@
-from typing import Callable, Dict, Optional
+from typing import Dict, Optional
 
 print('vjz4/ui_builder.py loading')
 
 if False:
 	from _stubs import *
-	from _stubs.PopDialogExt import PopDialogExt
 	from module_host import ModuleHostConnector
 	import schema
 

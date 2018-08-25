@@ -275,8 +275,7 @@ class ModulationSourceManager(app_components.ComponentBase, common.ActionsExt):
 			] + [
 				_makeActivateTask(o)
 				for o in onchanges
-			],
-			autostart=True)
+			])
 
 	@property
 	def _ModulationManager(self) -> ModulationManager:
