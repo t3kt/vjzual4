@@ -281,7 +281,7 @@ class _TaskBatch:
 
 class Future(Generic[T]):
 	def __init__(self, onlisten=None, oninvoke=None):
-		self._successcallbacks = []  # type: List[Callable[[T]]]
+		self._successcallbacks = []  # type: List[Callable[[T], None]]
 		self._failurecallbacks = []  # type: List[Callable]
 		self._resolved = False
 		self._canceled = False
@@ -290,7 +290,7 @@ class Future(Generic[T]):
 		self._onlisten = onlisten  # type: Callable
 		self._oninvoke = oninvoke  # type: Callable
 
-	def then(self, success: Callable[[T]]=None, failure: Callable=None):
+	def then(self, success: Callable[[T], None]=None, failure: Callable=None):
 		if not self._successcallbacks and not self._failurecallbacks:
 			if self._onlisten:
 				self._onlisten()
