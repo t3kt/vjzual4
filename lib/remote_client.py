@@ -74,24 +74,6 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase):
 		return self.AppSchema and self.AppSchema.modulesbypath.get(modpath)
 
 	@property
-	def _AppInfoTable(self): return self.ownerComp.op('set_app_info')
-
-	@property
-	def _ModuleTable(self): return self.ownerComp.op('set_modules')
-
-	@property
-	def _ModuleTypeTable(self): return self.ownerComp.op('set_module_types')
-
-	@property
-	def _ParamTable(self): return self.ownerComp.op('set_params')
-
-	@property
-	def _ParamPartTable(self): return self.ownerComp.op('set_param_parts')
-
-	@property
-	def _DataNodesTable(self): return self.ownerComp.op('set_data_nodes')
-
-	@property
 	def ProxyManager(self):
 		return self.AppHost.ProxyManager
 
@@ -103,11 +85,6 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase):
 		self.rawModuleInfos = []
 		self.AppSchema = None
 		self.ServerInfo = None
-		self._BuildAppInfoTable()
-		self._ClearModuleTable()
-		self._ClearModuleTypeTable()
-		self._ClearParamTables()
-		self._ClearDataNodesTable()
 		apphost = self.AppHost
 		if apphost:
 			apphost.OnDetach()
@@ -210,7 +187,6 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase):
 				raise Exception('No app info!')
 			appinfo = schema.RawAppInfo.FromJsonDict(cmdmesg.arg)
 			self.rawAppInfo = appinfo
-			self._BuildAppInfoTable()
 
 			def _makeQueryModTask(modpath):
 				return lambda: self.QueryModule(modpath, ismoduletype=False)
@@ -228,60 +204,6 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase):
 
 	def _OnQueryAppFailure(self, cmdmesg: remote.CommandMessage):
 		self._LogEvent('_OnQueryAppFailure({})'.format(cmdmesg))
-
-	def _BuildAppInfoTable(self):
-		dat = self._AppInfoTable
-		dat.clear()
-		if self.rawAppInfo:
-			for key, val in self.rawAppInfo.ToJsonDict().items():
-				if not isinstance(val, (list, tuple, dict)):
-					dat.appendRow([key, val])
-
-	def _ClearModuleTable(self):
-		dat = self._ModuleTable
-		dat.clear()
-		dat.appendRow(schema.ModuleSchema.tablekeys)
-
-	def _ClearModuleTypeTable(self):
-		dat = self._ModuleTypeTable
-		dat.clear()
-		dat.appendRow(schema.ModuleTypeSchema.tablekeys)
-
-	def _ClearParamTables(self):
-		dat = self._ParamTable
-		dat.clear()
-		dat.appendRow(schema.ParamSchema.extratablekeys + schema.ParamSchema.tablekeys)
-		dat = self._ParamPartTable
-		dat.clear()
-		dat.appendRow(schema.ParamPartSchema.extratablekeys + schema.ParamPartSchema.tablekeys)
-
-	def _AddParamsToTable(self, modpath, params: List[schema.ParamSchema]):
-		if not params:
-			return
-		paramsdat = self._ParamTable
-		partsdat = self._ParamPartTable
-		for param in params:
-			param.AddToTable(
-				paramsdat,
-				attrs=param.GetExtraTableAttrs(modpath=modpath))
-			for i, part in enumerate(param.parts):
-				part.AddToTable(
-					partsdat,
-					attrs=part.GetExtraTableAttrs(param=param, vecIndex=i, modpath=modpath))
-
-	def _ClearDataNodesTable(self):
-		dat = self._DataNodesTable
-		dat.clear()
-		dat.appendRow(schema.DataNodeInfo.tablekeys + ['modpath'])
-
-	def _AddToDataNodesTable(self, modpath, nodes: List[schema.DataNodeInfo]):
-		if not nodes:
-			return
-		dat = self._DataNodesTable
-		for node in nodes:
-			node.AddToTable(
-				dat,
-				attrs={'modpath': modpath})
 
 	@loggedmethod
 	def QueryModule(self, modpath, ismoduletype=False):
@@ -346,14 +268,6 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase):
 			appinfo=self.rawAppInfo,
 			modules=self.rawModuleInfos,
 			moduletypes=self.rawModuleTypeInfos).Build()
-		moduletable = self._ModuleTable
-		for modschema in self.AppSchema.modules:
-			modschema.AddToTable(moduletable)
-			self._AddParamsToTable(modschema.path, modschema.params)
-			self._AddToDataNodesTable(modschema.path, modschema.nodes)
-		moduletypetable = self._ModuleTypeTable
-		for modtype in self.AppSchema.moduletypes:
-			modtype.AddToTable(moduletypetable)
 		self.AppHost.OnAppSchemaLoaded(self.AppSchema)
 
 	@common.simpleloggedmethod
