@@ -29,11 +29,6 @@ except ImportError:
 	schema_utils = mod.schema_utils
 
 try:
-	import module_proxy
-except ImportError:
-	module_proxy = mod.module_proxy
-
-try:
 	import common
 except ImportError:
 	common = mod.common
@@ -96,8 +91,8 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase):
 	def _DataNodesTable(self): return self.ownerComp.op('set_data_nodes')
 
 	@property
-	def ProxyManager(self) -> module_proxy.ModuleProxyManager:
-		return self.ownerComp.op('proxy')
+	def ProxyManager(self):
+		return self.AppHost.ProxyManager
 
 	@loggedmethod
 	def Detach(self):
@@ -637,6 +632,120 @@ class _RemoteClient_2(remote.RemoteBase, app_components.ComponentBase):
 			failure=_onfailure
 		)
 		return resultfuture
+
+class RemoteSchemaLoader(app_components.ComponentBase):
+	def __init__(self, ownerComp):
+		app_components.ComponentBase.__init__(self, ownerComp)
+		self.appinfo = None  # type: schema.RawAppInfo
+		self.moduleinfos = []  # type: List[schema.RawModuleInfo]
+		self.moduletypeinfos = []  # type: List[schema.RawModuleInfo]
+		self.completionfuture = None  # type: Future[schema.AppSchema]
+
+	@property
+	def _RemoteClient(self) -> '_RemoteClient_2':
+		raise NotImplementedError()
+
+	def _Reset(self):
+		self.appinfo = None
+		self.moduleinfos.clear()
+		self.moduletypeinfos.clear()
+		self.completionfuture = None
+
+	def _NotifyFailure(self, error):
+		self.SetStatusText('Loading remote schema failed')
+		self._LogEvent('Loading remote schema failed: {}'.format(error))
+		if self.completionfuture and not self.completionfuture.isresolved:
+			self.completionfuture.fail(error or 'Loading remote schema failed')
+
+	@loggedmethod
+	def LoadRemoteAppSchema(self) -> 'Future[schema.AppSchema]':
+		self._Reset()
+		self.completionfuture = Future()
+
+		self.AppHost.AddTaskBatch([
+			lambda:self._RemoteClient.QueryAppInfo().then(
+				success=self._OnAppInfoReceived,
+				failure=self._NotifyFailure),
+		])
+
+		return self.completionfuture
+
+	@loggedmethod
+	def _OnAppInfoReceived(self, appinfo: 'schema.RawAppInfo'):
+		self.appinfo = appinfo
+		if not appinfo.modpaths:
+			self._LogEvent('No modules to query')
+			self._CompleteAndBuildSchema()
+		else:
+			self._QueryModules()
+
+	def _QueryModules(self):
+		def _makeQueryModTask(modpath):
+			return lambda: self._QueryModuleInfo(modpath, ismoduletype=False)
+
+		self.SetStatusText('Querying module schemas', log=True)
+		self.AppHost.AddTaskBatch(
+			[
+				_makeQueryModTask(modpath)
+				for modpath in self.appinfo.modpaths
+			] + [
+				self._OnAllModulesReceived,
+			])
+
+	@loggedmethod
+	def _QueryModuleInfo(self, modpath, ismoduletype=False):
+		self._RemoteClient.QueryModuleInfo(modpath).then(
+			success=lambda modinfo: self._OnModuleInfoReceived(modinfo, ismoduletype=ismoduletype),
+			failure=lambda error: self._NotifyFailure('Query module info ({}) failed: {}'.format(modpath, error))
+		)
+
+	def _OnModuleInfoReceived(self, modinfo: 'schema.RawModuleInfo', ismoduletype=False):
+		self._LogEvent('Received module info ({})'.format(modinfo.path))
+		if ismoduletype:
+			self.moduletypeinfos.append(modinfo)
+		else:
+			self.moduleinfos.append(modinfo)
+
+	def _OnAllModulesReceived(self):
+		modpaths = []
+		masterpaths = set()
+		for modinfo in self.moduleinfos:
+			modpaths.append(modinfo.path)
+			if modinfo.masterpath:
+				masterpaths.add(modinfo.masterpath)
+		self._LogEvent('found {} module paths:\n{}'.format(len(modpaths), modpaths))
+		self._LogEvent('found {} module master paths:\n{}'.format(len(masterpaths), masterpaths))
+		if not masterpaths:
+			self._LogEvent('No module types to query')
+			self._CompleteAndBuildSchema()
+		else:
+			self._QueryModuleTypes(masterpaths)
+
+	def _QueryModuleTypes(self, masterpaths):
+		def _makeQueryModTask(modpath):
+			return lambda: self._QueryModuleInfo(modpath, ismoduletype=True)
+
+		self.SetStatusText('Querying module types', log=True)
+		self.AppHost.AddTaskBatch(
+			[
+				_makeQueryModTask(modpath)
+				for modpath in masterpaths
+			] + [
+				self._CompleteAndBuildSchema,
+			])
+
+	def _CompleteAndBuildSchema(self):
+		self.SetStatusText('Building app schema', log=True)
+
+		appschema = schema_utils.AppSchemaBuilder(
+			hostobj=self,
+			appinfo=self.appinfo,
+			modules=self.moduleinfos,
+			moduletypes=self.moduletypeinfos,
+		).Build()
+
+		self.completionfuture.resolve(appschema)
+
 
 def _ApplyParVal(par, val):
 	common.UpdateParValue(par, val, resetmissing=False)

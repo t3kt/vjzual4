@@ -9,6 +9,7 @@ if False:
 	import highlighting
 	from remote import CommandMessage
 	import control_modulation
+	import module_proxy
 
 try:
 	import ui_builder
@@ -450,8 +451,8 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		return self.ownerComp.op('presets')
 
 	@property
-	def ProxyManager(self):
-		return self._RemoteClient.ProxyManager
+	def ProxyManager(self) -> 'module_proxy.ModuleProxyManager':
+		return self.ownerComp.op('proxy')
 
 	@property
 	def HighlightManager(self) -> 'highlighting.HighlightManager':
