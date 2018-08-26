@@ -43,6 +43,11 @@ class ModuleProxyManager(app_components.ComponentBase, common.ActionsExt):
 	def _ProxyPathTable(self):
 		return self.ownerComp.op('__set_proxy_paths')
 
+	@loggedmethod
+	def Detach(self):
+		self.ClearProxies()
+		self.ownerComp.par.Rootpath = ''
+
 	def ClearProxies(self):
 		self._ProxyPathTable.clear()
 		for o in self.ownerComp.findChildren(maxDepth=1, tags=['vjzmodproxy']):

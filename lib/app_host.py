@@ -178,6 +178,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			o.destroy()
 		self.AppSchema = None
 		self.nodeMarkersByPath.clear()
+		self.ProxyManager.Detach()
 		self.ModuleManager.Detach()
 		self._BuildNodeMarkerTable()
 		self.SetPreviewSource(None)

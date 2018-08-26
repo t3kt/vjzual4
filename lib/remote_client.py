@@ -4,6 +4,7 @@ print('vjz4/remote_client.py loading')
 
 if False:
 	from _stubs import *
+	import app_host
 
 try:
 	import common
@@ -107,8 +108,6 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase):
 		self._ClearModuleTypeTable()
 		self._ClearParamTables()
 		self._ClearDataNodesTable()
-		self.ProxyManager.par.Rootpath = ''
-		self.ProxyManager.ClearProxies()
 		apphost = self.AppHost
 		if apphost:
 			apphost.OnDetach()
@@ -557,13 +556,27 @@ class RemoteClient_NEW(remote.RemoteBase, app_components.ComponentBase):
 		)
 		return resultfuture
 
-class RemoteSchemaLoader(app_components.ComponentBase):
-	def __init__(self, ownerComp):
-		app_components.ComponentBase.__init__(self, ownerComp)
+class RemoteSchemaLoader(common.LoggableSubComponent):
+	def __init__(
+			self,
+			hostobj,
+			apphost: 'app_host.AppHost',
+			remoteclient: 'RemoteClient_NEW',
+	):
+		common.LoggableSubComponent.__init__(
+			self,
+			hostobj=hostobj,
+			logprefix='RemoteSchemaLoader'
+		)
+		self.apphost = apphost
+		self.remoteclient = remoteclient
 		self.appinfo = None  # type: schema.RawAppInfo
 		self.moduleinfos = []  # type: List[schema.RawModuleInfo]
 		self.moduletypeinfos = []  # type: List[schema.RawModuleInfo]
 		self.completionfuture = None  # type: Future[schema.AppSchema]
+
+	def SetStatusText(self, text, **kwargs):
+		self.apphost.SetStatusText(text, **kwargs)
 
 	@property
 	def _RemoteClient(self) -> 'RemoteClient_NEW':
@@ -586,7 +599,7 @@ class RemoteSchemaLoader(app_components.ComponentBase):
 		self._Reset()
 		self.completionfuture = Future()
 
-		self.AppHost.AddTaskBatch([
+		self.apphost.AddTaskBatch([
 			lambda:self._RemoteClient.QueryAppInfo().then(
 				success=self._OnAppInfoReceived,
 				failure=self._NotifyFailure),
@@ -608,7 +621,7 @@ class RemoteSchemaLoader(app_components.ComponentBase):
 			return lambda: self._QueryModuleInfo(modpath, ismoduletype=False)
 
 		self.SetStatusText('Querying module schemas', log=True)
-		self.AppHost.AddTaskBatch(
+		self.apphost.AddTaskBatch(
 			[
 				_makeQueryModTask(modpath)
 				for modpath in self.appinfo.modpaths
@@ -650,7 +663,7 @@ class RemoteSchemaLoader(app_components.ComponentBase):
 			return lambda: self._QueryModuleInfo(modpath, ismoduletype=True)
 
 		self.SetStatusText('Querying module types', log=True)
-		self.AppHost.AddTaskBatch(
+		self.apphost.AddTaskBatch(
 			[
 				_makeQueryModTask(modpath)
 				for modpath in masterpaths
