@@ -355,82 +355,7 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase):
 		moduletypetable = self._ModuleTypeTable
 		for modtype in self.AppSchema.moduletypes:
 			modtype.AddToTable(moduletypetable)
-
-		def _makeQueryStateTask(modpath):
-			return lambda: self.QueryModuleState(modpath)
-
-		def _afterProxiesBuilt(*_):
-			self.SetStatusText('Querying module states...')
-			self.AppHost.AddTaskBatch(
-				[
-					_makeQueryStateTask(m.path)
-					for m in self.AppSchema.modules
-				] + [
-					lambda: self.NotifyAppSchemaLoaded(),
-				])
-
-		self.BuildModuleProxies().then(
-			success=_afterProxiesBuilt)
-
-	@loggedmethod
-	def BuildModuleProxies(self):
-		return self.ProxyManager.BuildProxiesForAppSchema(self.AppSchema)
-
-	@loggedmethod
-	def NotifyAppSchemaLoaded(self):
-		self.SetStatusText('App schema loaded')
 		self.AppHost.OnAppSchemaLoaded(self.AppSchema)
-
-	def QueryModuleState(self, modpath, params=None):
-		# params == None means all
-		if params is not None and not params:
-			# handle the case of passing in [] or ''
-			return
-		self._LogBegin('QueryModuleState({}, {})'.format(modpath, params or '*'))
-		try:
-			if params is None:
-				modschema = self.GetModuleSchema(modpath)
-				params = list(modschema.parampartnames) if modschema else None
-			if not params:
-				return
-			return self.Connection.SendRequest('queryModState', {'path': modpath, 'params': params}).then(
-				success=self._OnReceiveModuleState,
-				failure=self._OnQueryModuleStateFailure)
-		finally:
-			self._LogEnd()
-
-	def _OnQueryModuleStateFailure(self, cmdmesg: remote.CommandMessage):
-		self._LogEvent('_OnQueryModuleStateFailure({})'.format(cmdmesg))
-
-	def _OnReceiveModuleState(self, cmdmesg: remote.CommandMessage):
-		arg = cmdmesg.arg
-		self._LogBegin('_OnReceiveModuleState({})'.format((arg.get('path') if arg else None) or ''))
-		try:
-			if not arg:
-				self._LogEvent('arg is {!r}'.format(arg))
-				return
-			modpath, vals = arg.get('path'), arg.get('vals')
-			if not vals:
-				self._LogEvent('arg has no vals: {!r}'.format(arg))
-				return
-			if not modpath:
-				self._LogEvent('arg has no module path: {!r}'.format(arg))
-				return
-			proxy = self.ProxyManager.GetProxy(modpath)
-			if not proxy:
-				self._LogEvent('proxy not found for path: {!r}'.format(modpath))
-				return
-			for name, val in vals.items():
-				par = getattr(proxy.par, name, None)
-				if par is None:
-					self._LogEvent('parameter not found: {!r}'.format(name))
-					continue
-				if par.isOP:
-					par.val = op(val) or ''
-				else:
-					par.val = val
-		finally:
-			self._LogEnd()
 
 	@common.simpleloggedmethod
 	def StoreRemoteAppState(self, appstate: schema.AppState):
@@ -456,7 +381,7 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase):
 		self.ProxyManager.SetParamValue(modpath, name, args[0])
 
 
-class _RemoteClient_2(remote.RemoteBase, app_components.ComponentBase):
+class RemoteClient_NEW(remote.RemoteBase, app_components.ComponentBase):
 	def __init__(self, ownerComp):
 		app_components.ComponentBase.__init__(self, ownerComp)
 		remote.RemoteBase.__init__(self, ownerComp)
@@ -626,7 +551,7 @@ class _RemoteClient_2(remote.RemoteBase, app_components.ComponentBase):
 			else:
 				resultfuture.resolve(schema.ModuleState(params=dict(vals)))
 
-		self.Connection.SendRequest('queryModState', {'path': modpath, 'params': params}).then(
+		self.Connection.SendRequest('queryModState', {'path': modpath, 'params': list(params)}).then(
 			success=_onsuccess,
 			failure=_onfailure
 		)
@@ -641,7 +566,7 @@ class RemoteSchemaLoader(app_components.ComponentBase):
 		self.completionfuture = None  # type: Future[schema.AppSchema]
 
 	@property
-	def _RemoteClient(self) -> '_RemoteClient_2':
+	def _RemoteClient(self) -> 'RemoteClient_NEW':
 		raise NotImplementedError()
 
 	def _Reset(self):

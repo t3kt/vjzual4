@@ -229,8 +229,10 @@ class TaskQueueExt:
 		if task is None:
 			return
 		result = task()
+		# Log('[TASK BATCH] ran task: {}, result: {}'.format(task, result))
 
 		def _onsuccess(r):
+			# Log('[TASK BATCH]   future resolved successfully\n    task: {}\n       result: {}'.format(task, r))
 			batch.results.append(r)
 			if not batch.tasks:
 				if not batch.future.isresolved:
@@ -238,15 +240,18 @@ class TaskQueueExt:
 			self._QueueRunNextTask()
 
 		def _onfailure(err):
+			# Log('[TASK BATCH]   future FAILED\n    task: {}\n       error: {}'.format(task, err))
 			batch.tasks.clear()
 			batch.future.fail(err)
 			self._QueueRunNextTask()
 
 		if isinstance(result, Future):
+			# Log('[TASK BATCH]  - result IS a Future!')
 			result.then(
 				success=_onsuccess,
 				failure=_onfailure)
 		else:
+			# Log('[TASK BATCH]  - result is not a Future (type: {})'.format(type(result)))
 			_onsuccess(result)
 
 	def _PopNextTask(self):

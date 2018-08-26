@@ -103,6 +103,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 	def _RemoteClient(self) -> 'Union[remote_client.RemoteClient, COMP]':
 		return self.ownerComp.par.Remoteclient.eval()
 
+	@property
+	def NEW_RemoteClient(self) -> 'remote_client.RemoteClient_NEW':
+		return self.ownerComp.op('remote_client').ext.NEW_CLIENT
+
 	def GetModuleSchema(self, modpath) -> 'Optional[schema.ModuleSchema]':
 		return self.AppSchema and self.AppSchema.modulesbypath.get(modpath)
 
@@ -136,6 +140,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 
 	@loggedmethod
 	def OnAppSchemaLoaded(self, appschema: schema.AppSchema):
+		self.SetStatusText('App schema loaded')
 		self.HighlightManager.ClearAllHighlights()
 		self.AppSchema = appschema
 		self.ShowSchemaJson(None)
@@ -145,16 +150,22 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 				return
 			return self.LoadState(self.statetoload)
 
-		self.AddTaskBatch(
-			[
-				lambda: self.ModuleManager.Attach(appschema),
-				lambda: self._BuildNodeMarkers(),
-				lambda: self._RegisterNodeMarkers(),
-				lambda: self.ControlMapper.InitializeChannelProcessing(),
-				lambda: self.ModulationManager.Mapper.InitializeChannelProcessing(),
-				_continueloadingstate,
-				lambda: self.SetStatusText('App schema loading completed'),
-			])
+		def _continue():
+			self.AddTaskBatch(
+				[
+					lambda: self.ModuleManager.Attach(appschema),
+					lambda: self.ModuleManager.RetrieveAllModuleStates(),
+					lambda: self.ModuleManager.BuildSubModuleHosts(),
+					lambda: self._BuildNodeMarkers(),
+					lambda: self._RegisterNodeMarkers(),
+					lambda: self.ControlMapper.InitializeChannelProcessing(),
+					lambda: self.ModulationManager.Mapper.InitializeChannelProcessing(),
+					_continueloadingstate,
+					lambda: self.SetStatusText('App schema loading completed'),
+				])
+
+		self.ProxyManager.BuildProxiesForAppSchema(appschema).then(
+			success=lambda _: _continue())
 
 	@loggedmethod
 	def OnDetach(self):
@@ -615,7 +626,6 @@ class ModuleManager(app_components.ComponentBase):
 	@loggedmethod
 	def Attach(self, appschema: schema.AppSchema):
 		self.appschema = appschema
-		return self._BuildSubModuleHosts()
 
 	def GetModuleHost(self, modpath) -> 'Optional[module_host.ModuleHost]':
 		return self.modulehostsbypath.get(modpath)
@@ -628,8 +638,12 @@ class ModuleManager(app_components.ComponentBase):
 	def ProxyManager(self):
 		return self.AppHost.ProxyManager
 
+	@property
+	def _RemoteClient(self):
+		return self.AppHost.NEW_RemoteClient
+
 	@loggedmethod
-	def _BuildSubModuleHosts(self):
+	def BuildSubModuleHosts(self):
 		self.SetStatusText('Building module hosts...')
 		self.moduleloadfuture = None
 		dest = self.ownerComp
@@ -725,6 +739,51 @@ class ModuleManager(app_components.ComponentBase):
 			return
 		for modpath, modhost in self.modulehostsbypath.items():
 			modhost.LoadState(modstates.get(modpath))
+
+	@loggedmethod
+	def RetrieveAllModuleStates(self) -> 'Future':
+		result = Future()
+
+		def _makeQueryTask(modpath):
+			return lambda: self.RetrieveModuleState(modpath)
+
+		self.AppHost.AddTaskBatch(
+			[
+				_makeQueryTask(m)
+				for m in sorted(self.appschema.modulesbypath.keys())
+			] + [
+				result.resolve()
+			]
+		)
+		return result
+
+	@loggedmethod
+	def RetrieveModuleState(self, modpath) -> 'Future[schema.ModuleState]':
+		modschema = self.appschema.modulesbypath.get(modpath)  # type: schema.ModuleSchema
+		if not modschema:
+			self._LogEvent('Module schema not found: {!r}'.format(modpath))
+			return Future.immediateerror('Module schema not found: {!r}'.format(modpath))
+		return self._RemoteClient.QueryModuleState(modpath, modschema.parampartnames).then(
+			success=lambda modstate: self._OnReceiveModuleState(modpath, modstate)
+		)
+
+	@customloggedmethod(omitargs=['modstate'])
+	def _OnReceiveModuleState(self, modpath, modstate: 'schema.ModuleState'):
+		if not modstate.params:
+			return
+		proxy = self.ProxyManager.GetProxy(modpath)
+		if not proxy:
+			self._LogEvent('proxy not found for path: {!r}'.format(modpath))
+			return
+		for name, val in modstate.params.items():
+			par = getattr(proxy.par, name, None)
+			if par is None:
+				self._LogEvent('parameter not found: {!r}'.format(name))
+				continue
+			if par.isOP:
+				par.val = op(val) or ''
+			else:
+				par.val = val
 
 	def UpdateModuleVisibility(self):
 		showhidden = self.AppHost.par.Showhiddenmodules.eval()
