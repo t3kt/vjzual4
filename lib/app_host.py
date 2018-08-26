@@ -1,6 +1,6 @@
 import json
 from operator import itemgetter
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 print('vjz4/app_host.py loading')
 
@@ -174,9 +174,6 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		self.statetoload = None
 		mod.td.run('op({!r}).SetAutoMapModule(None)'.format(self.ControlMapper.path), delayFrames=1)
 		self.SetStatusText('Detached from client')
-
-	def OnTDPreSave(self):
-		pass
 
 	@property
 	def UiBuilder(self):

@@ -212,12 +212,11 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase):
 			appinfo = schema.RawAppInfo.FromJsonDict(cmdmesg.arg)
 			self.rawAppInfo = appinfo
 			self._BuildAppInfoTable()
-			self.ProxyManager.par.Rootpath = appinfo.path
 
 			def _makeQueryModTask(modpath):
 				return lambda: self.QueryModule(modpath, ismoduletype=False)
 
-			self.SetStatusText('Querying module schemas')
+			self.SetStatusText('Querying module schemas', log=True)
 			self.AppHost.AddTaskBatch(
 				[
 					_makeQueryModTask(path)
@@ -360,22 +359,22 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase):
 		def _makeQueryStateTask(modpath):
 			return lambda: self.QueryModuleState(modpath)
 
-		self.AppHost.AddTaskBatch(
-			[
-				lambda: self.BuildModuleProxies(),
-				lambda: self.SetStatusText('Querying module states...'),
-			] + [
-				_makeQueryStateTask(m.path)
-				for m in self.AppSchema.modules
-			] + [
-				lambda: self.NotifyAppSchemaLoaded(),
-			])
+		def _afterProxiesBuilt(*_):
+			self.SetStatusText('Querying module states...')
+			self.AppHost.AddTaskBatch(
+				[
+					_makeQueryStateTask(m.path)
+					for m in self.AppSchema.modules
+				] + [
+					lambda: self.NotifyAppSchemaLoaded(),
+				])
+
+		self.BuildModuleProxies().then(
+			success=_afterProxiesBuilt)
 
 	@loggedmethod
 	def BuildModuleProxies(self):
-		self.SetStatusText('Building module proxies')
-		for modschema in self.AppSchema.modules:
-			self.ProxyManager.AddProxy(modschema)
+		return self.ProxyManager.BuildProxiesForAppSchema(self.AppSchema)
 
 	@loggedmethod
 	def NotifyAppSchemaLoaded(self):
