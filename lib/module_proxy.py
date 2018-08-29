@@ -77,22 +77,19 @@ class ModuleProxyManager(app_components.ComponentBase, common.ActionsExt):
 		self.ClearProxies()
 		if not appschema:
 			self.ownerComp.par.Rootpath = ''
-			return Future.immediate()
+			return Future.immediate(label='BuildProxiesForAppSchema (no schema)')
 		self.ownerComp.par.Rootpath = appschema.path
 		self.SetStatusText('Building module proxies', log=True)
 
 		def _makeAddProxyTask(modschema):
 			return lambda: self.AddProxy(modschema)
 
-		result = Future()
-		self.AppHost.AddTaskBatch(
+		return self.AppHost.AddTaskBatch(
 			[
 				_makeAddProxyTask(m)
 				for m in appschema.modules
-			] + [
-				lambda: result.resolve()
-			])
-		return result
+			],
+			label='BuildProxiesForAppSchema')
 
 	@property
 	def _RootPath(self):

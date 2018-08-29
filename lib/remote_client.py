@@ -135,7 +135,7 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase):
 	@loggedmethod
 	def SetClientInfo(self, info: schema.ClientInfo):
 		if not info:
-			return Future.immediate()
+			return Future.immediate(label='SetClientInfo (no info)')
 		if not info.address and not info.cmdsend:
 			self.Detach()
 		connpar = self.Connection.par
@@ -151,7 +151,7 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase):
 		if info.address or info.cmdsend:
 			return self.Connect(host=info.address, port=info.cmdsend)
 		else:
-			return Future.immediate()
+			return Future.immediate(label='SetClientInfo (no address or cmdsend port)')
 
 	def _OnConfirmConnect(self, cmdmesg: remote.CommandMessage):
 		self.Connected.val = True
@@ -318,7 +318,7 @@ class RemoteClient_NEW(remote.RemoteBase, app_components.ComponentBase):
 		self.Disconnect()
 		self.SetStatusText('Connecting to {}:{}'.format(host, port), log=True)
 		info = self.BuildClientInfo()
-		resultfuture = Future()
+		resultfuture = Future(label='Connect completion')
 
 		def _onfailure(cmdmesg: remote.CommandMessage):
 			self.SetStatusText('Connect attempt failed')
@@ -389,7 +389,7 @@ class RemoteClient_NEW(remote.RemoteBase, app_components.ComponentBase):
 	def QueryAppInfo(self) -> 'Future[schema.RawAppInfo]':
 		if not self.Connected:
 			return Future.immediateerror('Not connected')
-		resultfuture = Future()
+		resultfuture = Future(label='QueryAppInfo')
 
 		def _onfailure(cmdmesg: remote.CommandMessage):
 			self.SetStatusText('Query app info failed')
@@ -416,7 +416,7 @@ class RemoteClient_NEW(remote.RemoteBase, app_components.ComponentBase):
 	def QueryModuleInfo(self, modpath) -> 'Future[schema.RawModuleInfo]':
 		if not self.Connected:
 			return Future.immediateerror('Not connected')
-		resultfuture = Future()
+		resultfuture = Future(label='QueryModuleInfo({})'.format(modpath))
 
 		def _onfailure(cmdmesg: remote.CommandMessage):
 			self.SetStatusText('Query module info ({}) failed'.format(modpath))
@@ -424,7 +424,7 @@ class RemoteClient_NEW(remote.RemoteBase, app_components.ComponentBase):
 			resultfuture.fail(cmdmesg.arg or 'Query module info ({}) failed'.format(modpath))
 
 		def _onsuccess(cmdmesg: remote.CommandMessage):
-			self._LogEvent('Retrieved module info ({}): {}'.format(modpath, cmdmesg.arg))
+			self._LogEvent('Retrieved module info ({})'.format(modpath))
 			try:
 				modinfo = schema.RawModuleInfo.FromJsonDict(cmdmesg.arg)
 			except Exception as error:
@@ -441,8 +441,8 @@ class RemoteClient_NEW(remote.RemoteBase, app_components.ComponentBase):
 	@loggedmethod
 	def QueryModuleState(self, modpath, params: List[str]) -> 'Future[schema.ModuleState]':
 		if not params:
-			return Future.immediate(schema.ModuleState())
-		resultfuture = Future()
+			return Future.immediate(schema.ModuleState(), label='QueryModuleState({}) - no params'.format(modpath))
+		resultfuture = Future(label='QueryModuleState({})'.format(modpath))
 
 		def _onfailure(cmdmesg: remote.CommandMessage):
 			self.SetStatusText('Query module state ({}) failed'.format(modpath))
@@ -470,6 +470,13 @@ class RemoteClient_NEW(remote.RemoteBase, app_components.ComponentBase):
 		)
 		return resultfuture
 
+	def HandleOscEvent(self, address, args):
+		if not self.Connected or ':' not in address or not args:
+			return
+		self._LogEvent('HandleOscEvent({!r}, {!r})'.format(address, args))
+		modpath, name = address.split(':', maxsplit=1)
+		self.AppHost.ProxyManager.SetParamValue(modpath, name, args[0])
+
 class RemoteSchemaLoader(common.LoggableSubComponent):
 	def __init__(
 			self,
@@ -492,10 +499,6 @@ class RemoteSchemaLoader(common.LoggableSubComponent):
 	def SetStatusText(self, text, **kwargs):
 		self.apphost.SetStatusText(text, **kwargs)
 
-	@property
-	def _RemoteClient(self) -> 'RemoteClient_NEW':
-		raise NotImplementedError()
-
 	def _Reset(self):
 		self.appinfo = None
 		self.moduleinfos.clear()
@@ -511,13 +514,13 @@ class RemoteSchemaLoader(common.LoggableSubComponent):
 	@loggedmethod
 	def LoadRemoteAppSchema(self) -> 'Future[schema.AppSchema]':
 		self._Reset()
-		self.completionfuture = Future()
+		self.completionfuture = Future(label='RemoteSchemaLoader completion')
 
 		self.apphost.AddTaskBatch([
-			lambda:self._RemoteClient.QueryAppInfo().then(
+			lambda:self.remoteclient.QueryAppInfo().then(
 				success=self._OnAppInfoReceived,
 				failure=self._NotifyFailure),
-		])
+		], label='load remote app schema')
 
 		return self.completionfuture
 
@@ -534,18 +537,24 @@ class RemoteSchemaLoader(common.LoggableSubComponent):
 		def _makeQueryModTask(modpath):
 			return lambda: self._QueryModuleInfo(modpath, ismoduletype=False)
 
-		self.SetStatusText('Querying module schemas', log=True)
+		self.SetStatusText('Querying module schemas')
+		self._LogEvent('Querying module schemas ({} modules)'.format(len(self.appinfo.modpaths)))
 		self.apphost.AddTaskBatch(
 			[
 				_makeQueryModTask(modpath)
 				for modpath in self.appinfo.modpaths
-			] + [
-				self._OnAllModulesReceived,
-			])
+			]
+			# + [
+			# 	self._OnAllModulesReceived,
+			# ]
+			,
+			label='query mod schemas').then(
+			success=lambda _: self._OnAllModulesReceived()
+		)
 
 	@loggedmethod
 	def _QueryModuleInfo(self, modpath, ismoduletype=False):
-		self._RemoteClient.QueryModuleInfo(modpath).then(
+		return self.remoteclient.QueryModuleInfo(modpath).then(
 			success=lambda modinfo: self._OnModuleInfoReceived(modinfo, ismoduletype=ismoduletype),
 			failure=lambda error: self._NotifyFailure('Query module info ({}) failed: {}'.format(modpath, error))
 		)
@@ -557,12 +566,12 @@ class RemoteSchemaLoader(common.LoggableSubComponent):
 		else:
 			self.moduleinfos.append(modinfo)
 
+	@loggedmethod
 	def _OnAllModulesReceived(self):
-		modpaths = []
+		modpaths = [m.path for m in self.moduleinfos]
 		masterpaths = set()
 		for modinfo in self.moduleinfos:
-			modpaths.append(modinfo.path)
-			if modinfo.masterpath:
+			if modinfo.masterpath and modinfo.masterpath not in modpaths:
 				masterpaths.add(modinfo.masterpath)
 		self._LogEvent('found {} module paths:\n{}'.format(len(modpaths), modpaths))
 		self._LogEvent('found {} module master paths:\n{}'.format(len(masterpaths), masterpaths))
@@ -576,14 +585,24 @@ class RemoteSchemaLoader(common.LoggableSubComponent):
 		def _makeQueryModTask(modpath):
 			return lambda: self._QueryModuleInfo(modpath, ismoduletype=True)
 
-		self.SetStatusText('Querying module types', log=True)
+		self.SetStatusText('Querying module types')
+		self._LogEvent('Querying module types ({} types)'.format(len(masterpaths)))
 		self.apphost.AddTaskBatch(
 			[
 				_makeQueryModTask(modpath)
 				for modpath in masterpaths
-			] + [
-				self._CompleteAndBuildSchema,
-			])
+			]
+			# + [
+			# 	self._CompleteAndBuildSchema,
+			# ]
+			,
+			label='Query mod types').then(
+			success=lambda _: self._OnAllModuleTypesReceived()
+		)
+
+	@loggedmethod
+	def _OnAllModuleTypesReceived(self):
+		self._CompleteAndBuildSchema()
 
 	def _CompleteAndBuildSchema(self):
 		self.SetStatusText('Building app schema', log=True)

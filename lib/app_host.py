@@ -137,6 +137,13 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 	@loggedmethod
 	def OnConnected(self, serverinfo: schema.ServerInfo):
 		self.serverinfo = serverinfo
+		loader = remote_client.RemoteSchemaLoader(
+			hostobj=self,
+			apphost=self,
+			remoteclient=self.NEW_RemoteClient)
+		loader.LoadRemoteAppSchema().then(
+			success=self.OnAppSchemaLoaded,
+		)
 
 	@loggedmethod
 	def OnAppSchemaLoaded(self, appschema: schema.AppSchema):
@@ -383,7 +390,9 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 	@loggedmethod
 	def _ConnectTo(self, host, port):
 		self._RemoteClient.par.Active = True
-		self._RemoteClient.Connect(host, port)
+		self.NEW_RemoteClient.Connect(host, port).then(
+			success=self.OnConnected
+		)
 
 	@loggedmethod
 	def _Disconnect(self):
@@ -590,10 +599,12 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		state = schema.AppState.ReadJsonFrom(filename)
 		self.LoadState(state, connecttoclient=connecttoclient)
 
-	def SetStatusText(self, text, temporary=None):
+	def SetStatusText(self, text, temporary=None, log=False):
 		statusbar = self.ownerComp.op('bottom_bar/status_bar')
 		if statusbar and hasattr(statusbar, 'SetStatus'):
 			statusbar.SetStatus(text, temporary=temporary)
+		if log:
+			self._LogEvent(text)
 
 	@loggedmethod
 	def BuildTables(self):
@@ -717,17 +728,17 @@ class ModuleManager(app_components.ComponentBase):
 		return self.AppHost.NEW_RemoteClient
 
 	@loggedmethod
-	def BuildSubModuleHosts(self):
+	def BuildSubModuleHosts(self) -> 'Optional[Future]':
 		self.SetStatusText('Building module hosts...')
 		self.moduleloadfuture = None
 		dest = self.ownerComp
 		for m in dest.ops('mod__*'):
 			m.destroy()
 		if not self.appschema:
-			return Future.immediate()
+			return None
 		template = self._ModuleHostTemplate
 		if not template:
-			return Future.immediate()
+			return None
 		hostconnectorpairs = []
 		for i, modschema in enumerate(self.appschema.childmodules):
 			self._LogEvent('creating host for sub module {}'.format(modschema.path))
@@ -746,13 +757,13 @@ class ModuleManager(app_components.ComponentBase):
 
 		if not hostconnectorpairs:
 			self._LogEvent('No module hosts to connect')
-			return Future.immediate()
+			return None
 
 		def _makeInitTask(h, c):
 			return lambda: self._InitSubModuleHost(h, c)
 
 		self.SetStatusText('Attaching module hosts...')
-		self.moduleloadfuture = Future()
+		self.moduleloadfuture = Future(label='module host load')
 		self.AppHost.AddTaskBatch(
 			[
 				_makeInitTask(host, connector)
@@ -816,20 +827,16 @@ class ModuleManager(app_components.ComponentBase):
 
 	@loggedmethod
 	def RetrieveAllModuleStates(self) -> 'Future':
-		result = Future()
-
 		def _makeQueryTask(modpath):
 			return lambda: self.RetrieveModuleState(modpath)
 
-		self.AppHost.AddTaskBatch(
+		return self.AppHost.AddTaskBatch(
 			[
 				_makeQueryTask(m)
 				for m in sorted(self.appschema.modulesbypath.keys())
-			] + [
-				result.resolve()
-			]
+			],
+			label='retrieve all mod states'
 		)
-		return result
 
 	@loggedmethod
 	def RetrieveModuleState(self, modpath) -> 'Future[schema.ModuleState]':
