@@ -87,7 +87,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			'Loadremotestate': lambda: self.LoadRemoteStoredState(),
 		})
 		self.AppSchema = None  # type: schema.AppSchema
-		self.serverinfo = None  # type: schema.ServerInfo
+		self.ServerInfo = None  # type: schema.ServerInfo
 		self.ShowSchemaJson(None)
 		self.nodeMarkersByPath = {}  # type: Dict[str, List[str]]
 		self.previewMarkers = []  # type: List[op]
@@ -133,7 +133,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 
 	@loggedmethod
 	def OnConnected(self, serverinfo: schema.ServerInfo):
-		self.serverinfo = serverinfo
+		self.ServerInfo = serverinfo
 		loader = remote_client.RemoteSchemaLoader(
 			hostobj=self,
 			apphost=self,
@@ -224,101 +224,8 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 					panelparent=body
 				))
 
-	def OnMenuClick(self, button):
-		name = button.name
-		if name == 'app_menu':
-			items = [
-				menu.Item(
-					'Connect',
-					callback=lambda: self.ShowConnectDialog()),
-				menu.Item(
-					'Disconnect',
-					callback=lambda: self._Disconnect()),
-				menu.Divider(),
-				menu.Item(
-					'Connection Properties',
-					callback=lambda: self.RemoteClient.openParameters()),
-				menu.Divider(),
-				menu.Item(
-					'Load State',
-					callback=lambda: self.LoadStateFile(prompt=True)),
-				menu.Item(
-					'Load State and Connect',
-					callback=lambda: self.LoadStateFile(prompt=True, connecttoclient=True)),
-				menu.Item(
-					'Save State',
-					callback=lambda: self.SaveStateFile()),
-				menu.Item(
-					'Save State As',
-					callback=lambda: self.SaveStateFile(prompt=True)),
-				menu.Item(
-					'Save State on Server',
-					disabled=not self.serverinfo or not self.serverinfo.allowlocalstatestorage,
-					callback=lambda: self.StoreRemoteState()),
-				menu.Item(
-					'Load State from Server',
-					disabled=not self.serverinfo or not self.serverinfo.allowlocalstatestorage,
-					callback=lambda: self.LoadRemoteStoredState()),
-			]
-		elif name == 'view_menu':
-			items = self._GetSidePanelModeMenuItems() + [
-				menu.Divider(),
-				menu.ParToggleItem(self.ownerComp.par.Showhiddenmodules),
-			]
-		elif name == 'debug_menu':
-			def _viewItem(text, oppath):
-				return menu.Item(
-					text,
-					disabled=not self.AppSchema,
-					callback=lambda: self.ownerComp.op(oppath).openViewer(unique=True))
-			items = [
-				menu.Item(
-					'App Schema',
-					disabled=not self.AppSchema,
-					callback=lambda: self.ShowAppSchema()),
-				_viewItem('App Info', 'app_info'),
-				_viewItem('Modules', 'modules'),
-				_viewItem('Module Types', 'module_types'),
-				_viewItem('Params', 'params'),
-				_viewItem('Param Parts', 'param_parts'),
-				_viewItem('Data Nodes', 'data_nodes'),
-				menu.Item(
-					'Client Info',
-					callback=lambda: self.ShowSchemaJson(self.RemoteClient.BuildClientInfo())),
-				menu.Item(
-					'Server Info',
-					disabled=self.serverinfo is None,
-					callback=lambda: self.ShowSchemaJson(self.serverinfo)),
-				menu.Item(
-					'App State',
-					callback=lambda: self.ShowSchemaJson(self.BuildState())),
-				menu.Divider(),
-				menu.Item(
-					'Reload code',
-					callback=lambda: op.Vjz4.op('RELOAD_CODE').run()),
-			]
-		else:
-			return
-		menu.fromButton(button, h='Left', v='Bottom').Show(
-			items=items,
-			autoClose=True)
-
-	def _GetSidePanelModeMenuItems(self):
-		def _uimodeItem(text, par, mode):
-			return menu.Item(
-				text,
-				checked=par == mode,
-				callback=lambda: setattr(par, 'val', mode))
-		sidemodepar = self.ownerComp.par.Sidepanelmode
-		return [
-			_uimodeItem(label, sidemodepar, name)
-			for name, label in zip(
-				sidemodepar.menuNames,
-				sidemodepar.menuLabels)
-		]
-
 	def OnSidePanelHeaderClick(self, button):
-		items = self._GetSidePanelModeMenuItems()
+		items = self.AppHostMenu.SidePanelModeMenuItems
 		menu.fromButton(button, h='Left', v='Bottom').Show(
 			items=items,
 			autoClose=True)
@@ -394,7 +301,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		)
 
 	@loggedmethod
-	def _Disconnect(self):
+	def Disconnect(self):
 		self.RemoteClient.Disconnect()
 		self.RemoteClient.par.Active = False
 		self.ShowSchemaJson(None)
@@ -483,6 +390,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 	@property
 	def ModuleManager(self) -> 'ModuleManager':
 		return self.ownerComp.op('modules_panel')
+
+	@property
+	def AppHostMenu(self) -> 'AppHostMenu':
+		return self.ownerComp.op('top_bar')
 
 	def BuildState(self):
 		return schema.AppState(
@@ -691,6 +602,99 @@ def _ParseAddress(text: str, defaulthost='localhost', defaultport=9500) -> Tuple
 	port = parseint(porttext)
 	return (host or defaulthost), (port or defaultport)
 
+class AppHostMenu(app_components.ComponentBase):
+	def OnMenuClick(self, button):
+		self._ShowMenu(button.name, button)
+
+	def _ShowMenu(self, name, button=None):
+		if name == 'app_menu':
+			items = self._AppMenu
+		elif name == 'view_menu':
+			items = self.ViewMenu
+		elif name == 'debug_menu':
+			items = self._DebugMenu
+		else:
+			return
+		menu.fromButton(button, h='Left', v='Bottom').Show(items)
+
+	@property
+	def _AppMenu(self):
+		return [
+				menu.Item(
+					'Connect',
+					callback=lambda: self.AppHost.ShowConnectDialog()),
+				menu.Item(
+					'Disconnect',
+					callback=lambda: self.AppHost.Disconnect()),
+				menu.Divider(),
+				menu.Item(
+					'Connection Properties',
+					callback=lambda: self.AppHost.RemoteClient.openParameters()),
+				menu.Divider(),
+				menu.Item(
+					'Load State',
+					callback=lambda: self.AppHost.LoadStateFile(prompt=True)),
+				menu.Item(
+					'Load State and Connect',
+					callback=lambda: self.AppHost.LoadStateFile(prompt=True, connecttoclient=True)),
+				menu.Item(
+					'Save State',
+					callback=lambda: self.AppHost.SaveStateFile()),
+				menu.Item(
+					'Save State As',
+					callback=lambda: self.AppHost.SaveStateFile(prompt=True)),
+				menu.Item(
+					'Save State on Server',
+					disabled=not self.AppHost.ServerInfo or not self.AppHost.ServerInfo.allowlocalstatestorage,
+					callback=lambda: self.AppHost.StoreRemoteState()),
+				menu.Item(
+					'Load State from Server',
+					disabled=not self.AppHost.ServerInfo or not self.AppHost.ServerInfo.allowlocalstatestorage,
+					callback=lambda: self.AppHost.LoadRemoteStoredState()),
+		]
+
+	@property
+	def SidePanelModeMenuItems(self):
+		return menu.ParEnumItems(self.AppHost.par.Sidepanelmode)
+
+	@property
+	def ViewMenu(self):
+		return self.SidePanelModeMenuItems + [
+			menu.Divider(),
+			menu.ParToggleItem(self.AppHost.par.Showhiddenmodules),
+		]
+
+	@property
+	def _DebugMenu(self):
+		def _viewitem(text, path):
+			return menu.ViewOpItem(self.AppHost.op(path), text)
+		return [
+				menu.Item(
+					'App Schema',
+					disabled=not self.AppHost.AppSchema,
+					callback=lambda: self.AppHost.ShowAppSchema()),
+				_viewitem('App Info', 'app_info'),
+				_viewitem('Modules', 'modules'),
+				_viewitem('Module Types', 'module_types'),
+				_viewitem('Params', 'params'),
+				_viewitem('Param Parts', 'param_parts'),
+				_viewitem('Data Nodes', 'data_nodes'),
+				menu.Item(
+					'Client Info',
+					callback=lambda: self.AppHost.ShowSchemaJson(self.AppHost.RemoteClient.BuildClientInfo())),
+				menu.Item(
+					'Server Info',
+					disabled=self.AppHost.ServerInfo is None,
+					callback=lambda: self.AppHost.ShowSchemaJson(self.AppHost.ServerInfo)),
+				menu.Item(
+					'App State',
+					callback=lambda: self.AppHost.ShowSchemaJson(self.AppHost.BuildState())),
+				menu.Divider(),
+				menu.Item(
+					'Reload code',
+					callback=lambda: op.Vjz4.op('RELOAD_CODE').run()),
+		]
+
 class ModuleManager(app_components.ComponentBase):
 	def __init__(self, ownerComp):
 		app_components.ComponentBase.__init__(self, ownerComp)
@@ -869,4 +873,9 @@ class ModuleManager(app_components.ComponentBase):
 		showhidden = self.AppHost.par.Showhiddenmodules.eval()
 		for modhost in self.modulehostsbypath.values():
 			modhost.par.display = showhidden or not modhost.par.Hidden
+
+	def OnBodyClick(self, panelValue):
+		if panelValue.name == 'rselect':
+			items = self.AppHost.AppHostMenu.ViewMenu
+			menu.fromMouse().Show(items, autoClose=True)
 
