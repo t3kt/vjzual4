@@ -28,11 +28,6 @@ except ImportError:
 	schema = mod.schema
 
 try:
-	import ui_builder
-except ImportError:
-	ui_builder = mod.ui_builder
-
-try:
 	import ui
 except ImportError:
 	ui = mod.ui

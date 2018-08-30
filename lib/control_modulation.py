@@ -9,12 +9,12 @@ if False:
 
 try:
 	import common
+	from common import cleandict, opattrs, loggedmethod
 except ImportError:
 	common = mod.common
-cleandict = common.cleandict
-mergedicts = common.mergedicts
-opattrs = common.opattrs
-loggedmethod = common.loggedmethod
+	cleandict = common.cleandict
+	opattrs = common.opattrs
+	loggedmethod = common.loggedmethod
 
 try:
 	import schema

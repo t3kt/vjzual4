@@ -5,9 +5,10 @@ if False:
 
 try:
 	import common
+	from common import AddOrUpdatePar
 except ImportError:
 	common = mod.common
-AddOrUpdatePar = common.AddOrUpdatePar
+	AddOrUpdatePar = common.AddOrUpdatePar
 
 def UpdateCompMetadata(
 		comp,

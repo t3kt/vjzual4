@@ -8,11 +8,11 @@ if False:
 
 try:
 	import common
+	from common import loggedmethod, opattrs
 except ImportError:
 	common = mod.common
-mergedicts, cleandict = common.mergedicts, common.cleandict
-loggedmethod = common.loggedmethod
-opattrs = common.opattrs
+	loggedmethod = common.loggedmethod
+	opattrs = common.opattrs
 
 try:
 	import schema

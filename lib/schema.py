@@ -8,10 +8,13 @@ if False:
 
 try:
 	import common
+	from common import cleandict, mergedicts, excludekeys, BaseDataObject
 except ImportError:
 	common = mod.common
-cleandict, excludekeys, mergedicts = common.cleandict, common.excludekeys, common.mergedicts
-BaseDataObject = common.BaseDataObject
+	cleandict = common.cleandict
+	mergedicts = common.mergedicts
+	excludekeys = common.excludekeys
+	BaseDataObject = common.BaseDataObject
 
 
 class RawAppInfo(BaseDataObject):

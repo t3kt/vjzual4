@@ -5,7 +5,7 @@ print('vjz4/control_mapping.py loading')
 if False:
 	from _stubs import *
 	from module_host import ModuleHost
-	from control_devices import MidiDevice, DeviceManager
+	from control_devices import MidiDevice
 
 try:
 	import td
@@ -15,17 +15,19 @@ except ImportError:
 
 try:
 	import common
+	from common import loggedmethod, opattrs
 except ImportError:
 	common = mod.common
-loggedmethod = common.loggedmethod
-opattrs = common.opattrs
+	loggedmethod = common.loggedmethod
+	opattrs = common.opattrs
 
 try:
 	import schema
+	from schema import ControlMapping, ControlMappingSet
 except ImportError:
 	schema = mod.schema
-ControlMapping = schema.ControlMapping
-ControlMappingSet = schema.ControlMappingSet
+	ControlMapping = schema.ControlMapping
+	ControlMappingSet = schema.ControlMappingSet
 
 try:
 	import menu

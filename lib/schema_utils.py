@@ -11,11 +11,12 @@ if False:
 
 try:
 	import common
+	from common import cleandict, trygetdictval, loggedmethod
 except ImportError:
 	common = mod.common
-cleandict, excludekeys, mergedicts = common.cleandict, common.excludekeys, common.mergedicts
-trygetdictval = common.trygetdictval
-loggedmethod = common.loggedmethod
+	cleandict = common.cleandict
+	trygetdictval = common.trygetdictval
+	loggedmethod = common.loggedmethod
 
 def __dynamiclocalimport(module):
 	globs = globals()

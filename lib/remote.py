@@ -9,10 +9,10 @@ if False:
 
 try:
 	import common
+	from common import Future
 except ImportError:
 	common = mod.common
-cleandict, mergedicts = common.cleandict, common.mergedicts
-Future = common.Future
+	Future = common.Future
 
 class CommandMessage(namedtuple('CommandMessage', ['cmd', 'arg', 'cmdid', 'kind'])):
 	COMMAND = 'cmd'
