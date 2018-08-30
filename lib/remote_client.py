@@ -8,11 +8,11 @@ if False:
 
 try:
 	import common
+	from common import loggedmethod, Future
 except ImportError:
 	common = mod.common
-mergedicts = common.mergedicts
-loggedmethod = common.loggedmethod
-Future = common.Future
+	loggedmethod = common.loggedmethod
+	Future = common.Future
 
 try:
 	import remote
