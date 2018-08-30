@@ -209,6 +209,7 @@ class RemoteConnection(common.ExtensionBase):
 			return None
 		return CommandMessage.fromJsonDict(obj)
 
+	# @common.loggedmethod
 	def SendOsc(self, address, *values, asBundle=False):
 		self._osceventsend.sendOSC(address, *values, asBundle=asBundle)
 
@@ -226,6 +227,7 @@ class RemoteBase(common.ExtensionBase, common.ActionsExt, CommandHandler):
 	# @common.loggedmethod
 	def SendOsc(self, address, *values, asBundle=False):
 		if not self.Connected:
+			self._LogEvent('SendOsc - NOT CONNECTED!')
 			return
 		self.Connection.SendOsc(address, *values, asBundle=asBundle)
 
