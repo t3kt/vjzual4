@@ -5,10 +5,13 @@ if False:
 
 try:
 	import common
-	from common import CreateOP, UpdateOP
+	from common import CreateOP, UpdateOP, loggedmethod, Future
 except ImportError:
 	common = mod.common
-	CreateOP, UpdateOP = common.CreateOP, common.UpdateOP
+	CreateOP = common.CreateOP
+	UpdateOP = common.UpdateOP
+	loggedmethod = common.loggedmethod
+	Future = common.Future
 
 try:
 	import schema
@@ -20,13 +23,18 @@ try:
 except ImportError:
 	module_host = mod.module_host
 
+try:
+	import app_components
+except ImportError:
+	app_components = mod.app_components
 
-class ModuleProxyManager(common.ExtensionBase, common.ActionsExt):
+
+class ModuleProxyManager(app_components.ComponentBase, common.ActionsExt):
 	"""
 	Builds and manages a set of proxy COMPs that mirror those in a remote project, including matching parameters.
 	"""
 	def __init__(self, ownerComp):
-		common.ExtensionBase.__init__(self, ownerComp)
+		app_components.ComponentBase.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions={
 			'Clearproxies': self.ClearProxies,
 		}, autoinitparexec=False)
@@ -34,6 +42,11 @@ class ModuleProxyManager(common.ExtensionBase, common.ActionsExt):
 	@property
 	def _ProxyPathTable(self):
 		return self.ownerComp.op('__set_proxy_paths')
+
+	@loggedmethod
+	def Detach(self):
+		self.ClearProxies()
+		self.ownerComp.par.Rootpath = ''
 
 	def ClearProxies(self):
 		self._ProxyPathTable.clear()
@@ -58,6 +71,25 @@ class ModuleProxyManager(common.ExtensionBase, common.ActionsExt):
 			if not silent:
 				self._LogEvent('GetProxy({}) - proxy not found for relpath: {}'.format(modpath, relpath))
 		return proxy
+
+	@loggedmethod
+	def BuildProxiesForAppSchema(self, appschema: 'schema.AppSchema') -> 'Future':
+		self.ClearProxies()
+		if not appschema:
+			self.ownerComp.par.Rootpath = ''
+			return Future.immediate(label='BuildProxiesForAppSchema (no schema)')
+		self.ownerComp.par.Rootpath = appschema.path
+		self.SetStatusText('Building module proxies', log=True)
+
+		def _makeAddProxyTask(modschema):
+			return lambda: self.AddProxy(modschema)
+
+		return self.AppHost.AddTaskBatch(
+			[
+				_makeAddProxyTask(m)
+				for m in appschema.modules
+			],
+			label='BuildProxiesForAppSchema')
 
 	@property
 	def _RootPath(self):

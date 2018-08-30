@@ -1,11 +1,13 @@
 import datetime
 import json
-from typing import Any, Callable, Dict, List, NamedTuple, Iterable, Set, Union, Optional
+from typing import Any, Callable, Dict, Generic, List, NamedTuple, Iterable, Set, TypeVar, Union, Optional
 
 print('vjz4/common.py loading')
 
 if False:
 	from _stubs import *
+
+T = TypeVar('T')
 
 def Log(msg, file=None):
 	print(
@@ -94,7 +96,7 @@ class ExtensionBase(LoggableBase):
 class LoggableSubComponent(LoggableBase):
 	def __init__(self, hostobj: LoggableBase, logprefix: str=None):
 		self.hostobj = hostobj
-		self.logprefix = logprefix if logprefix is not None else self.__class__.__name__
+		self.logprefix = logprefix if logprefix is not None else type(self).__name__
 
 	def _LogEvent(self, event, indentafter=False, unindentbefore=False):
 		if self.hostobj is None:
@@ -176,7 +178,7 @@ class ActionsExt:
 					page = self.ownerComp.appendCustomPage('Actions')
 				page.appendPulse(name)
 
-class TaskQueueExt:
+class OLD_TaskQueueExt:
 	"""
 	An extension class for components that can queue up tasks to be performed, spread over multiple
 	frames, so that TD doesn't block the main thread for too long.
@@ -227,8 +229,10 @@ class TaskQueueExt:
 		if task is None:
 			return
 		result = task()
+		# Log('[TASK BATCH] ran task: {}, result: {}'.format(task, result))
 
 		def _onsuccess(r):
+			# Log('[TASK BATCH]   future resolved successfully\n    task: {}\n       result: {}'.format(task, r))
 			batch.results.append(r)
 			if not batch.tasks:
 				if not batch.future.isresolved:
@@ -236,15 +240,18 @@ class TaskQueueExt:
 			self._QueueRunNextTask()
 
 		def _onfailure(err):
+			# Log('[TASK BATCH]   future FAILED\n    task: {}\n       error: {}'.format(task, err))
 			batch.tasks.clear()
 			batch.future.fail(err)
 			self._QueueRunNextTask()
 
 		if isinstance(result, Future):
+			# Log('[TASK BATCH]  - result IS a Future!')
 			result.then(
 				success=_onsuccess,
 				failure=_onfailure)
 		else:
+			# Log('[TASK BATCH]  - result is not a Future (type: {})'.format(type(result)))
 			_onsuccess(result)
 
 	def _PopNextTask(self):
@@ -270,6 +277,103 @@ class TaskQueueExt:
 		self._TaskBatches.clear()
 		self._UpdateProgress()
 
+class NEW_TaskQueueExt:
+	def __init__(self, ownerComp):
+		self.ownerComp = ownerComp
+		self.tasks = []  # type: List[Callable]
+		self.totaltasks = 0
+		self.batchfuturetasks = 0
+
+	@property
+	def ProgressBar(self):
+		return None
+
+	def _UpdateProgress(self):
+		# Log('TaskQueue [{}] (remaining: {}, total: {}, batch futures: {})'.format(
+		# 	self.ownerComp.path,
+		# 	len(self.tasks), self.totaltasks, self.batchfuturetasks))
+		bar = self.ProgressBar
+		if bar is None:
+			return
+		ratio = self._ProgressRatio
+		bar.par.display = ratio < 1
+		bar.par.Ratio = ratio
+
+	@property
+	def _ProgressRatio(self):
+		if not self.tasks:
+			return 1
+		remaining = max(0, len(self.tasks) - self.batchfuturetasks)
+		total = self.totaltasks
+		if not total or not remaining:
+			return 1
+		return 1 - (remaining / total)
+
+	def RunNextTask(self):
+		if not self.tasks:
+			self.ClearTasks()
+			return
+		task = self.tasks.pop(0)
+		result = task()
+
+		def _onsuccess(*_):
+			# Log('TaskQueue [{}] task succeeded {}'.format(self.ownerComp.path, result))
+			self._UpdateProgress()
+			self._QueueNextTask()
+
+		def _onfailure(err):
+			# Log('TaskQueue [{}] ERROR from queued task ({})\n  {}'.format(self.ownerComp.path, task, err))
+			# self.ClearTasks()
+			self._UpdateProgress()
+			self._QueueNextTask()
+
+		if isinstance(result, Future):
+			result.then(
+				success=_onsuccess,
+				failure=_onfailure
+			)
+		else:
+			_onsuccess()
+
+	def _QueueNextTask(self):
+		if not self.tasks:
+			self.ClearTasks()
+			return
+		mod.td.run('op({!r}).RunNextTask()'.format(self.ownerComp.path), delayFrames=1)
+
+	def AddTaskBatch(self, tasks: List[Callable], label=None) -> 'Future':
+		label = 'TaskBatch({})'.format(label or '')
+		tasks = [task for task in tasks if task]
+		if not tasks:
+			return Future.immediate(label='{} (empty batch)'.format(label))
+		result = Future(label=label)
+		self.tasks.extend(tasks)
+
+		# TODO: get rid of this and fix the queue system!
+		def _noop():
+			# Log('NO-OP for batch: {}'.format(label))
+			pass
+		self.tasks.append(_noop)
+		self.batchfuturetasks += 1
+
+		def _finishbatch():
+			Log('Completing batch: {}'.format(label))
+			result.resolve()
+
+		self.tasks.append(_finishbatch)
+		self.totaltasks += len(tasks)
+		self.batchfuturetasks += 1
+		self._QueueNextTask()
+		return result
+
+	def ClearTasks(self):
+		self.tasks.clear()
+		self.totaltasks = 0
+		self.batchfuturetasks = 0
+		self._UpdateProgress()
+
+TaskQueueExt = NEW_TaskQueueExt
+
 class _TaskBatch:
 	def __init__(self, tasks: List[Callable]):
 		self.total = len(tasks)
@@ -277,18 +381,19 @@ class _TaskBatch:
 		self.results = []
 		self.future = Future()
 
-class Future:
-	def __init__(self, onlisten=None, oninvoke=None):
-		self._successcallbacks = []  # type: List[Callable]
+class Future(Generic[T]):
+	def __init__(self, onlisten=None, oninvoke=None, label=None):
+		self._successcallbacks = []  # type: List[Callable[[T], None]]
 		self._failurecallbacks = []  # type: List[Callable]
 		self._resolved = False
 		self._canceled = False
-		self._result = None
+		self._result = None  # type: Optional[T]
 		self._error = None
 		self._onlisten = onlisten  # type: Callable
 		self._oninvoke = oninvoke  # type: Callable
+		self.label = label
 
-	def then(self, success=None, failure=None):
+	def then(self, success: Callable[[T], None]=None, failure: Callable=None):
 		if not self._successcallbacks and not self._failurecallbacks:
 			if self._onlisten:
 				self._onlisten()
@@ -312,7 +417,7 @@ class Future:
 		if self._oninvoke:
 			self._oninvoke()
 
-	def _resolve(self, result, error):
+	def _resolve(self, result: T, error):
 		if self._canceled:
 			return
 		if self._resolved:
@@ -320,15 +425,19 @@ class Future:
 		self._resolved = True
 		self._result = result
 		self._error = error
+		# if self._error is not None:
+		# 	Log('FUTURE FAILED {}'.format(self))
+		# else:
+		# 	Log('FUTURE SUCCEEDED {}'.format(self))
 		if self._successcallbacks or self._failurecallbacks:
 			self._invoke()
 
-	def resolve(self, result=None):
+	def resolve(self, result: Optional[T]=None):
 		self._resolve(result, None)
 		return self
 
 	def fail(self, error):
-		self._resolve(None, error)
+		self._resolve(None, error or Exception())
 		return self
 
 	def cancel(self):
@@ -341,28 +450,34 @@ class Future:
 		return self._resolved
 
 	@property
-	def result(self):
+	def result(self) -> T:
 		return self._result
 
 	def __str__(self):
 		if self._canceled:
-			return '{}[canceled]'.format(self.__class__.__name__)
-		if not self._resolved:
-			return '{}[unresolved]'.format(self.__class__.__name__)
-		if self._error is not None:
-			return '{}[error: {!r}]'.format(self.__class__.__name__, self._error)
+			state = 'canceled'
+		elif self._resolved:
+			if self._error is not None:
+				state = 'failed: {}'.format(self._error)
+			elif self._result is None:
+				state = 'succeeded'
+			elif hasattr(self._result, 'ToBriefStr'):
+				state = 'succeeded: {}'.format(self._result.ToBriefStr())
+			else:
+				state = 'succeeded: {}'.format(self._result)
 		else:
-			return '{}[success: {!r}]'.format(self.__class__.__name__, self._result)
+			state = 'pending'
+		return '{}({}, {})'.format(self.__class__.__name__, self.label or '<>', state)
 
 	@classmethod
-	def immediate(cls, value=None, onlisten=None, oninvoke=None):
-		future = cls(onlisten=onlisten, oninvoke=oninvoke)
+	def immediate(cls, value: T=None, onlisten=None, oninvoke=None, label=None) -> 'Future[T]':
+		future = cls(onlisten=onlisten, oninvoke=oninvoke, label=label)
 		future.resolve(value)
 		return future
 
 	@classmethod
-	def immediateerror(cls, error, onlisten=None, oninvoke=None):
-		future = cls(onlisten=onlisten, oninvoke=oninvoke)
+	def immediateerror(cls, error, onlisten=None, oninvoke=None, label=None):
+		future = cls(onlisten=onlisten, oninvoke=oninvoke, label=label)
 		future.fail(error)
 		return future
 
@@ -373,7 +488,7 @@ class Future:
 		return cls.immediate(obj)
 
 	@classmethod
-	def all(cls, *futures: 'Future', onlisten=None, oninvoke=None):
+	def all(cls, *futures: 'Future', onlisten=None, oninvoke=None) -> 'Future[List]':
 		if not futures:
 			return cls.immediate([], onlisten=onlisten, oninvoke=oninvoke)
 		merged = cls(onlisten=onlisten, oninvoke=oninvoke)

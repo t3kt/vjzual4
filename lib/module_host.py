@@ -69,10 +69,6 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 	def _NodeMarkersBuilt(self):
 		return not self._Params or any(self.ownerComp.ops('nodes_panel/node__*'))
 
-	def OnTDPreSave(self):
-		for o in self.ownerComp.ops('controls_panel/par__*', 'sub_modules_panel/mod__*'):
-			o.destroy()
-
 	def BuildState(self):
 		return schema.ModuleHostState(
 			collapsed=self.ownerComp.par.Collapsed.eval(),

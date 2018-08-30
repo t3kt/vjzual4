@@ -1,6 +1,6 @@
 import json
 from operator import itemgetter
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 print('vjz4/app_host.py loading')
 
@@ -9,6 +9,7 @@ if False:
 	import highlighting
 	from remote import CommandMessage
 	import control_modulation
+	import module_proxy
 
 try:
 	import ui_builder
@@ -99,7 +100,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		return self.ownerComp.op('bottom_bar/progress_bar')
 
 	@property
-	def _RemoteClient(self) -> 'Union[remote_client.RemoteClient, COMP]':
+	def RemoteClient(self) -> 'Union[remote_client.RemoteClient, COMP]':
 		return self.ownerComp.par.Remoteclient.eval()
 
 	def GetModuleSchema(self, modpath) -> 'Optional[schema.ModuleSchema]':
@@ -132,9 +133,17 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 	@loggedmethod
 	def OnConnected(self, serverinfo: schema.ServerInfo):
 		self.serverinfo = serverinfo
+		loader = remote_client.RemoteSchemaLoader(
+			hostobj=self,
+			apphost=self,
+			remoteclient=self.RemoteClient)
+		loader.LoadRemoteAppSchema().then(
+			success=self.OnAppSchemaLoaded,
+		)
 
 	@loggedmethod
 	def OnAppSchemaLoaded(self, appschema: schema.AppSchema):
+		self.SetStatusText('App schema loaded')
 		self.HighlightManager.ClearAllHighlights()
 		self.AppSchema = appschema
 		self.ShowSchemaJson(None)
@@ -144,16 +153,23 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 				return
 			return self.LoadState(self.statetoload)
 
-		self.AddTaskBatch(
-			[
-				lambda: self.ModuleManager.Attach(appschema),
-				lambda: self._BuildNodeMarkers(),
-				lambda: self._RegisterNodeMarkers(),
-				lambda: self.ControlMapper.InitializeChannelProcessing(),
-				lambda: self.ModulationManager.Mapper.InitializeChannelProcessing(),
-				_continueloadingstate,
-				lambda: self.SetStatusText('App schema loading completed'),
-			])
+		def _continue():
+			self.AddTaskBatch(
+				[
+					lambda: self.BuildTables(),
+					lambda: self.ModuleManager.Attach(appschema),
+					lambda: self.ModuleManager.RetrieveAllModuleStates(),
+					lambda: self.ModuleManager.BuildSubModuleHosts(),
+					lambda: self._BuildNodeMarkers(),
+					lambda: self._RegisterNodeMarkers(),
+					lambda: self.ControlMapper.InitializeChannelProcessing(),
+					lambda: self.ModulationManager.Mapper.InitializeChannelProcessing(),
+					_continueloadingstate,
+					lambda: self.SetStatusText('App schema loading completed'),
+				], label='OnAppSchemaLoaded - after proxies built, attach and build host')
+
+		self.ProxyManager.BuildProxiesForAppSchema(appschema).then(
+			success=lambda _: _continue())
 
 	@loggedmethod
 	def OnDetach(self):
@@ -166,6 +182,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			o.destroy()
 		self.AppSchema = None
 		self.nodeMarkersByPath.clear()
+		self.ProxyManager.Detach()
 		self.ModuleManager.Detach()
 		self._BuildNodeMarkerTable()
 		self.SetPreviewSource(None)
@@ -173,9 +190,6 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		self.statetoload = None
 		mod.td.run('op({!r}).SetAutoMapModule(None)'.format(self.ControlMapper.path), delayFrames=1)
 		self.SetStatusText('Detached from client')
-
-	def OnTDPreSave(self):
-		pass
 
 	@property
 	def UiBuilder(self):
@@ -220,7 +234,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 				menu.Divider(),
 				menu.Item(
 					'Connection Properties',
-					callback=lambda: self._RemoteClient.openParameters()),
+					callback=lambda: self.RemoteClient.openParameters()),
 				menu.Divider(),
 				menu.Item(
 					'Load State',
@@ -267,7 +281,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 				_viewItem('Data Nodes', 'data_nodes'),
 				menu.Item(
 					'Client Info',
-					callback=lambda: self.ShowSchemaJson(self._RemoteClient.BuildClientInfo())),
+					callback=lambda: self.ShowSchemaJson(self.RemoteClient.BuildClientInfo())),
 				menu.Item(
 					'Server Info',
 					disabled=self.serverinfo is None,
@@ -371,13 +385,15 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 
 	@loggedmethod
 	def _ConnectTo(self, host, port):
-		self._RemoteClient.par.Active = True
-		self._RemoteClient.Connect(host, port)
+		self.RemoteClient.par.Active = True
+		self.RemoteClient.Connect(host, port).then(
+			success=self.OnConnected
+		)
 
 	@loggedmethod
 	def _Disconnect(self):
-		self._RemoteClient.Detach()
-		self._RemoteClient.par.Active = False
+		self.RemoteClient.Disconnect()
+		self.RemoteClient.par.Active = False
 		self.ShowSchemaJson(None)
 		self.ModuleManager.Detach()
 
@@ -385,7 +401,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		def _ok(text):
 			host, port = _ParseAddress(text)
 			self._ConnectTo(host, port)
-		client = self._RemoteClient
+		client = self.RemoteClient
 		ui.ShowPromptDialog(
 			title='Connect to app',
 			text='host:port',
@@ -396,7 +412,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 	# this is called by node marker preview button click handlers
 	@loggedmethod
 	def SetPreviewSource(self, path, toggle=False):
-		client = self._RemoteClient
+		client = self.RemoteClient
 		hassource = self._SetVideoSource(
 			path=path,
 			toggle=toggle,
@@ -431,7 +447,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		if toggle and path == sourcepar:
 			path = None
 		vidpath = self._GetNodeVideoPath(path)
-		client = self._RemoteClient
+		client = self.RemoteClient
 		client.Connection.SendCommand(command, vidpath or '')
 		sourcepar.val = path or ''
 		activepar.val = bool(vidpath)
@@ -450,8 +466,8 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		return self.ownerComp.op('presets')
 
 	@property
-	def ProxyManager(self):
-		return self._RemoteClient.ProxyManager
+	def ProxyManager(self) -> 'module_proxy.ModuleProxyManager':
+		return self.ownerComp.op('proxy')
 
 	@property
 	def HighlightManager(self) -> 'highlighting.HighlightManager':
@@ -467,7 +483,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 
 	def BuildState(self):
 		return schema.AppState(
-			client=self._RemoteClient.BuildClientInfo(),
+			client=self.RemoteClient.BuildClientInfo(),
 			modulestates=self.ModuleManager.BuildModStates(),
 			presets=self.PresetManager.GetPresets(),
 			modulationsources=self.ModulationManager.GetSourceSpecs())
@@ -503,7 +519,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			finally:
 				self._LogEnd()
 
-		self._RemoteClient.StoreRemoteAppState(appstate).then(
+		self.RemoteClient.StoreRemoteAppState(appstate).then(
 			success=_success,
 			failure=_failure)
 
@@ -529,7 +545,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			finally:
 				self._LogEnd()
 
-		self._RemoteClient.RetrieveRemoteStoredAppState().then(
+		self.RemoteClient.RetrieveRemoteStoredAppState().then(
 			success=_success,
 			failure=_failure)
 
@@ -562,7 +578,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			self.statetoload = None
 			self.SetStatusText('Failed to connect to client from app state')
 
-		self._RemoteClient.SetClientInfo(state.client).then(_onsuccess, _onfailure)
+		self.RemoteClient.SetClientInfo(state.client).then(_onsuccess, _onfailure)
 
 	@loggedmethod
 	def LoadStateFile(self, filename=None, prompt=False, connecttoclient=False):
@@ -579,10 +595,84 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		state = schema.AppState.ReadJsonFrom(filename)
 		self.LoadState(state, connecttoclient=connecttoclient)
 
-	def SetStatusText(self, text, temporary=None):
+	def SetStatusText(self, text, temporary=None, log=False):
 		statusbar = self.ownerComp.op('bottom_bar/status_bar')
 		if statusbar and hasattr(statusbar, 'SetStatus'):
 			statusbar.SetStatus(text, temporary=temporary)
+		if log:
+			self._LogEvent(text)
+
+	@loggedmethod
+	def BuildTables(self):
+		self.SetStatusText('Building schema tables')
+		self._BuildAppInfoTable()
+		dat = self.ownerComp.op('host_core/set_data_nodes')
+		dat.clear()
+		dat.appendRow(schema.DataNodeInfo.tablekeys + ['modpath'])
+		self._BuildModuleTable()
+		self._BuildModuleTypeTable()
+		self._BuildParamTable()
+
+	def _BuildAppInfoTable(self):
+		dat = self.ownerComp.op('host_core/set_app_info')
+		dat.clear()
+		attrs = ['name', 'label', 'path']
+		if not self.AppSchema:
+			dat.appendCol(attrs)
+		else:
+			for name in attrs:
+				dat.appendRow([name, getattr(self.AppSchema, name, None) or ''])
+
+	def _BuildModuleTable(self):
+		dat = self.ownerComp.op('host_core/set_modules')
+		dat.clear()
+		dat.appendRow(schema.ModuleSchema.tablekeys)
+		if not self.AppSchema:
+			return
+		for modschema in self.AppSchema.modules:
+			modschema.AddToTable(dat)
+			self._AddDataNodesToTable(modpath=modschema.path, nodes=modschema.nodes)
+
+	def _BuildModuleTypeTable(self):
+		dat = self.ownerComp.op('host_core/set_module_types')
+		dat.clear()
+		dat.appendRow(schema.ModuleTypeSchema.tablekeys)
+		if not self.AppSchema:
+			return
+		for modtypeschema in self.AppSchema.moduletypes:
+			modtypeschema.AddToTable(dat)
+
+	def _BuildParamTable(self):
+		paramdat = self.ownerComp.op('host_core/set_params')
+		paramdat.clear()
+		paramdat.appendRow(schema.ParamSchema.extratablekeys + schema.ParamSchema.tablekeys)
+		partdat = self.ownerComp.op('host_core/set_param_parts')
+		partdat.clear()
+		partdat.appendRow(schema.ParamPartSchema.extratablekeys + schema.ParamPartSchema.tablekeys)
+		if not self.AppSchema:
+			return
+		for modschema in self.AppSchema.modules:
+			modpath = modschema.path
+			if not modschema.params:
+				continue
+			for param in modschema.params:
+				param.AddToTable(
+					paramdat,
+					attrs=param.GetExtraTableAttrs(modpath=modpath))
+				for i, part in enumerate(param.parts):
+					part.AddToTable(
+						partdat,
+						attrs=part.GetExtraTableAttrs(param=param, vecIndex=i, modpath=modpath))
+
+	def _AddDataNodesToTable(self, modpath, nodes: 'List[schema.DataNodeInfo]'):
+		if not nodes:
+			return
+		dat = self.ownerComp.op('host_core/set_data_nodes')
+		for node in nodes:
+			node.AddToTable(
+				dat,
+				attrs={'modpath': modpath}
+			)
 
 def _ParseAddress(text: str, defaulthost='localhost', defaultport=9500) -> Tuple[str, int]:
 	text = text and text.strip()
@@ -617,7 +707,6 @@ class ModuleManager(app_components.ComponentBase):
 	@loggedmethod
 	def Attach(self, appschema: schema.AppSchema):
 		self.appschema = appschema
-		return self._BuildSubModuleHosts()
 
 	def GetModuleHost(self, modpath) -> 'Optional[module_host.ModuleHost]':
 		return self.modulehostsbypath.get(modpath)
@@ -630,18 +719,22 @@ class ModuleManager(app_components.ComponentBase):
 	def ProxyManager(self):
 		return self.AppHost.ProxyManager
 
+	@property
+	def _RemoteClient(self):
+		return self.AppHost.RemoteClient
+
 	@loggedmethod
-	def _BuildSubModuleHosts(self):
+	def BuildSubModuleHosts(self) -> 'Optional[Future]':
 		self.SetStatusText('Building module hosts...')
 		self.moduleloadfuture = None
 		dest = self.ownerComp
 		for m in dest.ops('mod__*'):
 			m.destroy()
 		if not self.appschema:
-			return Future.immediate()
+			return None
 		template = self._ModuleHostTemplate
 		if not template:
-			return Future.immediate()
+			return None
 		hostconnectorpairs = []
 		for i, modschema in enumerate(self.appschema.childmodules):
 			self._LogEvent('creating host for sub module {}'.format(modschema.path))
@@ -660,18 +753,18 @@ class ModuleManager(app_components.ComponentBase):
 
 		if not hostconnectorpairs:
 			self._LogEvent('No module hosts to connect')
-			return Future.immediate()
+			return None
 
 		def _makeInitTask(h, c):
 			return lambda: self._InitSubModuleHost(h, c)
 
 		self.SetStatusText('Attaching module hosts...')
-		self.moduleloadfuture = Future()
+		self.moduleloadfuture = Future(label='module host load')
 		self.AppHost.AddTaskBatch(
 			[
 				_makeInitTask(host, connector)
 				for host, connector in hostconnectorpairs
-			])
+			], label='module host load')
 		return self.moduleloadfuture
 
 	@loggedmethod
@@ -727,6 +820,47 @@ class ModuleManager(app_components.ComponentBase):
 			return
 		for modpath, modhost in self.modulehostsbypath.items():
 			modhost.LoadState(modstates.get(modpath))
+
+	@loggedmethod
+	def RetrieveAllModuleStates(self) -> 'Future':
+		def _makeQueryTask(modpath):
+			return lambda: self.RetrieveModuleState(modpath)
+
+		return self.AppHost.AddTaskBatch(
+			[
+				_makeQueryTask(m)
+				for m in sorted(self.appschema.modulesbypath.keys())
+			],
+			label='retrieve all mod states'
+		)
+
+	@loggedmethod
+	def RetrieveModuleState(self, modpath) -> 'Future[schema.ModuleState]':
+		modschema = self.appschema.modulesbypath.get(modpath)  # type: schema.ModuleSchema
+		if not modschema:
+			self._LogEvent('Module schema not found: {!r}'.format(modpath))
+			return Future.immediateerror('Module schema not found: {!r}'.format(modpath))
+		return self._RemoteClient.QueryModuleState(modpath, modschema.parampartnames).then(
+			success=lambda modstate: self._OnReceiveModuleState(modpath, modstate)
+		)
+
+	@customloggedmethod(omitargs=['modstate'])
+	def _OnReceiveModuleState(self, modpath, modstate: 'schema.ModuleState'):
+		if not modstate.params:
+			return
+		proxy = self.ProxyManager.GetProxy(modpath)
+		if not proxy:
+			self._LogEvent('proxy not found for path: {!r}'.format(modpath))
+			return
+		for name, val in modstate.params.items():
+			par = getattr(proxy.par, name, None)
+			if par is None:
+				self._LogEvent('parameter not found: {!r}'.format(name))
+				continue
+			if par.isOP:
+				par.val = op(val) or ''
+			else:
+				par.val = val
 
 	def UpdateModuleVisibility(self):
 		showhidden = self.AppHost.par.Showhiddenmodules.eval()

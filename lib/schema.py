@@ -269,6 +269,9 @@ class RawModuleInfo(BaseDataObject):
 			'typeattrs': self.typeattrs,
 		}))
 
+	def ToBriefStr(self):
+		return '{}(path: {})'.format(type(self).__name__, self.path)
+
 class ParamPartSchema(BaseDataObject):
 	"""
 	Processed information about a single part of a compound parameter.

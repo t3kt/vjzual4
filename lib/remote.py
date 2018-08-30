@@ -143,7 +143,8 @@ class RemoteConnection(common.ExtensionBase):
 		if cmdmesg.isRequest:
 			responsefuture = Future(
 				onlisten=lambda: self._AddResponseFuture(cmdmesg.cmdid, responsefuture),
-				oninvoke=lambda: self._RemoveResponseFuture(cmdmesg.cmdid))
+				oninvoke=lambda: self._RemoveResponseFuture(cmdmesg.cmdid),
+				label=cmdmesg.ToBriefStr())
 			return responsefuture
 
 	def SendCommand(self, cmd, arg=None):
@@ -208,6 +209,7 @@ class RemoteConnection(common.ExtensionBase):
 			return None
 		return CommandMessage.fromJsonDict(obj)
 
+	# @common.loggedmethod
 	def SendOsc(self, address, *values, asBundle=False):
 		self._osceventsend.sendOSC(address, *values, asBundle=asBundle)
 
@@ -222,8 +224,10 @@ class RemoteBase(common.ExtensionBase, common.ActionsExt, CommandHandler):
 	def Connection(self) -> RemoteConnection:
 		return self.ownerComp.op('connection')
 
+	# @common.loggedmethod
 	def SendOsc(self, address, *values, asBundle=False):
 		if not self.Connected:
+			self._LogEvent('SendOsc - NOT CONNECTED!')
 			return
 		self.Connection.SendOsc(address, *values, asBundle=asBundle)
 
