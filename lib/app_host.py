@@ -170,7 +170,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 					lambda: self.ModulationManager.Mapper.InitializeChannelProcessing(),
 					_continueloadingstate,
 					lambda: self.SetStatusText('App schema loading completed'),
-				])
+				], label='OnAppSchemaLoaded - after proxies built, attach and build host')
 
 		self.ProxyManager.BuildProxiesForAppSchema(appschema).then(
 			success=lambda _: _continue())
@@ -768,7 +768,7 @@ class ModuleManager(app_components.ComponentBase):
 			[
 				_makeInitTask(host, connector)
 				for host, connector in hostconnectorpairs
-			])
+			], label='module host load')
 		return self.moduleloadfuture
 
 	@loggedmethod
