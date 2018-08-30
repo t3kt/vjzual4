@@ -100,12 +100,8 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		return self.ownerComp.op('bottom_bar/progress_bar')
 
 	@property
-	def _RemoteClient(self) -> 'Union[remote_client.RemoteClient, COMP]':
+	def RemoteClient(self) -> 'Union[remote_client.RemoteClient, COMP]':
 		return self.ownerComp.par.Remoteclient.eval()
-
-	@property
-	def NEW_RemoteClient(self) -> 'remote_client.RemoteClient_NEW':
-		return self.ownerComp.op('remote_client').ext.NEW_CLIENT
 
 	def GetModuleSchema(self, modpath) -> 'Optional[schema.ModuleSchema]':
 		return self.AppSchema and self.AppSchema.modulesbypath.get(modpath)
@@ -140,7 +136,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		loader = remote_client.RemoteSchemaLoader(
 			hostobj=self,
 			apphost=self,
-			remoteclient=self.NEW_RemoteClient)
+			remoteclient=self.RemoteClient)
 		loader.LoadRemoteAppSchema().then(
 			success=self.OnAppSchemaLoaded,
 		)
@@ -238,7 +234,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 				menu.Divider(),
 				menu.Item(
 					'Connection Properties',
-					callback=lambda: self._RemoteClient.openParameters()),
+					callback=lambda: self.RemoteClient.openParameters()),
 				menu.Divider(),
 				menu.Item(
 					'Load State',
@@ -285,7 +281,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 				_viewItem('Data Nodes', 'data_nodes'),
 				menu.Item(
 					'Client Info',
-					callback=lambda: self.ShowSchemaJson(self._RemoteClient.BuildClientInfo())),
+					callback=lambda: self.ShowSchemaJson(self.RemoteClient.BuildClientInfo())),
 				menu.Item(
 					'Server Info',
 					disabled=self.serverinfo is None,
@@ -389,15 +385,15 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 
 	@loggedmethod
 	def _ConnectTo(self, host, port):
-		self._RemoteClient.par.Active = True
-		self.NEW_RemoteClient.Connect(host, port).then(
+		self.RemoteClient.par.Active = True
+		self.RemoteClient.Connect(host, port).then(
 			success=self.OnConnected
 		)
 
 	@loggedmethod
 	def _Disconnect(self):
-		self._RemoteClient.Detach()
-		self._RemoteClient.par.Active = False
+		self.RemoteClient.Disconnect()
+		self.RemoteClient.par.Active = False
 		self.ShowSchemaJson(None)
 		self.ModuleManager.Detach()
 
@@ -405,7 +401,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		def _ok(text):
 			host, port = _ParseAddress(text)
 			self._ConnectTo(host, port)
-		client = self._RemoteClient
+		client = self.RemoteClient
 		ui.ShowPromptDialog(
 			title='Connect to app',
 			text='host:port',
@@ -416,7 +412,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 	# this is called by node marker preview button click handlers
 	@loggedmethod
 	def SetPreviewSource(self, path, toggle=False):
-		client = self._RemoteClient
+		client = self.RemoteClient
 		hassource = self._SetVideoSource(
 			path=path,
 			toggle=toggle,
@@ -451,7 +447,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		if toggle and path == sourcepar:
 			path = None
 		vidpath = self._GetNodeVideoPath(path)
-		client = self._RemoteClient
+		client = self.RemoteClient
 		client.Connection.SendCommand(command, vidpath or '')
 		sourcepar.val = path or ''
 		activepar.val = bool(vidpath)
@@ -487,7 +483,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 
 	def BuildState(self):
 		return schema.AppState(
-			client=self._RemoteClient.BuildClientInfo(),
+			client=self.RemoteClient.BuildClientInfo(),
 			modulestates=self.ModuleManager.BuildModStates(),
 			presets=self.PresetManager.GetPresets(),
 			modulationsources=self.ModulationManager.GetSourceSpecs())
@@ -523,7 +519,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			finally:
 				self._LogEnd()
 
-		self._RemoteClient.StoreRemoteAppState(appstate).then(
+		self.RemoteClient.StoreRemoteAppState(appstate).then(
 			success=_success,
 			failure=_failure)
 
@@ -549,7 +545,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			finally:
 				self._LogEnd()
 
-		self._RemoteClient.RetrieveRemoteStoredAppState().then(
+		self.RemoteClient.RetrieveRemoteStoredAppState().then(
 			success=_success,
 			failure=_failure)
 
@@ -582,7 +578,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			self.statetoload = None
 			self.SetStatusText('Failed to connect to client from app state')
 
-		self._RemoteClient.SetClientInfo(state.client).then(_onsuccess, _onfailure)
+		self.RemoteClient.SetClientInfo(state.client).then(_onsuccess, _onfailure)
 
 	@loggedmethod
 	def LoadStateFile(self, filename=None, prompt=False, connecttoclient=False):
@@ -725,7 +721,7 @@ class ModuleManager(app_components.ComponentBase):
 
 	@property
 	def _RemoteClient(self):
-		return self.AppHost.NEW_RemoteClient
+		return self.AppHost.RemoteClient
 
 	@loggedmethod
 	def BuildSubModuleHosts(self) -> 'Optional[Future]':
