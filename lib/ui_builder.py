@@ -29,9 +29,7 @@ class UiBuilder:
 			value=None, valueexpr=None,
 			defval=None,
 			valrange=None, clamp=None,
-			attrs: opattrs=None,
-			**kwargs):
-		attrs = attrs or opattrs(**kwargs)
+			attrs: opattrs=None):
 		return CreateFromTemplate(
 			template=self.ownerComp.op('sliderL'),
 			dest=dest, name=name,
@@ -45,26 +43,19 @@ class UiBuilder:
 						value is not None and {'Value1': value},
 						clamp and {'Clamplow1': clamp[0], 'Clamphigh1': clamp[1]},
 						{'Integer': isint},
-						valueexpr and {'Push1': True})),
-				attrs,
-				parexprs=mergedicts(
-					valueexpr and {'Value1': valueexpr}),
-				**kwargs))
+						valueexpr and {'Push1': True}),
+					parexprs=mergedicts(
+						valueexpr and {'Value1': valueexpr})),
+				attrs))
 
 	def CreateParSlider(
 			self, dest, name,
 			parinfo,  # type: schema.ParamSchema
 			dropscript=None,  # type: Optional[DAT]
 			modhostconnector=None,
-			attrs: opattrs=None, **kwargs):
+			attrs: opattrs=None):
 		return self.CreateSlider(
 			dest=dest, name=name,
-			attrs=opattrs.merged(
-				attrs,
-				opattrs(
-					parvals=_DropScriptParVals(dropscript)
-				),
-				**kwargs),
 			label=parinfo.label,
 			isint=parinfo.style == 'Int',
 			valueexpr=modhostconnector.GetParExpr(parinfo.parts[0].name) if modhostconnector else None,
@@ -77,8 +68,13 @@ class UiBuilder:
 				parinfo.parts[0].minnorm if parinfo.parts[0].minlimit is None else parinfo.parts[0].minlimit,
 				parinfo.parts[0].maxnorm if parinfo.parts[0].maxlimit is None else parinfo.parts[0].maxlimit,
 			],
-			tags=['vjz4parctrl', 'vjz4mappable'],
-			externaldata={'parampart': parinfo.parts[0]},
+			attrs=opattrs.merged(
+				attrs,
+				opattrs(
+					parvals=_DropScriptParVals(dropscript),
+					tags=['vjz4parctrl', 'vjz4mappable'],
+					externaldata={'parampart': parinfo.parts[0]},
+				)),
 		)
 
 	def CreateParMultiSlider(
@@ -86,12 +82,12 @@ class UiBuilder:
 			parinfo,  # type: schema.ParamSchema
 			dropscript=None,  # type: Optional[DAT]
 			modhostconnector=None,
-			attrs: opattrs=None, **kwargs):
+			attrs: opattrs=None):
 		n = len(parinfo.parts)
 		ctrl = CreateFromTemplate(
 			template=self.ownerComp.op('multi_slider'),
 			dest=dest, name=name,
-			attrs=opattrs.merged(attrs, **kwargs))
+			attrs=attrs)
 		isint = parinfo.style == 'Int'
 		if parinfo.style in ('Int', 'Float'):
 			suffixes = list(range(1, n + 1))
@@ -154,7 +150,7 @@ class UiBuilder:
 			value=None, valueexpr=None,
 			runofftoon=None,
 			defval=None,
-			attrs: opattrs=None, **kwargs):
+			attrs: opattrs=None):
 		return CreateFromTemplate(
 			template=self.ownerComp.op('binaryC'),
 			dest=dest, name=name,
@@ -176,39 +172,36 @@ class UiBuilder:
 						valueexpr and {'Push1': True}),
 					parexprs=mergedicts(
 						valueexpr and {'Value1': valueexpr})),
-				attrs,
-				**kwargs))
+				attrs))
 
 	def CreateParToggle(
 			self, dest, name,
 			parinfo,  # type: schema.ParamSchema
 			dropscript=None,  # type: Optional[DAT]
 			modhostconnector=None,
-			attrs: opattrs=None, **kwargs):
+			attrs: opattrs=None):
 		return self.CreateButton(
 			dest=dest, name=name,
 			attrs=opattrs.merged(
 				attrs,
 				opattrs(
 					parvals=_DropScriptParVals(dropscript),
-					tags=['vjz4parctrl']),
-				**kwargs),
+					tags=['vjz4parctrl', 'vjz4mappable'],
+					externaldata={'parampart': parinfo.parts[0]})),
 			label=parinfo.label,
 			behavior='toggledown',
 			valueexpr=modhostconnector.GetParExpr(parinfo.parts[0].name) if modhostconnector else None,
 			defval=parinfo.parts[0].default,
-			tags=['vjz4parctrl', 'vjz4mappable'],
-			externaldata={'parampart': parinfo.parts[0]},
 		)
 
 	def CreateParTrigger(
 			self, dest, name,
 			parinfo,  # type: schema.ParamSchema
-			attrs: opattrs=None, **kwargs):
+			attrs: opattrs=None):
 		# TODO: off to on action
 		return self.CreateButton(
 			dest=dest, name=name,
-			attrs=opattrs.merged(attrs, **kwargs),
+			attrs=attrs,
 			label=parinfo.label,
 			behavior='pulse')
 
@@ -382,12 +375,15 @@ class UiBuilder:
 			addtowrappermap[parinfo.name] = wrapper
 		ctrlname = 'ctrl'
 
+		ctrlattrs = opattrs.merged(
+			opattrs(dropscript=dropscript),
+			ctrlattrs)
+
 		if parinfo.style in ('Float', 'Int') and len(parinfo.parts) == 1:
 			# print('creating slider control for {}'.format(parinfo))
 			ctrl = self.CreateParSlider(
 				dest=wrapper, name=ctrlname,
 				parinfo=parinfo,
-				dropscript=dropscript,
 				attrs=ctrlattrs,
 				modhostconnector=modhostconnector)
 		elif parinfo.style in [
@@ -399,7 +395,6 @@ class UiBuilder:
 			sliders = self.CreateParMultiSlider(
 				dest=wrapper, name=ctrlname,
 				parinfo=parinfo,
-				dropscript=dropscript,
 				attrs=ctrlattrs,
 				modhostconnector=modhostconnector)
 			_registerparts(sliders)
@@ -409,7 +404,6 @@ class UiBuilder:
 			ctrl = self.CreateParToggle(
 				dest=wrapper, name=ctrlname,
 				parinfo=parinfo,
-				dropscript=dropscript,
 				attrs=ctrlattrs,
 				modhostconnector=modhostconnector)
 		elif parinfo.style == 'Pulse':
@@ -417,28 +411,24 @@ class UiBuilder:
 			ctrl = self.CreateParTrigger(
 				dest=wrapper, name=ctrlname,
 				parinfo=parinfo,
-				dropscript=dropscript,
 				attrs=ctrlattrs)
 		elif parinfo.style == 'Str' and not parinfo.isnode:
 			# print('creating text field control for plain string {}'.format(parinfo))
 			ctrl = self.CreateParTextField(
 				dest=wrapper, name=ctrlname,
 				parinfo=parinfo,
-				dropscript=dropscript,
 				attrs=ctrlattrs,
 				modhostconnector=modhostconnector)
 		elif parinfo.isnode:
 			ctrl = self.CreateParNodeSelector(
 				dest=wrapper, name=ctrlname,
 				parinfo=parinfo,
-				dropscript=dropscript,
 				attrs=ctrlattrs,
 				modhostconnector=modhostconnector)
 		elif parinfo.style == 'Menu':
 			ctrl = self.CreateParMenuField(
 				dest=wrapper, name=ctrlname,
 				parinfo=parinfo,
-				dropscript=dropscript,
 				attrs=ctrlattrs,
 				modhostconnector=modhostconnector)
 		else:
@@ -452,7 +442,7 @@ class UiBuilder:
 	def CreateMappingMarker(
 			self, dest, name,
 			mapping,  # type: schema.ControlMapping,
-			attrs: opattrs=None, **kwargs):
+			attrs: opattrs=None):
 		return CreateFromTemplate(
 			template=self.ownerComp.op('mapping_marker'),
 			dest=dest, name=name,
@@ -469,13 +459,12 @@ class UiBuilder:
 					tags=['vjz4mappingmarker'],
 					externaldata={'mapping': mapping},
 				),
-				attrs,
-				**kwargs))
+				attrs))
 
 	def CreateControlMarker(
 			self, dest, name,
 			control,  # type: schema.DeviceControlInfo
-			attrs: opattrs=None, **kwargs):
+			attrs: opattrs=None):
 		return CreateFromTemplate(
 			template=self.ownerComp.op('control_marker'),
 			dest=dest, name=name,
@@ -492,14 +481,13 @@ class UiBuilder:
 					tags=['vjz4ctrlmarker'],
 					externaldata={'controlinfo': control},
 				),
-				attrs,
-				**kwargs))
+				attrs))
 
 	def CreateNodeMarker(
 			self, dest, name,
 			nodeinfo,  # type: schema.DataNodeInfo
 			previewbutton=False,
-			attrs: opattrs=None, **kwargs):
+			attrs: opattrs=None):
 		return CreateFromTemplate(
 			template=self.ownerComp.op('node_marker'),
 			dest=dest, name=name,
@@ -517,13 +505,12 @@ class UiBuilder:
 						'h': 30,
 					},
 					tags=['vjz4nodemarker']),
-				attrs,
-				**kwargs))
+				attrs))
 
 	def CreatePresetMarker(
 			self, dest, name,
 			preset,  # type: schema.ModulePreset
-			attrs: opattrs=None, **kwargs):
+			attrs: opattrs=None):
 		return CreateFromTemplate(
 			template=self.ownerComp.op('module_preset_marker'),
 			dest=dest, name=name,
@@ -540,13 +527,12 @@ class UiBuilder:
 						'Params': repr(preset.state.params),
 					},
 					tags=['vjz4presetmarker']),
-				attrs,
-				**kwargs))
+				attrs))
 
 	def CreateStateSlotMarker(
 			self, dest, name,
 			state=None,  # type: Optional[schema.ModuleState]
-			attrs: opattrs=None, **kwargs):
+			attrs: opattrs=None):
 		return CreateFromTemplate(
 			template=self.ownerComp.op('module_state_slot_marker'),
 			dest=dest, name=name,
@@ -562,13 +548,12 @@ class UiBuilder:
 						'Params': repr((state and state.params) or None),
 					},
 					tags=['vjz4stateslotmarker']),
-				attrs,
-				**kwargs))
+				attrs))
 
 	def CreateLfoGenerator(
 			self, dest, name,
 			spec=None,  # type: schema.ModulationSourceSpec
-			attrs: opattrs=None, **kwargs):
+			attrs: opattrs=None):
 		return CreateFromTemplate(
 			template=self.ownerComp.op('lfo_generator'),
 			dest=dest, name=name,
@@ -585,8 +570,7 @@ class UiBuilder:
 						'Bias': spec.bias,
 					},
 					tags=['vjz4lfo', 'vjz4modsource']),
-				attrs,
-				**kwargs))
+				attrs))
 
 def _DropScriptParVals(dropscript: 'Optional[DAT]'=None):
 	return dropscript and {

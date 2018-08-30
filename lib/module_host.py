@@ -335,9 +335,10 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 				dest=dest,
 				name='node__' + nodeinfo.name,
 				nodeinfo=nodeinfo,
-				order=i,
 				previewbutton=hasapphost,
-				nodepos=[100, -200 * i])
+				attrs=opattrs(
+					order=i,
+					nodepos=[100, -200 * i]))
 		dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
 
 	def UpdateModuleHeight(self):

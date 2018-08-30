@@ -24,7 +24,7 @@ except ImportError:
 
 try:
 	import common
-	from common import parseint, Future, loggedmethod, customloggedmethod, simpleloggedmethod
+	from common import parseint, Future, loggedmethod, customloggedmethod, simpleloggedmethod, opattrs
 except ImportError:
 	common = mod.common
 	parseint = common.parseint
@@ -32,6 +32,7 @@ except ImportError:
 	loggedmethod = common.loggedmethod
 	customloggedmethod = common.customloggedmethod
 	simpleloggedmethod = common.simpleloggedmethod
+	opattrs = common.opattrs
 
 try:
 	import control_devices
@@ -217,9 +218,11 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 				name='node__{}'.format(i),
 				nodeinfo=nodeinfo,
 				previewbutton=True,
-				order=i,
-				nodepos=[100, -200 * i],
-				panelparent=body)
+				attrs=opattrs(
+					order=i,
+					nodepos=[100, -200 * i],
+					panelparent=body
+				))
 
 	def OnMenuClick(self, button):
 		name = button.name
