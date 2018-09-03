@@ -1418,7 +1418,7 @@ class DashboardControlSpec(BaseDataObject):
 			ctrltype: str=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
-		self.name = name
+		self.name = name.capitalize()
 		self.label = label
 		self.ctrltype = ctrltype or 'knob'
 

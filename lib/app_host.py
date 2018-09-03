@@ -767,7 +767,7 @@ class ModuleManager(app_components.ComponentBase):
 			host.par.alignorder = i
 			host.nodeX = 100
 			host.nodeY = -100 * i
-			connector = self.ProxyManager.GetModuleProxyHost(modschema, self.appschema)
+			connector = self.ProxyManager.GetModuleProxyConnector(modschema, self.appschema)
 			hostconnectorpairs.append([host, connector])
 
 		if not hostconnectorpairs:
@@ -867,7 +867,7 @@ class ModuleManager(app_components.ComponentBase):
 	def _OnReceiveModuleState(self, modpath, modstate: 'schema.ModuleState'):
 		if not modstate.params:
 			return
-		proxy = self.ProxyManager.GetModuleProxy(modpath)
+		proxy = self.ProxyManager.GetProxy(modpath)
 		if not proxy:
 			self._LogEvent('proxy not found for path: {!r}'.format(modpath))
 			return

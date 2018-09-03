@@ -33,18 +33,23 @@ except ImportError:
 	app_components = mod.app_components
 
 
-class _BaseProxyManager(app_components.ComponentBase):
+class BaseProxyManager(app_components.ComponentBase):
 	def __init__(self, ownerComp):
 		super().__init__(ownerComp)
 		self.proxies = {}  # type: Dict[str, COMP]
+		self.ClearProxies()
 
-	def _ClearProxies(self):
+	@loggedmethod
+	def Detach(self):
+		self.ClearProxies()
+
+	def ClearProxies(self):
 		for o in self.ownerComp.findChildren(maxDepth=1, tags=['vjz4proxy']):
 			if o.valid and o.name != '__proxy_template':
 				o.destroy()
 		self.proxies.clear()
 
-	def _GetProxy(self, key, silent=False):
+	def GetProxy(self, key, silent=False):
 		if key not in self.proxies:
 			if not silent:
 				self._LogEvent('GetProxy() - proxy not found: {!r}'.format(key))
@@ -95,30 +100,20 @@ class _BaseProxyManager(app_components.ComponentBase):
 			])
 
 	def SetProxyParamValue(self, key, name, value):
-		proxy = self._GetProxy(key)
+		proxy = self.GetProxy(key)
 		if not proxy or not hasattr(proxy.par, name):
 			self._LogEvent('SetProxyParamValue({!r}, {!r}, {!r}) - unable to find proxy parameter')
 			return
 		setattr(proxy.par, name, value)
 
-class ProxyManager(_BaseProxyManager):
+class ModuleProxyManager(BaseProxyManager):
 	"""
 	Builds and manages a set of proxy COMPs that mirror those in a remote project, including matching parameters.
 	"""
-	def __init__(self, ownerComp):
-		_BaseProxyManager.__init__(self, ownerComp)
-		self._ClearProxies()
-
-	@loggedmethod
-	def Detach(self):
-		self._ClearProxies()
-
-	def GetModuleProxy(self, modpath, silent=False):
-		return self._GetProxy(modpath, silent=silent)
 
 	@loggedmethod
 	def BuildProxiesForAppSchema(self, appschema: 'schema.AppSchema') -> 'Future':
-		self._ClearProxies()
+		self.ClearProxies()
 		if not appschema:
 			return Future.immediate(label='BuildProxiesForAppSchema (no schema)')
 		self.SetStatusText('Building module proxies', log=True)
@@ -137,7 +132,7 @@ class ProxyManager(_BaseProxyManager):
 		self._LogBegin('AddModuleProxy({})'.format(modschema.path))
 		try:
 			modpath = modschema.path
-			proxy = self.GetModuleProxy(modpath, silent=True)
+			proxy = self.GetProxy(modpath, silent=True)
 			if proxy:
 				raise Exception('Already have proxy for module {}'.format(modpath))
 			self._CreateModuleProxy(modschema=modschema)
@@ -205,24 +200,16 @@ class ProxyManager(_BaseProxyManager):
 			partuplet[0].menuNames = param.parts[0].menunames or []
 			partuplet[0].menuLabels = param.parts[0].menulabels or []
 
-	def SetModuleParamValue(self, modpath, name, value):
-		proxy = self.GetModuleProxy(modpath)
-		if not proxy or not hasattr(proxy.par, name):
-			self._LogEvent('SetModuleParamValue({!r}, {!r}, {!r}) - unable to find proxy parameter')
-			return
-		setattr(proxy.par, name, value)
-
-	def GetModuleProxyHost(self, modschema: schema.ModuleSchema, appschema: schema.AppSchema):
-		proxy = self.GetModuleProxy(modschema.path)
+	def GetModuleProxyConnector(self, modschema: schema.ModuleSchema, appschema: schema.AppSchema):
+		proxy = self.GetProxy(modschema.path)
 		return _ProxyModuleHostConnector(modschema, appschema, self, proxy)
-
 
 class _ProxyModuleHostConnector(module_host.ModuleHostConnector):
 	def __init__(
 			self,
 			modschema: schema.ModuleSchema,
 			appschema: schema.AppSchema,
-			proxymanager: ProxyManager,
+			proxymanager: ModuleProxyManager,
 			proxy):
 		super().__init__(modschema)
 		self.appschema = appschema
@@ -274,7 +261,7 @@ class _ProxyModuleHostConnector(module_host.ModuleHostConnector):
 
 	def _CreateHostConnector(self, modpath):
 		modschema = self.appschema.modulesbypath.get(modpath)
-		return modschema and self.proxymanager.GetModuleProxyHost(modschema, self.appschema)
+		return modschema and self.proxymanager.GetModuleProxyConnector(modschema, self.appschema)
 
 	def CreateChildModuleConnectors(self):
 		connectors = []
