@@ -866,7 +866,7 @@ class ModuleManager(app_components.ComponentBase):
 	def _OnReceiveModuleState(self, modpath, modstate: 'schema.ModuleState'):
 		if not modstate.params:
 			return
-		proxy = self.ProxyManager.GetProxy(modpath)
+		proxy = self.ProxyManager.GetModuleProxy(modpath)
 		if not proxy:
 			self._LogEvent('proxy not found for path: {!r}'.format(modpath))
 			return

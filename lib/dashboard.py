@@ -114,4 +114,4 @@ class Dashboard(app_components.ComponentBase, common.ActionsExt):
 		group = self._GetControlGroup(groupindex, warn=True)
 		if not group:
 			return
-		# TODO: show group menu
+	# TODO: show group menu

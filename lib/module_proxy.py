@@ -1,3 +1,5 @@
+from typing import Callable, List
+
 print('vjz4/module_proxy.py loading')
 
 if False:
@@ -5,13 +7,15 @@ if False:
 
 try:
 	import common
-	from common import CreateOP, UpdateOP, loggedmethod, Future
+	from common import CreateFromTemplate, CreateOP, UpdateOP, loggedmethod, Future, opattrs
 except ImportError:
 	common = mod.common
+	CreateFromTemplate = common.CreateFromTemplate
 	CreateOP = common.CreateOP
 	UpdateOP = common.UpdateOP
 	loggedmethod = common.loggedmethod
 	Future = common.Future
+	opattrs = common.opattrs
 
 try:
 	import schema
@@ -29,39 +33,42 @@ except ImportError:
 	app_components = mod.app_components
 
 
-class ModuleProxyManager(app_components.ComponentBase, common.ActionsExt):
+class ProxyManager(app_components.ComponentBase, common.ActionsExt):
 	"""
 	Builds and manages a set of proxy COMPs that mirror those in a remote project, including matching parameters.
 	"""
 	def __init__(self, ownerComp):
 		app_components.ComponentBase.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions={
-			'Clearproxies': self.ClearProxies,
-		}, autoinitparexec=False)
-
-	@property
-	def _ProxyPathTable(self):
-		return self.ownerComp.op('__set_proxy_paths')
+			'Clearmoduleproxies': self._ClearModuleProxies,
+		})
 
 	@loggedmethod
 	def Detach(self):
-		self.ClearProxies()
+		self._ClearModuleProxies()
 		self.ownerComp.par.Rootpath = ''
 
-	def ClearProxies(self):
-		self._ProxyPathTable.clear()
+	def ClearAllProxies(self):
+		self._ClearModuleProxies()
+		self.ClearDashboardProxies()
+
+	def _ClearModuleProxies(self):
 		for o in self.ownerComp.findChildren(maxDepth=1, tags=['vjzmodproxy']):
 			o.destroy()
 
-	def GetProxy(self, modpath, silent=False):
+	def ClearDashboardProxies(self):
+		for o in self.ownerComp.ops('dash__*'):
+			o.destroy()
+
+	def GetModuleProxy(self, modpath, silent=False):
 		rootpath = self._RootPath
 		if modpath == rootpath:
 			if not silent:
-				self._LogEvent('GetProxy({}) - cannot get proxy for root'.format(modpath))
+				self._LogEvent('GetModuleProxy({}) - cannot get proxy for root'.format(modpath))
 			return None
 		if not modpath.startswith(rootpath):
 			if not silent:
-				self._LogEvent('GetProxy({}) - modpath does not match root ({})'.format(modpath, rootpath))
+				self._LogEvent('GetModuleProxy({}) - modpath does not match root ({})'.format(modpath, rootpath))
 			return None
 		relpath = modpath[len(rootpath):]
 		if relpath.startswith('/'):
@@ -69,12 +76,12 @@ class ModuleProxyManager(app_components.ComponentBase, common.ActionsExt):
 		proxy = self.ownerComp.op(relpath)
 		if not proxy:
 			if not silent:
-				self._LogEvent('GetProxy({}) - proxy not found for relpath: {}'.format(modpath, relpath))
+				self._LogEvent('GetModuleProxy({}) - proxy not found for relpath: {}'.format(modpath, relpath))
 		return proxy
 
 	@loggedmethod
 	def BuildProxiesForAppSchema(self, appschema: 'schema.AppSchema') -> 'Future':
-		self.ClearProxies()
+		self._ClearModuleProxies()
 		if not appschema:
 			self.ownerComp.par.Rootpath = ''
 			return Future.immediate(label='BuildProxiesForAppSchema (no schema)')
@@ -82,7 +89,7 @@ class ModuleProxyManager(app_components.ComponentBase, common.ActionsExt):
 		self.SetStatusText('Building module proxies', log=True)
 
 		def _makeAddProxyTask(modschema):
-			return lambda: self.AddProxy(modschema)
+			return lambda: self.AddModuleProxy(modschema)
 
 		return self.AppHost.AddTaskBatch(
 			[
@@ -95,21 +102,21 @@ class ModuleProxyManager(app_components.ComponentBase, common.ActionsExt):
 	def _RootPath(self):
 		return self.ownerComp.par.Rootpath.eval() or '/'
 
-	def AddProxy(self, modschema: schema.ModuleSchema):
-		self._LogBegin('AddProxy({})'.format(modschema.path))
+	def AddModuleProxy(self, modschema: schema.ModuleSchema):
+		self._LogBegin('AddModuleProxy({})'.format(modschema.path))
 		try:
 			modpath = modschema.path
-			proxy = self.GetProxy(modpath, silent=True)
+			proxy = self.GetModuleProxy(modpath, silent=True)
 			if proxy:
 				raise Exception('Already have proxy for module {}'.format(modpath))
 			rootpath = self._RootPath
 			if modschema.parentpath == rootpath:
 				dest = self.ownerComp
 			else:
-				dest = self.GetProxy(modschema.parentpath)
+				dest = self.GetModuleProxy(modschema.parentpath)
 				if not dest:
 					raise Exception('Parent proxy not found: (path:{} parent:{})'.format(modpath, modschema.parentpath))
-			proxycomp = self._CreateModuleProxy(
+			self._CreateModuleProxy(
 				dest=dest,
 				modschema=modschema,
 				nodepos=[
@@ -117,30 +124,62 @@ class ModuleProxyManager(app_components.ComponentBase, common.ActionsExt):
 					(len(dest.children) * 150) - 500
 				]
 			)
-			self._ProxyPathTable.appendRow([proxycomp.path])
-
 		finally:
 			self._LogEnd()
+
+	def _CreateProxyComp(
+			self, dest, name,
+			attrs: opattrs=None):
+		return CreateFromTemplate(
+			template=self.ownerComp.op('__proxy_template'),
+			dest=dest, name=name,
+			attrs=attrs)
+
+	@staticmethod
+	def _InitializeProxyComp(
+			proxycomp: COMP,
+			pathprefix: str):
+		nontextnames = []
+		textnames = []
+		for par in proxycomp.customPars:
+			if par.isString or par.isMenu or par.isOP:
+				textnames.append(par.name)
+			else:
+				nontextnames.append(par.name)
+		UpdateOP(
+			proxycomp.op('__get_pars'),
+			attrs=opattrs(
+				parvals={
+					'parameters': ' '.join(nontextnames),
+					'renameto': pathprefix + ':*',
+				}
+			))
+		textpargetterexprs = proxycomp.op('__text_par_exprs')
+		textpargetterexprs.clear()
+		for name in textnames:
+			textpargetterexprs.appendRow([
+				repr(pathprefix + ':' + name),
+				'op({!r}).par.{}'.format(proxycomp.path, name)
+			])
 
 	def _CreateModuleProxy(
 			self,
 			dest,
 			modschema: schema.ModuleSchema,
-			nodepos=None,
-			parvals=None,
-			parexprs=None):
-		proxycomp = CreateOP(
-			baseCOMP,
-			dest=dest, name=modschema.name, nodepos=nodepos,
-			tags=['vjzmodproxy'],
-			parvals=parvals,
-			parexprs=parexprs)
+			nodepos=None):
+		proxycomp = self._CreateProxyComp(
+			dest=dest, name=modschema.name,
+			attrs=opattrs(
+				nodepos=nodepos,
+				tags=['vjzmodproxy'],
+			)
+		)
 		proxycomp.destroyCustomPars()
 		pageindices = {}
 		params = modschema.params or []
 		for param in params:
 			try:
-				self._AddParam(proxycomp, param, modschema)
+				self._AddModuleParam(proxycomp, param, modschema)
 			except TypeError as e:
 				self._LogEvent('Error setting up proxy for param: {}\n {!r}'.format(e, param))
 				raise e
@@ -154,84 +193,12 @@ class ModuleProxyManager(app_components.ComponentBase, common.ActionsExt):
 				for param in params
 				if param.pagename == pagename
 			])
-		nontextnames = []
-		textnames = []
-		textstyles = ('Str', 'StrMenu', 'TOP', 'CHOP', 'DAT', 'OP', 'COMP', 'PanelCOMP')
-		for param in params:
-			if param.isnode or param.style in textstyles:
-				textnames.append(param.parts[0].name)
-			else:
-				for part in param.parts:
-					nontextnames.append(part.name)
-		pargetter = CreateOP(
-			parameterCHOP,
-			dest=proxycomp,
-			name='__get_pars',
-			nodepos=[-600, 0],
-			parvals={
-				'parameters': ' '.join(nontextnames),
-				'renameto': modschema.path + ':*',
-				'custom': True,
-				'builtin': False,
-			})
-		ownparvals = CreateOP(
-			nullCHOP,
-			dest=proxycomp,
-			name='__own_par_vals',
-			nodepos=[-400, 0],
-		)
-		ownparvals.inputConnectors[0].connect(pargetter)
-		paraggregator = CreateOP(
-			selectCHOP,
-			dest=proxycomp,
-			name='__aggregate_pars',
-			nodepos=[-600, -100],
-			parvals={'chop': '__own_par_vals */__par_vals'}
-		)
-		parvals = CreateOP(
-			nullCHOP,
-			dest=proxycomp,
-			name='__par_vals',
-			nodepos=[-200, -50])
-		parvals.inputConnectors[0].connect(paraggregator)
-
-		textpargetterexprs = CreateOP(
-			tableDAT,
-			dest=proxycomp,
-			name='__text_par_exprs',
-			nodepos=[-600, -200])
-		textpargetterexprs.clear()
-		for name in textnames:
-			textpargetterexprs.appendRow(
-				[
-					repr(modschema.path + ':' + name),
-					'op({!r}).par.{}'.format(proxycomp.path, name)
-				])
-		textpargettereval = CreateOP(
-			evaluateDAT,
-			dest=proxycomp,
-			name='__own_text_par_vals',
-			nodepos=[-400, -200])
-		textpargettereval.inputConnectors[0].connect(textpargetterexprs)
-		textparaggregator = CreateOP(
-			mergeDAT,
-			dest=proxycomp,
-			name='__aggregate_text_pars',
-			nodepos=[-600, -300],
-			parvals={
-				'dat': '__own_text_par_vals */__text_par_vals',
-			})
-		textparvals = CreateOP(
-			nullDAT,
-			dest=proxycomp,
-			name='__text_par_vals',
-			nodepos=[-200, -250])
-		textparvals.inputConnectors[0].connect(textparaggregator)
-
-		proxycomp.componentCloneImmune = True
+		self._InitializeProxyComp(
+			proxycomp,
+			pathprefix=modschema.path)
 		return proxycomp
 
-	def _AddParam(self, comp, param: schema.ParamSchema, modschema: schema.ModuleSchema):
+	def _AddModuleParam(self, comp, param: schema.ParamSchema, modschema: schema.ModuleSchema):
 		page = comp.appendCustomPage(param.pagename or '_')
 		style = param.style
 		appendkwargs = {}
@@ -264,23 +231,24 @@ class ModuleProxyManager(app_components.ComponentBase, common.ActionsExt):
 			partuplet[0].menuNames = param.parts[0].menunames or []
 			partuplet[0].menuLabels = param.parts[0].menulabels or []
 
-	def SetParamValue(self, modpath, name, value):
-		proxy = self.GetProxy(modpath)
+	def SetModuleParamValue(self, modpath, name, value):
+		proxy = self.GetModuleProxy(modpath)
 		if not proxy or not hasattr(proxy.par, name):
-			self._LogEvent('SetParamValue({!r}, {!r}, {!r}) - unable to find proxy parameter')
+			self._LogEvent('SetModuleParamValue({!r}, {!r}, {!r}) - unable to find proxy parameter')
 			return
 		setattr(proxy.par, name, value)
 
 	def GetModuleProxyHost(self, modschema: schema.ModuleSchema, appschema: schema.AppSchema):
-		proxy = self.GetProxy(modschema.path)
+		proxy = self.GetModuleProxy(modschema.path)
 		return _ProxyModuleHostConnector(modschema, appschema, self, proxy)
+
 
 class _ProxyModuleHostConnector(module_host.ModuleHostConnector):
 	def __init__(
 			self,
 			modschema: schema.ModuleSchema,
 			appschema: schema.AppSchema,
-			proxymanager: ModuleProxyManager,
+			proxymanager: ProxyManager,
 			proxy):
 		super().__init__(modschema)
 		self.appschema = appschema
