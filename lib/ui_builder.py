@@ -572,6 +572,21 @@ class UiBuilder:
 					tags=['vjz4lfo', 'vjz4modsource']),
 				attrs))
 
+	def CreateDashboardControlGroup(
+			self, dest, name,
+			group=None,  # type: schema.DashboardControlGroup
+			attrs: opattrs=None):
+		return CreateFromTemplate(
+			template=self.ownerComp.op('dashboard_control_group'),
+			dest=dest, name=name,
+			attrs=opattrs.merged(
+				opattrs(
+					parvals=group and {
+						'Groupname': group.name or '',
+						'Grouplabel': group.label or '',
+					}),
+				attrs))
+
 def _DropScriptParVals(dropscript: 'Optional[DAT]'=None):
 	return dropscript and {
 		'drop': 'legacy',

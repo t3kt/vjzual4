@@ -1356,7 +1356,7 @@ class ModulationSourceSpec(BaseDataObject):
 class DashboardSpec(BaseDataObject):
 	def __init__(
 			self,
-			name: str,
+			name: str=None,
 			label: str=None,
 			groups: 'List[DashboardControlGroup]'=None,
 			**otherattrs):

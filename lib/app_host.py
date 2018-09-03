@@ -10,6 +10,7 @@ if False:
 	from remote import CommandMessage
 	import control_modulation
 	import module_proxy
+	from dashboard import Dashboard
 
 try:
 	import ui_builder
@@ -395,6 +396,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 	def AppHostMenu(self) -> 'AppHostMenu':
 		return self.ownerComp.op('top_bar')
 
+	@property
+	def Dashboard(self) -> 'Dashboard':
+		return self.ownerComp.op('dashboard')
+
 	def BuildState(self):
 		return schema.AppState(
 			client=self.RemoteClient.BuildClientInfo(),
@@ -658,8 +663,14 @@ class AppHostMenu(app_components.ComponentBase):
 		return menu.ParEnumItems(self.AppHost.par.Sidepanelmode)
 
 	@property
+	def MainPanelModeMenuItems(self):
+		return menu.ParEnumItems(self.AppHost.par.Mainpanelmode)
+
+	@property
 	def ViewMenu(self):
-		return self.SidePanelModeMenuItems + [
+		return self.MainPanelModeMenuItems + [
+			menu.Divider(),
+		] + self.SidePanelModeMenuItems + [
 			menu.Divider(),
 			menu.ParToggleItem(self.AppHost.par.Showhiddenmodules),
 		]
