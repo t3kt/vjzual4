@@ -1,4 +1,4 @@
-from typing import Callable, List
+from typing import Dict
 
 print('vjz4/module_proxy.py loading')
 
@@ -33,107 +33,39 @@ except ImportError:
 	app_components = mod.app_components
 
 
-class ProxyManager(app_components.ComponentBase, common.ActionsExt):
-	"""
-	Builds and manages a set of proxy COMPs that mirror those in a remote project, including matching parameters.
-	"""
+class _BaseProxyManager(app_components.ComponentBase):
 	def __init__(self, ownerComp):
-		app_components.ComponentBase.__init__(self, ownerComp)
-		common.ActionsExt.__init__(self, ownerComp, actions={
-			'Clearmoduleproxies': self._ClearModuleProxies,
-		})
+		super().__init__(ownerComp)
+		self.proxies = {}  # type: Dict[str, COMP]
 
-	@loggedmethod
-	def Detach(self):
-		self._ClearModuleProxies()
-		self.ownerComp.par.Rootpath = ''
+	def _ClearProxies(self):
+		for o in self.ownerComp.findChildren(maxDepth=1, tags=['vjz4proxy']):
+			if o.valid and o.name != '__proxy_template':
+				o.destroy()
+		self.proxies.clear()
 
-	def ClearAllProxies(self):
-		self._ClearModuleProxies()
-		self.ClearDashboardProxies()
-
-	def _ClearModuleProxies(self):
-		for o in self.ownerComp.findChildren(maxDepth=1, tags=['vjzmodproxy']):
-			o.destroy()
-
-	def ClearDashboardProxies(self):
-		for o in self.ownerComp.ops('dash__*'):
-			o.destroy()
-
-	def GetModuleProxy(self, modpath, silent=False):
-		rootpath = self._RootPath
-		if modpath == rootpath:
+	def _GetProxy(self, key, silent=False):
+		if key not in self.proxies:
 			if not silent:
-				self._LogEvent('GetModuleProxy({}) - cannot get proxy for root'.format(modpath))
+				self._LogEvent('GetProxy() - proxy not found: {!r}'.format(key))
 			return None
-		if not modpath.startswith(rootpath):
-			if not silent:
-				self._LogEvent('GetModuleProxy({}) - modpath does not match root ({})'.format(modpath, rootpath))
-			return None
-		relpath = modpath[len(rootpath):]
-		if relpath.startswith('/'):
-			relpath = relpath[1:]
-		proxy = self.ownerComp.op(relpath)
-		if not proxy:
-			if not silent:
-				self._LogEvent('GetModuleProxy({}) - proxy not found for relpath: {}'.format(modpath, relpath))
-		return proxy
+		return self.proxies[key]
 
-	@loggedmethod
-	def BuildProxiesForAppSchema(self, appschema: 'schema.AppSchema') -> 'Future':
-		self._ClearModuleProxies()
-		if not appschema:
-			self.ownerComp.par.Rootpath = ''
-			return Future.immediate(label='BuildProxiesForAppSchema (no schema)')
-		self.ownerComp.par.Rootpath = appschema.path
-		self.SetStatusText('Building module proxies', log=True)
-
-		def _makeAddProxyTask(modschema):
-			return lambda: self.AddModuleProxy(modschema)
-
-		return self.AppHost.AddTaskBatch(
-			[
-				_makeAddProxyTask(m)
-				for m in appschema.modules
-			],
-			label='BuildProxiesForAppSchema')
-
-	@property
-	def _RootPath(self):
-		return self.ownerComp.par.Rootpath.eval() or '/'
-
-	def AddModuleProxy(self, modschema: schema.ModuleSchema):
-		self._LogBegin('AddModuleProxy({})'.format(modschema.path))
-		try:
-			modpath = modschema.path
-			proxy = self.GetModuleProxy(modpath, silent=True)
-			if proxy:
-				raise Exception('Already have proxy for module {}'.format(modpath))
-			rootpath = self._RootPath
-			if modschema.parentpath == rootpath:
-				dest = self.ownerComp
-			else:
-				dest = self.GetModuleProxy(modschema.parentpath)
-				if not dest:
-					raise Exception('Parent proxy not found: (path:{} parent:{})'.format(modpath, modschema.parentpath))
-			self._CreateModuleProxy(
-				dest=dest,
-				modschema=modschema,
-				nodepos=[
-					0,
-					(len(dest.children) * 150) - 500
-				]
-			)
-		finally:
-			self._LogEnd()
-
-	def _CreateProxyComp(
-			self, dest, name,
-			attrs: opattrs=None):
-		return CreateFromTemplate(
+	def _CreateProxyComp(self, key):
+		if key[0] == '/':
+			name = key[1:]
+		else:
+			name = key
+		name = name.replace('/', '__')
+		proxy = CreateFromTemplate(
 			template=self.ownerComp.op('__proxy_template'),
-			dest=dest, name=name,
-			attrs=attrs)
+			dest=self.ownerComp, name='proxy__{}'.format(name),
+			attrs=opattrs(
+				nodepos=[0, 400 + (-200 * len(self.proxies))],
+				tags=['vjz4proxy']
+			))
+		self.proxies[key] = proxy
+		return proxy
 
 	@staticmethod
 	def _InitializeProxyComp(
@@ -162,18 +94,60 @@ class ProxyManager(app_components.ComponentBase, common.ActionsExt):
 				'op({!r}).par.{}'.format(proxycomp.path, name)
 			])
 
+	def SetProxyParamValue(self, key, name, value):
+		proxy = self._GetProxy(key)
+		if not proxy or not hasattr(proxy.par, name):
+			self._LogEvent('SetProxyParamValue({!r}, {!r}, {!r}) - unable to find proxy parameter')
+			return
+		setattr(proxy.par, name, value)
+
+class ProxyManager(_BaseProxyManager):
+	"""
+	Builds and manages a set of proxy COMPs that mirror those in a remote project, including matching parameters.
+	"""
+	def __init__(self, ownerComp):
+		_BaseProxyManager.__init__(self, ownerComp)
+		self._ClearProxies()
+
+	@loggedmethod
+	def Detach(self):
+		self._ClearProxies()
+
+	def GetModuleProxy(self, modpath, silent=False):
+		return self._GetProxy(modpath, silent=silent)
+
+	@loggedmethod
+	def BuildProxiesForAppSchema(self, appschema: 'schema.AppSchema') -> 'Future':
+		self._ClearProxies()
+		if not appschema:
+			return Future.immediate(label='BuildProxiesForAppSchema (no schema)')
+		self.SetStatusText('Building module proxies', log=True)
+
+		def _makeAddProxyTask(modschema):
+			return lambda: self.AddModuleProxy(modschema)
+
+		return self.AppHost.AddTaskBatch(
+			[
+				_makeAddProxyTask(m)
+				for m in appschema.modules
+			],
+			label='BuildProxiesForAppSchema')
+
+	def AddModuleProxy(self, modschema: schema.ModuleSchema):
+		self._LogBegin('AddModuleProxy({})'.format(modschema.path))
+		try:
+			modpath = modschema.path
+			proxy = self.GetModuleProxy(modpath, silent=True)
+			if proxy:
+				raise Exception('Already have proxy for module {}'.format(modpath))
+			self._CreateModuleProxy(modschema=modschema)
+		finally:
+			self._LogEnd()
+
 	def _CreateModuleProxy(
 			self,
-			dest,
-			modschema: schema.ModuleSchema,
-			nodepos=None):
-		proxycomp = self._CreateProxyComp(
-			dest=dest, name=modschema.name,
-			attrs=opattrs(
-				nodepos=nodepos,
-				tags=['vjzmodproxy'],
-			)
-		)
+			modschema: schema.ModuleSchema):
+		proxycomp = self._CreateProxyComp(key=modschema.path)
 		proxycomp.destroyCustomPars()
 		pageindices = {}
 		params = modschema.params or []

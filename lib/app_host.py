@@ -94,7 +94,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		self.previewMarkers = []  # type: List[op]
 		self.statefilename = None
 		self.statetoload = None  # type: schema.AppState
-		self.OnDetach()
+		self._OnDetach()
 		self.SetStatusText(None)
 
 	@property
@@ -174,7 +174,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			success=lambda _: _continue())
 
 	@loggedmethod
-	def OnDetach(self):
+	def _OnDetach(self):
 		self.ClearTasks()
 		for o in self.ownerComp.ops('app_info', 'modules', 'params', 'param_parts', 'data_nodes'):
 			o.closeViewer()
@@ -305,6 +305,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 	def Disconnect(self):
 		self.RemoteClient.Disconnect()
 		self.RemoteClient.par.Active = False
+		self._OnDetach()
 		self.ShowSchemaJson(None)
 		self.ModuleManager.Detach()
 
