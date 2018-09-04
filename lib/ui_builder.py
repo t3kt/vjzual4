@@ -5,7 +5,6 @@ print('vjz4/ui_builder.py loading')
 if False:
 	from _stubs import *
 	from module_host import ModuleHostConnector
-	import schema
 
 try:
 	import common
@@ -17,9 +16,65 @@ except ImportError:
 	CreateFromTemplate = common.CreateFromTemplate
 	opattrs = common.opattrs
 
+try:
+	import schema
+except ImportError:
+	schema = mod.schema
+
 class UiBuilder:
 	def __init__(self, ownerComp):
 		self.ownerComp = ownerComp
+
+	def _CreateKnobOrSlider(
+			self,
+			dest, name,
+			template,
+			label=None,
+			helptext=None,
+			isint=False,
+			value=None, valueexpr=None,
+			defval=None,
+			valrange=None, clamp=None,
+			attrs: opattrs=None):
+		return CreateFromTemplate(
+			template=template,
+			dest=dest,
+			name=name,
+			attrs=opattrs.merged(
+				opattrs(
+					parvals=mergedicts(
+						label is not None and {'Label': label},
+						helptext is not None and {'Help': helptext},
+						defval is not None and {'Default1': defval},
+						valrange and {'Rangelow1': valrange[0], 'Rangehigh1': valrange[1]},
+						value is not None and {'Value1': value},
+						clamp and {'Clamplow1': clamp[0], 'Clamphigh1': clamp[1]},
+						{'Integer': isint},
+						valueexpr and {'Push1': True}),
+					parexprs=mergedicts(
+						valueexpr and {'Value1': valueexpr})),
+				attrs))
+
+	def CreateKnob(
+			self, dest, name,
+			label=None,
+			helptext=None,
+			isint=False,
+			value=None, valueexpr=None,
+			defval=None,
+			valrange=None, clamp=None,
+			attrs: opattrs=None):
+		return self._CreateKnobOrSlider(
+			dest, name, template=self.ownerComp.op('knob'),
+			label=label,
+			helptext=helptext,
+			isint=isint,
+			value=value,
+			valueexpr=valueexpr,
+			defval=defval,
+			valrange=valrange,
+			clamp=clamp,
+			attrs=attrs)
 
 	def CreateSlider(
 			self, dest, name,
@@ -30,23 +85,17 @@ class UiBuilder:
 			defval=None,
 			valrange=None, clamp=None,
 			attrs: opattrs=None):
-		return CreateFromTemplate(
-			template=self.ownerComp.op('sliderL'),
-			dest=dest, name=name,
-			attrs=opattrs.merged(
-				opattrs(
-					parvals=mergedicts(
-						label and {'Label': label},
-						helptext and {'Help': helptext},
-						defval is not None and {'Default1': defval},
-						valrange and {'Rangelow1': valrange[0], 'Rangehigh1': valrange[1]},
-						value is not None and {'Value1': value},
-						clamp and {'Clamplow1': clamp[0], 'Clamphigh1': clamp[1]},
-						{'Integer': isint},
-						valueexpr and {'Push1': True}),
-					parexprs=mergedicts(
-						valueexpr and {'Value1': valueexpr})),
-				attrs))
+		return self._CreateKnobOrSlider(
+			dest, name, template=self.ownerComp.op('sliderL'),
+			label=label,
+			helptext=helptext,
+			isint=isint,
+			value=value,
+			valueexpr=valueexpr,
+			defval=defval,
+			valrange=valrange,
+			clamp=clamp,
+			attrs=attrs)
 
 	def CreateParSlider(
 			self, dest, name,
@@ -157,11 +206,11 @@ class UiBuilder:
 			attrs=opattrs.merged(
 				opattrs(
 					parvals=mergedicts(
-						label and {
+						label is not None and {
 							'Texton': label,
 							'Textoff': label,
 						},
-						helptext and {
+						helptext is not None and {
 							'Textonroll': helptext + ' (on)',
 							'Textoffroll': helptext + ' (off)',
 						},
@@ -219,8 +268,8 @@ class UiBuilder:
 			attrs=opattrs.merged(
 				opattrs(
 					parvals=mergedicts(
-						label and {'Label': label},
-						helptext and {'Help': helptext},
+						label is not None and {'Label': label},
+						helptext is not None and {'Help': helptext},
 						defval is not None and {'Default1': defval},
 						value is not None and {'Value1': value},
 						{'Type': fieldtype or 'string'},
@@ -574,18 +623,82 @@ class UiBuilder:
 
 	def CreateDashboardControlGroup(
 			self, dest, name,
-			group=None,  # type: schema.DashboardControlGroup
+			group,  # type: schema.DashboardControlGroup
 			attrs: opattrs=None):
 		return CreateFromTemplate(
 			template=self.ownerComp.op('dashboard_control_group'),
 			dest=dest, name=name,
 			attrs=opattrs.merged(
 				opattrs(
-					parvals=group and {
+					parvals={
 						'Groupname': group.name or '',
 						'Grouplabel': group.label or '',
 					}),
 				attrs))
+
+	def CreateDashboardControl(
+			self, dest, name,
+			ctrlspec,  # type: schema.DashboardControlSpec
+			proxyparexpr: str,
+			wrapperattrs: opattrs=None,
+			ctrlattrs: opattrs=None):
+		wrapper = CreateFromTemplate(
+			template=self.ownerComp.op('dashboard_control'),
+			dest=dest, name=name,
+			attrs=opattrs.merged(
+				opattrs(
+					parvals={
+						'Name': ctrlspec.name,
+						'Label': ctrlspec.label or ctrlspec.name,
+						'Ctrltype': ctrlspec.ctrltype,
+					},
+					tags=['vjz4dashctrl'],
+					cloneimmune=True,
+				),
+				wrapperattrs))
+		ctrlattrs = opattrs.merged(
+			opattrs(
+				parvals={
+					'vmode': 'fill',
+					'hmode': 'fill',
+				},
+				tags=['vjz4dashctrlctrl'],
+				cloneimmune=True,
+			),
+			ctrlattrs)
+		if ctrlspec.ctrltype == schema.DashboardControlTypes.toggle:
+			self.CreateButton(
+				dest=wrapper,
+				name='ctrl',
+				behavior='toggledown',
+				label='',
+				helptext='',
+				valueexpr=proxyparexpr,
+				attrs=opattrs.merged(
+					opattrs(
+						parvals={
+							'Texton': 'On',
+							'Textoff': 'Off',
+						}
+					),
+					ctrlattrs),
+			)
+		elif ctrlspec.ctrltype == schema.DashboardControlTypes.knob:
+			self.CreateKnob(
+				dest=wrapper,
+				name='ctrl',
+				valueexpr=proxyparexpr,
+				label='',
+				helptext='',
+				attrs=ctrlattrs,
+				defval=0,
+				valrange=[0, 1],
+			)
+		else:
+			print('Unsupported dash control type: {!r})'.format(ctrlspec))
+			wrapper.destroy()
+			return None
+		return wrapper
 
 def _DropScriptParVals(dropscript: 'Optional[DAT]'=None):
 	return dropscript and {

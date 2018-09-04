@@ -73,7 +73,7 @@ class Dashboard(app_components.ComponentBase, common.ActionsExt):
 
 	@loggedmethod
 	def _BuildControlGroup(self, group: 'schema.DashboardControlGroup', groupindex: int):
-		proxy = self._ProxyManager.AddControlGroupProxy(group)
+		self._ProxyManager.AddControlGroupProxy(group)
 		groupcomp = self.UiBuilder.CreateDashboardControlGroup(
 			dest=self.ownerComp.op('groups'),
 			name='group__{}'.format(groupindex),
@@ -92,7 +92,6 @@ class Dashboard(app_components.ComponentBase, common.ActionsExt):
 			self._BuildControlInGroup(
 				groupname=group.name,
 				groupcomp=groupcomp,
-				proxy=proxy,
 				ctrlspec=ctrlspec,
 				ctrlindex=ctrlindex)
 
@@ -100,13 +99,26 @@ class Dashboard(app_components.ComponentBase, common.ActionsExt):
 			self,
 			groupname: str,
 			groupcomp: COMP,
-			proxy: COMP,
 			ctrlspec: 'schema.DashboardControlSpec',
 			ctrlindex: int):
-		self._ProxyManager.AddParamToControlGroup(
+		par = self._ProxyManager.AddParamToControlGroup(
 			groupname=groupname,
 			ctrlspec=ctrlspec)
-		pass
+		self.AppHost.UiBuilder.CreateDashboardControl(
+			dest=groupcomp.op('controls'),
+			name='ctrl__' + ctrlspec.name,
+			ctrlspec=ctrlspec,
+			proxyparexpr='op({!r}).par.{}'.format(par.owner.path, par.name),
+			wrapperattrs=opattrs(
+				nodepos=[200, 400 + (-150 * ctrlindex)],
+				order=ctrlindex,
+				parvals={
+					'vmode': 'fill',
+					'hmode': 'fixed',
+					'w': 100,
+				}
+			)
+		)
 
 	@loggedmethod
 	def AddControlToGroup(self, name: str, label: str, ctrltype: str, groupindex: int):
@@ -126,7 +138,6 @@ class Dashboard(app_components.ComponentBase, common.ActionsExt):
 		self._BuildControlInGroup(
 			groupname=group.name,
 			groupcomp=groupcomp,
-			proxy=proxy,
 			ctrlspec=ctrlspec,
 			ctrlindex=ctrlindex)
 
@@ -149,6 +160,11 @@ class Dashboard(app_components.ComponentBase, common.ActionsExt):
 			return
 	# TODO: show group menu
 
+	def OnControlClick(self, panelValue):
+		if not hasattr(panelValue.owner.parent, 'DashControl'):
+			return
+	# TODO: show ctrl menu
+
 
 class DashboardProxyManager(module_proxy.BaseProxyManager):
 	def AddControlGroupProxy(self, group: 'schema.DashboardControlGroup'):
@@ -164,20 +180,22 @@ class DashboardProxyManager(module_proxy.BaseProxyManager):
 
 	def AddParamToControlGroup(self, groupname: str, ctrlspec: 'schema.DashboardControlSpec'):
 		proxy = self.GetProxy(groupname, silent=False)
-		self._AddParamToControlGroup(proxy, ctrlspec)
+		par = self._AddParamToControlGroup(proxy, ctrlspec)
 		self._InitializeProxyComp(proxy, pathprefix='dash/{}'.format(groupname))
+		return par
 
 	def _AddParamToControlGroup(self, proxy: COMP, ctrlspec: 'schema.DashboardControlSpec'):
 		if not proxy:
-			return
+			return None
 		if hasattr(proxy.par, ctrlspec.name):
 			self._LogEvent('Proxy {} already has parameter: {}'.format(proxy, ctrlspec.name))
-			return
+			return None
 		page = proxy.appendCustomPage('Controls')
 		if ctrlspec.ctrltype == schema.DashboardControlTypes.toggle:
-			page.appendToggle(ctrlspec.name, label=ctrlspec.label or ctrlspec.name)
+			return page.appendToggle(ctrlspec.name, label=ctrlspec.label or ctrlspec.name)[0]
 		elif ctrlspec.ctrltype == schema.DashboardControlTypes.knob:
-			page.appendFloat(ctrlspec.name, label=ctrlspec.label or ctrlspec.name)
+			return page.appendFloat(ctrlspec.name, label=ctrlspec.label or ctrlspec.name)[0]
 		else:
 			self._LogEvent('Unsupported control type: {!r} (proxy: {}, name: {})'.format(
 				ctrlspec.ctrltype, proxy, ctrlspec.name))
+			return None
