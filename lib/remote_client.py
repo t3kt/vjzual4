@@ -234,6 +234,22 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase):
 		modpath, name = address.split(':', maxsplit=1)
 		self.AppHost.ProxyManager.SetProxyParamValue(modpath, name, args[0])
 
+	@common.simpleloggedmethod
+	def StoreRemoteAppState(self, appstate: schema.AppState):
+		if not self.Connected:
+			return Future.immediateerror('Not connected')
+		if not self.ServerInfo or not self.ServerInfo.allowlocalstatestorage:
+			return Future.immediateerror('Remove server does not allow local state storage')
+		return self.Connection.SendRequest('storeAppState', appstate.ToJsonDict())
+
+	@loggedmethod
+	def RetrieveRemoteStoredAppState(self):
+		if not self.Connected:
+			return Future.immediateerror('Not connected')
+		if not self.ServerInfo or not self.ServerInfo.allowlocalstatestorage:
+			return Future.immediateerror('Remove server does not allow local state storage')
+		return self.Connection.SendRequest('retrieveAppState')
+
 
 class RemoteSchemaLoader(common.LoggableSubComponent):
 	def __init__(
