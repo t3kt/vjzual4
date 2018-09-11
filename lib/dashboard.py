@@ -28,6 +28,16 @@ try:
 except ImportError:
 	module_proxy = mod.module_proxy
 
+try:
+	import ui
+except ImportError:
+	ui = mod.ui
+
+try:
+	import menu
+except ImportError:
+	menu = mod.menu
+
 
 class Dashboard(app_components.ComponentBase, common.ActionsExt):
 	def __init__(self, ownerComp):
@@ -164,6 +174,27 @@ class Dashboard(app_components.ComponentBase, common.ActionsExt):
 		if not hasattr(panelValue.owner.parent, 'DashControl'):
 			return
 	# TODO: show ctrl menu
+
+	def OnBodyClick(self, panelValue):
+		if panelValue.name == 'rselect':
+			items = [
+				menu.Item(
+					'Add control group',
+					callback=lambda: self.ShowAddGroupDialog()),
+				menu.Divider(),
+			]
+			items += self.AppHost.AppHostMenu.ViewMenu
+			menu.fromMouse().Show(items, autoClose=True)
+
+	def ShowAddGroupDialog(self):
+		def _ok(text):
+			self.CreateControlGroup(text)
+		ui.ShowPromptDialog(
+			title='Add control group',
+			text='Group name',
+			oktext='Add',
+			default='group{}'.format(len(self.controlgroups)),
+			ok=_ok)
 
 
 class DashboardProxyManager(module_proxy.BaseProxyManager):
