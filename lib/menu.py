@@ -45,6 +45,28 @@ def ParToggleItem(
 		callback=_callback,
 		**kwargs)
 
+def ParEnumItems(par):
+	def _valitem(value, label):
+		return Item(
+			label,
+			checked=par == value,
+			callback=lambda: setattr(par, 'val', value))
+	return [
+		_valitem(v, l)
+		for v, l in zip(par.menuNames, par.menuLabels)
+	]
+
+def ViewOpItem(
+		o: 'OP',
+		text,
+		unique=True,
+		borders=True,
+		**kwargs):
+	return Item(
+		text,
+		callback=lambda: o.openViewer(unique=unique, borders=borders),
+		**kwargs)
+
 class Divider:
 	pass
 
@@ -131,6 +153,9 @@ def fromMouse(h='Left', v='Top', offset=(0, 0)):
 	return _MenuOpener(_applyPosition)
 
 def fromButton(buttonComp, h='Left', v='Bottom', matchWidth=False, offset=(0, 0)):
+	if not buttonComp:
+		return fromMouse(h=h, v=v, offset=offset)
+
 	def _applyPosition(
 			popmenu  # type: PopMenuExt
 	):

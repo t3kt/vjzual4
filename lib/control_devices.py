@@ -8,11 +8,11 @@ if False:
 
 try:
 	import common
+	from common import loggedmethod, opattrs
 except ImportError:
 	common = mod.common
-mergedicts, cleandict = common.mergedicts, common.cleandict
-loggedmethod = common.loggedmethod
-opattrs = common.opattrs
+	loggedmethod = common.loggedmethod
+	opattrs = common.opattrs
 
 try:
 	import schema
@@ -250,8 +250,9 @@ class MidiDevice(app_components.ComponentBase, common.ActionsExt):
 				dest=dest,
 				name='ctrl__' + control.name,
 				control=control,
-				order=i,
-				nodepos=[100, -150 * i])
+				attrs=opattrs(
+					order=i,
+					nodepos=[100, -150 * i]))
 			self.markers[control.fullname] = marker
 		self.SetHighlight(None)
 

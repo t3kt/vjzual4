@@ -232,7 +232,7 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase):
 			return
 		self._LogEvent('HandleOscEvent({!r}, {!r})'.format(address, args))
 		modpath, name = address.split(':', maxsplit=1)
-		self.AppHost.ProxyManager.SetParamValue(modpath, name, args[0])
+		self.AppHost.ProxyManager.SetProxyParamValue(modpath, name, args[0])
 
 
 class RemoteSchemaLoader(common.LoggableSubComponent):
