@@ -1352,3 +1352,80 @@ class ModulationSourceSpec(BaseDataObject):
 			'bias': self.bias,
 		}))
 
+
+class DashboardSpec(BaseDataObject):
+	def __init__(
+			self,
+			name: str=None,
+			label: str=None,
+			groups: 'List[DashboardControlGroup]'=None,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.name = name
+		self.label = label
+		self.groups = groups or []  # type: List[DashboardControlGroup]
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'name': self.name,
+			'label': self.label,
+			'groups': DashboardControlGroup.ToJsonDicts(self.groups),
+		}))
+
+	@classmethod
+	def FromJsonDict(cls, obj):
+		return cls(
+			groups=DashboardControlGroup.FromJsonDicts(obj.get('groups')),
+			**excludekeys(obj, ['groups']))
+
+
+class DashboardControlGroup(BaseDataObject):
+	def __init__(
+			self,
+			name: str,
+			label: str=None,
+			controls: 'List[DashboardControlSpec]'=None,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.name = name
+		self.label = label
+		self.controls = controls or []  # type: List[DashboardControlSpec]
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'name': self.name,
+			'label': self.label,
+			'controls': DashboardControlSpec.ToJsonDicts(self.controls),
+		}))
+
+	@classmethod
+	def FromJsonDict(cls, obj):
+		return cls(
+			controls=DashboardControlSpec.FromJsonDicts(obj.get('controls')),
+			**excludekeys(obj, ['controls']))
+
+
+class DashboardControlTypes:
+	toggle = 'toggle'
+	knob = 'knob'
+
+
+class DashboardControlSpec(BaseDataObject):
+	def __init__(
+			self,
+			name: str,
+			label: str=None,
+			ctrltype: str=None,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.name = name.capitalize()
+		self.label = label
+		self.ctrltype = ctrltype or 'knob'
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'name': self.name,
+			'label': self.label,
+			'ctrltype': self.ctrltype,
+		}))
+

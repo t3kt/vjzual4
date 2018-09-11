@@ -10,6 +10,7 @@ if False:
 	from remote import CommandMessage
 	import control_modulation
 	import module_proxy
+	from dashboard import Dashboard
 
 try:
 	import ui_builder
@@ -93,7 +94,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		self.previewMarkers = []  # type: List[op]
 		self.statefilename = None
 		self.statetoload = None  # type: schema.AppState
-		self.OnDetach()
+		self._OnDetach()
 		self.SetStatusText(None)
 
 	@property
@@ -173,7 +174,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			success=lambda _: _continue())
 
 	@loggedmethod
-	def OnDetach(self):
+	def _OnDetach(self):
 		self.ClearTasks()
 		for o in self.ownerComp.ops('app_info', 'modules', 'params', 'param_parts', 'data_nodes'):
 			o.closeViewer()
@@ -304,6 +305,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 	def Disconnect(self):
 		self.RemoteClient.Disconnect()
 		self.RemoteClient.par.Active = False
+		self._OnDetach()
 		self.ShowSchemaJson(None)
 		self.ModuleManager.Detach()
 
@@ -394,6 +396,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 	@property
 	def AppHostMenu(self) -> 'AppHostMenu':
 		return self.ownerComp.op('top_bar')
+
+	@property
+	def Dashboard(self) -> 'Dashboard':
+		return self.ownerComp.op('dashboard')
 
 	def BuildState(self):
 		return schema.AppState(
@@ -658,8 +664,14 @@ class AppHostMenu(app_components.ComponentBase):
 		return menu.ParEnumItems(self.AppHost.par.Sidepanelmode)
 
 	@property
+	def MainPanelModeMenuItems(self):
+		return menu.ParEnumItems(self.AppHost.par.Mainpanelmode)
+
+	@property
 	def ViewMenu(self):
-		return self.SidePanelModeMenuItems + [
+		return self.MainPanelModeMenuItems + [
+			menu.Divider(),
+		] + self.SidePanelModeMenuItems + [
 			menu.Divider(),
 			menu.ParToggleItem(self.AppHost.par.Showhiddenmodules),
 		]
@@ -755,7 +767,7 @@ class ModuleManager(app_components.ComponentBase):
 			host.par.alignorder = i
 			host.nodeX = 100
 			host.nodeY = -100 * i
-			connector = self.ProxyManager.GetModuleProxyHost(modschema, self.appschema)
+			connector = self.ProxyManager.GetModuleProxyConnector(modschema, self.appschema)
 			hostconnectorpairs.append([host, connector])
 
 		if not hostconnectorpairs:
