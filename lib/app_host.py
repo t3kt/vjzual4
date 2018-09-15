@@ -135,6 +135,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 	@loggedmethod
 	def OnConnected(self, serverinfo: schema.ServerInfo):
 		self.ServerInfo = serverinfo
+		self.RemoteClient.EnableParameterSending(False)
 		loader = remote_client.RemoteSchemaLoader(
 			hostobj=self,
 			apphost=self,
@@ -168,6 +169,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 					lambda: self.ModulationManager.Mapper.InitializeChannelProcessing(),
 					_continueloadingstate,
 					lambda: self.SetStatusText('App schema loading completed'),
+					lambda: self.RemoteClient.EnableParameterSending(True),
 				], label='OnAppSchemaLoaded - after proxies built, attach and build host')
 
 		self.ProxyManager.BuildProxiesForAppSchema(appschema).then(

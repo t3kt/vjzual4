@@ -250,6 +250,10 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase):
 			return Future.immediateerror('Remove server does not allow local state storage')
 		return self.Connection.SendRequest('retrieveAppState')
 
+	@loggedmethod
+	def EnableParameterSending(self, enable: bool):
+		self.ownerComp.op('on_proxy_par_val_change').par.active = enable
+
 
 class RemoteSchemaLoader(common.LoggableSubComponent):
 	def __init__(
