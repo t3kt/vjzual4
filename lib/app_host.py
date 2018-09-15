@@ -753,21 +753,25 @@ class ModuleManager(app_components.ComponentBase):
 			m.destroy()
 		if not self.appschema:
 			return None
-		template = self._ModuleHostTemplate
-		if not template:
-			return None
 		hostconnectorpairs = []
+		uibuilder = self.UiBuilder
 		for i, modschema in enumerate(self.appschema.childmodules):
 			self._LogEvent('creating host for sub module {}'.format(modschema.path))
-			host = dest.copy(template, name='mod__' + modschema.name)  # type: module_host.ModuleHost
-			host.par.Modulehosttemplate = 'op({!r})'.format(template.path)
-			host.par.Autoheight = False
-			host.par.hmode = 'fixed'
-			host.par.vmode = 'fill'
-			host.par.w = 250
-			host.par.alignorder = i
-			host.nodeX = 100
-			host.nodeY = -100 * i
+			host = uibuilder.CreateModuleHost(
+				dest=dest,
+				name='mod__' + modschema.name,
+				autoheight=False,
+				collapsed=False,
+				attrs=opattrs(
+					order=i,
+					nodepos=[100, -100 * i],
+					parvals={
+						'Autoheight': False,
+						'hmode': 'fixed',
+						'vmode': 'fill',
+						'w': 250
+					}
+				))
 			connector = self.ProxyManager.GetModuleProxyConnector(modschema, self.appschema)
 			hostconnectorpairs.append([host, connector])
 
@@ -808,13 +812,6 @@ class ModuleManager(app_components.ComponentBase):
 		self.modulehostsbypath[modhost.ModuleConnector.modpath] = modhost
 		if len(self.modulehostsbypath) >= len(self.AppHost.AppSchema.modules):
 			self._OnSubModuleHostsConnected()
-
-	@property
-	def _ModuleHostTemplate(self):
-		template = self.ownerComp.par.Modulehosttemplate.eval()
-		if not template and hasattr(op, 'Vjz4'):
-			template = op.Vjz4.op('./module_chain_host')
-		return template
 
 	def UpdateModulePreviewStatus(self, modpath):
 		for modhost in self.modulehostsbypath.values():

@@ -121,13 +121,6 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 	def StateManager(self) -> 'ModuleStateManager':
 		return self.ownerComp.op('states')
 
-	@property
-	def _ModuleHostTemplate(self):
-		template = self.ownerComp.par.Modulehosttemplate.eval()
-		if not template and hasattr(op, 'Vjz4'):
-			template = op.Vjz4.op('module_chain_host')
-		return template
-
 	@loggedmethod
 	def AttachToModuleConnector(self, connector: 'ModuleHostConnector') -> Optional[Future]:
 		self.ModuleConnector = connector
@@ -456,11 +449,6 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 			self._LogEvent('No module connector attached!')
 			self._OnSubModuleHostsConnected()
 			return None
-		template = self._ModuleHostTemplate
-		if not template:
-			self._LogEvent('No module host template! Cannot build sub module hosts!')
-			self._OnSubModuleHostsConnected()
-			return None
 		hostconnectorpairs = [
 			{'host': None, 'connector': conn}
 			for conn in self.ModuleConnector.CreateChildModuleConnectors()
@@ -492,16 +480,19 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 
 	@loggedmethod
 	def _CreateSubModuleHost(self, connector, i):
-		template = self._ModuleHostTemplate
-		dest = self.ownerComp.op('./sub_modules_panel')
-		host = dest.copy(template, name='mod__' + connector.modschema.name)
-		host.par.Collapsed = True
-		host.par.Autoheight = True
-		host.par.hmode = 'fill'
-		host.par.alignorder = i
-		host.nodeX = 100
-		host.nodeY = -100 * i
-		return host
+		return self.UiBuilder.CreateModuleHost(
+			dest=self.ownerComp.op('./sub_modules_panel'),
+			name='mod__' + connector.modschema.name,
+			collapsed=True,
+			autoheight=True,
+			attrs=opattrs(
+				order=i,
+				nodepos=[100, -100 * i],
+				parvals={
+					'hmode': 'fill'
+				}
+			)
+		)
 
 	@loggedmethod
 	def _InitSubModuleHost(self, host, connector):

@@ -700,6 +700,26 @@ class UiBuilder:
 			return None
 		return wrapper
 
+	def CreateModuleHost(
+			self, dest, name,
+			autoheight=True,
+			collapsed=True,
+			attrs: opattrs=None):
+		template = self.ownerComp.par.Modulehosttemplate.eval()
+		return CreateFromTemplate(
+			template=template,
+			dest=dest, name=name,
+			attrs=opattrs.merged(
+				opattrs(
+					parvals={
+						'Autoheight': autoheight,
+						'Collapsed': collapsed,
+
+					}
+				),
+				attrs))
+
+
 def _DropScriptParVals(dropscript: 'Optional[DAT]'=None):
 	return dropscript and {
 		'drop': 'legacy',
