@@ -497,7 +497,6 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 		host = dest.copy(template, name='mod__' + connector.modschema.name)
 		host.par.Collapsed = True
 		host.par.Autoheight = True
-		host.par.Uibuilder.expr = 'parent.ModuleHost.par.Uibuilder or ""'
 		host.par.hmode = 'fill'
 		host.par.alignorder = i
 		host.nodeX = 100

@@ -760,7 +760,6 @@ class ModuleManager(app_components.ComponentBase):
 		for i, modschema in enumerate(self.appschema.childmodules):
 			self._LogEvent('creating host for sub module {}'.format(modschema.path))
 			host = dest.copy(template, name='mod__' + modschema.name)  # type: module_host.ModuleHost
-			host.par.Uibuilder.expr = 'parent.AppHost.par.Uibuilder or ""'
 			host.par.Modulehosttemplate = 'op({!r})'.format(template.path)
 			host.par.Autoheight = False
 			host.par.hmode = 'fixed'
