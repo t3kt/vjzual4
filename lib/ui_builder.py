@@ -704,6 +704,7 @@ class UiBuilder:
 			self, dest, name,
 			autoheight=True,
 			collapsed=True,
+			collapsehorizontal=False,
 			attrs: opattrs=None):
 		template = self.ownerComp.par.Modulehosttemplate.eval()
 		return CreateFromTemplate(
@@ -714,7 +715,7 @@ class UiBuilder:
 					parvals={
 						'Autoheight': autoheight,
 						'Collapsed': collapsed,
-
+						'Collapsehorizontal': collapsehorizontal,
 					}
 				),
 				attrs))

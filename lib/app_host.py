@@ -762,6 +762,7 @@ class ModuleManager(app_components.ComponentBase):
 				name='mod__' + modschema.name,
 				autoheight=False,
 				collapsed=False,
+				collapsehorizontal=True,
 				attrs=opattrs(
 					order=i,
 					nodepos=[100, -100 * i],
@@ -804,7 +805,7 @@ class ModuleManager(app_components.ComponentBase):
 
 	def UpdateModuleWidths(self):
 		for m in self.ownerComp.ops('mod__*'):
-			m.par.w = 100 if m.par.Collapsed else 250
+			m.par.w = 30 if m.par.Collapsed else 250
 
 	def RegisterModuleHost(self, modhost: 'module_host.ModuleHost'):
 		if not modhost or not modhost.ModuleConnector:
