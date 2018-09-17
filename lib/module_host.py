@@ -160,9 +160,6 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 				previewbutton.par.display = True
 			if connector.modschema.hasmappable:
 				automapbutton.par.display = True
-			apphost = self.AppHost
-			if apphost:
-				apphost.RegisterModuleHost(self)
 		if not uimodenames:
 			uimodenames.append('nodes')
 		labelsbyname = {
@@ -186,7 +183,15 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 		self._ClearControls()
 		self.BuildControlsIfNeeded()
 		self.BuildNodeMarkersIfNeeded()
-		return self._BuildSubModuleHosts()
+
+		completionfuture = Future()
+
+		def _success(*_):
+			self.AppHost.RegisterModuleHost(self)
+			completionfuture.resolve()
+
+		self._BuildSubModuleHosts().then(_success, completionfuture.fail)
+		return completionfuture
 
 	def _RebuildParamControlTable(self):
 		hostcore = self.ownerComp.op('host_core')
@@ -448,7 +453,7 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 		if not self.ModuleConnector:
 			self._LogEvent('No module connector attached!')
 			self._OnSubModuleHostsConnected()
-			return None
+			return Future.immediate()
 		hostconnectorpairs = [
 			{'host': None, 'connector': conn}
 			for conn in self.ModuleConnector.CreateChildModuleConnectors()
@@ -456,7 +461,7 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 		if not hostconnectorpairs:
 			self._LogEvent('No sub modules to build')
 			self._OnSubModuleHostsConnected()
-			return None
+			return Future.immediate()
 
 		def _makeCreateTask(hcpair, index):
 			def _task():
@@ -466,7 +471,13 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 		def _makeInitTask(hcpair):
 			return lambda: self._InitSubModuleHost(hcpair['host'], hcpair['connector'])
 
-		return self.AddTaskBatch(
+		completion = Future()
+
+		def _complete():
+			self._LogEvent('Resolving build sub-module hosts completion future')
+			completion.resolve()
+
+		self.AddTaskBatch(
 			[
 				_makeCreateTask(hostconnpair, i)
 				for i, hostconnpair in enumerate(hostconnectorpairs)
@@ -475,8 +486,10 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 				_makeInitTask(hostconnpair)
 				for hostconnpair in hostconnectorpairs
 			] + [
-				lambda: self._OnSubModuleHostsConnected()
-			])
+				lambda: self._OnSubModuleHostsConnected(),
+				_complete,
+			], label='Build and create sub-hosts for module host {}'.format(self.ownerComp))
+		return completion
 
 	@loggedmethod
 	def _CreateSubModuleHost(self, connector, i):
