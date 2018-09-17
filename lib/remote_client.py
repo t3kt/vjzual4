@@ -252,6 +252,7 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase):
 
 	@loggedmethod
 	def EnableParameterSending(self, enable: bool):
+		self.Connection.par.Oscactive = enable
 		self.ownerComp.op('on_proxy_par_val_change').par.active = enable
 
 

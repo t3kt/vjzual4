@@ -135,7 +135,6 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 	@loggedmethod
 	def OnConnected(self, serverinfo: schema.ServerInfo):
 		self.ServerInfo = serverinfo
-		self.RemoteClient.EnableParameterSending(False)
 		loader = remote_client.RemoteSchemaLoader(
 			hostobj=self,
 			apphost=self,
@@ -169,14 +168,18 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 					lambda: self.ModulationManager.Mapper.InitializeChannelProcessing(),
 					_continueloadingstate,
 					lambda: self.SetStatusText('App schema loading completed'),
-					lambda: self.RemoteClient.EnableParameterSending(True),
 				], label='OnAppSchemaLoaded - after proxies built, attach and build host')
 
 		self.ProxyManager.BuildProxiesForAppSchema(appschema).then(
 			success=lambda _: _continue())
 
 	@loggedmethod
+	def OnModuleHostsReady(self):
+		self.RemoteClient.EnableParameterSending(True)
+
+	@loggedmethod
 	def _OnDetach(self):
+		self.RemoteClient.EnableParameterSending(False)
 		self.ClearTasks()
 		for o in self.ownerComp.ops('app_info', 'modules', 'params', 'param_parts', 'data_nodes'):
 			o.closeViewer()
@@ -188,7 +191,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		self.nodeMarkersByPath.clear()
 		self.ProxyManager.Detach()
 		self.ModuleManager.Detach()
-		self._BuildNodeMarkerTable()
+		self.BuildTables()
 		self.SetPreviewSource(None)
 		common.OPExternalStorage.CleanOrphans()
 		self.statetoload = None
@@ -298,6 +301,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 
 	@loggedmethod
 	def _ConnectTo(self, host, port):
+		self.RemoteClient.EnableParameterSending(False)
 		self.RemoteClient.par.Active = True
 		self.RemoteClient.Connect(host, port).then(
 			success=self.OnConnected
@@ -802,6 +806,7 @@ class ModuleManager(app_components.ComponentBase):
 		self.UpdateModuleWidths()
 		self.UpdateModuleVisibility()
 		self.moduleloadfuture.resolve()
+		self.AppHost.OnModuleHostsReady()
 
 	def UpdateModuleWidths(self):
 		for m in self.ownerComp.ops('mod__*'):
