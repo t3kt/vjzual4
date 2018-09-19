@@ -32,6 +32,11 @@ except ImportError:
 	schema = mod.schema
 	__dynamiclocalimport(schema)
 
+try:
+	import known_module_types
+except ImportError:
+	known_module_types = mod.known_module_types
+
 
 class AppSchemaBuilder(common.LoggableSubComponent):
 	def __init__(
@@ -192,6 +197,17 @@ class _BaseModuleSchemaBuilder(common.LoggableSubComponent):
 		self.groups = OrderedDict()  # type: Dict[str, ParamGroupSchema]
 		self.defaultgroup = None  # type: ParamGroupSchema
 		self.tags = set(modinfo.tags or [])
+		self.knownmoduletype = None  # type: known_module_types.KnownModuleType
+
+	def _FindMatchingKnownModuleType(self):
+		matchingtypes = known_module_types.GetMatchingTypes(self.modinfo)
+		if not matchingtypes:
+			self.knownmoduletype = None
+		elif len(matchingtypes) > 1:
+			self._LogEvent('Multiple known module types match modinfo: {}'.format([t.typeid for t in matchingtypes]))
+			self.knownmoduletype = None
+		else:
+			self.knownmoduletype = matchingtypes[0]
 
 	def _GetDefaultGroup(self):
 		if self.defaultgroup:
@@ -282,6 +298,8 @@ class _BaseModuleSchemaBuilder(common.LoggableSubComponent):
 
 	def _BuildParams(self):
 		parattrs = self.modinfo.parattrs or {}
+		if self.knownmoduletype and self.knownmoduletype.parattrs:
+			parattrs = mergedicts(self.knownmoduletype.parattrs, parattrs)
 		if self.modinfo.partuplets:
 			for partuplet in self.modinfo.partuplets:
 				parschema = self._BuildParam(partuplet, parattrs.get(partuplet[0].tupletname))
@@ -447,7 +465,8 @@ class _ModuleSchemaBuilder(_BaseModuleSchemaBuilder):
 			name=modinfo.name,
 			label=modinfo.label,
 			path=modinfo.path,
-			masterpath=modinfo.masterpath,
+			typeid=self.knownmoduletype and self.knownmoduletype.typeid,
+			masterpath=modinfo.masterpath or (self.knownmoduletype and self.knownmoduletype.masterpath),
 			parentpath=modinfo.parentpath,
 			childmodpaths=list(modinfo.childmodpaths) if modinfo.childmodpaths else None,
 			tags=self.tags,
@@ -473,7 +492,7 @@ class _ModuleTypeSchemaBuilder(_BaseModuleSchemaBuilder):
 		modinfo = self.modinfo
 		typeattrs = modinfo.typeattrs or {}
 		return ModuleTypeSchema(
-			typeid=typeattrs.get('typeid'),
+			typeid=typeattrs.get('typeid') or (self.knownmoduletype and self.knownmoduletype.typeid),
 			name=modinfo.name,
 			label=modinfo.label,
 			path=modinfo.path,
