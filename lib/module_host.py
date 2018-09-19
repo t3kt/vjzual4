@@ -18,21 +18,20 @@ except ImportError:
 
 try:
 	import common
+	from common import cleandict, mergedicts, Future, loggedmethod, opattrs, UpdateParValue
 except ImportError:
 	common = mod.common
-cleandict, mergedicts = common.cleandict, common.mergedicts
-Future = common.Future
-loggedmethod = common.loggedmethod
+	cleandict = common.cleandict
+	mergedicts = common.mergedicts
+	Future = common.Future
+	loggedmethod = common.loggedmethod
+	opattrs = common.opattrs
+	UpdateParValue = common.UpdateParValue
 
 try:
 	import menu
 except ImportError:
 	menu = mod.menu
-
-try:
-	from TDStoreTools import DependDict, DependList
-except ImportError:
-	from _stubs.TDStoreTools import DependDict, DependList
 
 def _GetOrAdd(d, key, default):
 	if key in d:
@@ -43,26 +42,16 @@ def _GetOrAdd(d, key, default):
 		d[key] = val = default
 	return val
 
-class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQueueExt):
+class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 	"""Base class for components that host modules, such as ModuleHost or ModuleEditor."""
 	def __init__(self, ownerComp):
 		app_components.ComponentBase.__init__(self, ownerComp)
 		common.TaskQueueExt.__init__(self, ownerComp)
-		common.ActionsExt.__init__(self, ownerComp, actions={
-			'Clearuistate': self.ClearUIState,
-			'Loaduistate': self.LoadUIState,
-			'Saveuistate': self.SaveUIState,
-		})
 		self.ModuleConnector = None  # type: ModuleHostConnector
 		self.controlsbyparam = {}  # type: Dict[str, COMP]
+		self.wrappersbyparam = {}  # type: Dict[str, COMP]
 		self.parampartsbycontrolpath = {}  # type: Dict[str, schema.ParamPartSchema]
-		self._AutoInitActionParams()
 		self.ownerComp.tags.add('vjz4modhost')
-
-		# trick pycharm
-		if False:
-			self.par = object()
-			self.storage = {}
 
 	@property
 	def _Params(self):
@@ -80,104 +69,28 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 	def _NodeMarkersBuilt(self):
 		return not self._Params or any(self.ownerComp.ops('nodes_panel/node__*'))
 
-	def OnTDPreSave(self):
-		for o in self.ownerComp.ops('controls_panel/par__*', 'sub_modules_panel/mod__*'):
-			o.destroy()
-
-	def _GetUIState(self, autoinit) -> Optional[DependDict]:
-		parent = self.ParentHost
-		if not parent:
-			if not autoinit and 'UIState' not in self.ownerComp.storage:
-				return None
-			uistate = _GetOrAdd(self.ownerComp.storage, 'UIState', DependDict)
-		else:
-			if hasattr(parent, 'UIState'):
-				parentstate = parent.UIState
-			else:
-				if not autoinit and 'UIState' not in parent.storage:
-					return None
-				parentstate = _GetOrAdd(parent.storage, 'UIState', DependDict)
-			if not autoinit and 'children' not in parentstate:
-				return None
-			children = _GetOrAdd(parentstate, 'children', DependDict)
-			modpath = self.ModulePath
-			if modpath and modpath in children:
-				uistate = children[modpath]
-			elif self.ownerComp.path in children:
-				uistate = children[self.ownerComp.path]
-			elif not autoinit:
-				return None
-			elif modpath:
-				uistate = children[modpath] = DependDict()
-			else:
-				uistate = children[self.ownerComp.path] = DependDict()
-		return uistate
-
-	@property
-	def UIState(self):
-		return self._GetUIState(autoinit=True)
-
-	def ClearUIState(self):
-		for m in self._SubModuleHosts:
-			m.ClearUIState()
-		parent = self.ParentHost
-		if not parent:
-			if 'UIState' in self.ownerComp.storage:
-				self.ownerComp.unstore('UIState')
-		else:
-			if 'UIState' not in parent.storage:
-				return
-			parentstate = parent.storage['UIState']
-			if 'children' not in parentstate:
-				return
-			children = parentstate['children']
-			modpath = self.ModulePath
-			if modpath and modpath in children:
-				del children[modpath]
-			if self.ownerComp.path in children:
-				del children[self.ownerComp.path]
-
-	def SaveUIState(self):
-		uistate = self.UIState
-		for name in ['Collapsed', 'Uimode']:
-			uistate[name] = getattr(self.ownerComp.par, name).eval()
-		for m in self._SubModuleHosts:
-			m.SaveUIState()
-
-	def LoadUIState(self):
-		uistate = self._GetUIState(autoinit=False)
-		if not uistate:
-			return
-		self.ownerComp.par.Collapsed = uistate.get('Collapsed', False)
-		if 'Uimode' in uistate and uistate['Uimode'] in self.ownerComp.par.Uimode.menuNames:
-			self.ownerComp.par.Uimode = uistate['Uimode']
-		for m in self._SubModuleHosts:
-			m.LoadUIState()
-
 	def BuildState(self):
 		return schema.ModuleHostState(
 			collapsed=self.ownerComp.par.Collapsed.eval(),
+			hidden=self.ownerComp.par.Hidden.eval(),
+			showadvancedparams=self.ownerComp.par.Showadvanced.eval(),
+			showhiddenparams=self.ownerComp.par.Showhidden.eval(),
 			uimode=self.ownerComp.par.Uimode.eval(),
 			currentstate=self.ModuleConnector and schema.ModuleState(params=self.ModuleConnector.GetParVals()),
 			states=self.ModuleConnector and self.StateManager.BuildStates())
 
 	@loggedmethod
-	def LoadState(self, modstate: schema.ModuleHostState):
+	def LoadState(self, modstate: schema.ModuleHostState, resetmissing=True):
 		if not modstate:
 			return
-		if modstate.collapsed is not None:
-			self.ownerComp.par.Collapsed = modstate.collapsed
-		if modstate.uimode and modstate.uimode in self.ownerComp.par.Uimode.menuNames:
-			self.ownerComp.par.Uimode = modstate.uimode
+		UpdateParValue(self.ownerComp.par.Collapsed, modstate.collapsed, resetmissing=resetmissing)
+		UpdateParValue(self.ownerComp.par.Uimode, modstate.uimode, resetmissing=resetmissing)
+		UpdateParValue(self.ownerComp.par.Showhidden, modstate.showhiddenparams, resetmissing=resetmissing)
+		UpdateParValue(self.ownerComp.par.Showadvanced, modstate.showadvancedparams, resetmissing=resetmissing)
 		if not self.ModuleConnector:
 			return
 		self.ModuleConnector.SetParVals(modstate.currentstate.params)
 		self.StateManager.LoadStates(modstate.states)
-
-	@property
-	def ParentHost(self) -> 'ModuleHost':
-		parent = getattr(self.ownerComp.parent, 'ModuleHost', None)
-		return parent or self.AppHost
 
 	@property
 	def ModulePath(self):
@@ -207,17 +120,6 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 	@property
 	def StateManager(self) -> 'ModuleStateManager':
 		return self.ownerComp.op('states')
-
-	@property
-	def _SubModuleHosts(self) -> 'List[ModuleHost]':
-		return self.ownerComp.ops('sub_modules_panel/mod__*')
-
-	@property
-	def _ModuleHostTemplate(self):
-		template = self.ownerComp.par.Modulehosttemplate.eval()
-		if not template and hasattr(op, 'Vjz4'):
-			template = op.Vjz4.op('module_chain_host')
-		return template
 
 	@loggedmethod
 	def AttachToModuleConnector(self, connector: 'ModuleHostConnector') -> Optional[Future]:
@@ -258,9 +160,6 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 				previewbutton.par.display = True
 			if connector.modschema.hasmappable:
 				automapbutton.par.display = True
-			apphost = self.AppHost
-			if apphost:
-				apphost.RegisterModuleHost(self)
 		if not uimodenames:
 			uimodenames.append('nodes')
 		labelsbyname = {
@@ -284,7 +183,15 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 		self._ClearControls()
 		self.BuildControlsIfNeeded()
 		self.BuildNodeMarkersIfNeeded()
-		return self._BuildSubModuleHosts()
+
+		completionfuture = Future()
+
+		def _success(*_):
+			self.AppHost.RegisterModuleHost(self)
+			completionfuture.resolve()
+
+		self._BuildSubModuleHosts().then(_success, completionfuture.fail)
+		return completionfuture
 
 	def _RebuildParamControlTable(self):
 		hostcore = self.ownerComp.op('host_core')
@@ -346,8 +253,9 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 		uibuilder = self.UiBuilder
 		for ctrl in dest.ops('par__*'):
 			ctrl.destroy()
-		self.controlsbyparam = {}
-		self.parampartsbycontrolpath = {}
+		self.controlsbyparam.clear()
+		self.wrappersbyparam.clear()
+		self.parampartsbycontrolpath.clear()
 		if not self.ModuleConnector or not uibuilder:
 			self._RebuildParamControlTable()
 			return
@@ -359,13 +267,14 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 				dest=dest,
 				name='par__' + parinfo.name,
 				parinfo=parinfo,
-				order=i,
-				nodepos=[100, -200 * i],
-				dropscript=dropscript if parinfo.mappable else None,
-				parexprs=mergedicts(
-					parinfo.advanced and {'display': 'parent.ModuleHost.par.Showadvanced'}
+				wrapperattrs=opattrs(
+					order=i,
+					nodepos=[100, -200 * i]),
+				ctrlattrs=opattrs(
+					dropscript=dropscript if parinfo.mappable else None,
 				),
 				addtocontrolmap=self.controlsbyparam,
+				addtowrappermap=self.wrappersbyparam,
 				modhostconnector=self.ModuleConnector)
 		self.parampartsbycontrolpath = {
 			ctrl.path: self.ModuleConnector.modschema.parampartsbyname[name]
@@ -373,9 +282,44 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 			if name in self.ModuleConnector.modschema.parampartsbyname
 		}
 		self._RebuildParamControlTable()
+		self.UpdateParameterVisiblity()
 		dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
 
-	@loggedmethod
+	# def GetParamWrapper(self, paramname):
+	# 	return self.wrappersbyparam.get(paramname)
+	#
+	# def GetParamPartControl(self, partname):
+	# 	return self.controlsbyparam.get(partname)
+
+	def SetLearnHighlight(self, paramname: Optional[str], partname: Optional[str]):
+		if not self.ModuleConnector:
+			return
+		for wrapperparname, wrapper in self.wrappersbyparam.items():
+			wrapper.par.Learnactive = paramname and wrapperparname == paramname
+		for ctrlpartname, ctrl in self.controlsbyparam.items():
+			active = partname and ctrlpartname == partname
+			if active:
+				opattrs(
+					parvals={
+						'borderar': 0.5,
+						'borderag': 1,
+						'borderab': 0.6,
+						'leftborder': 'bordera',
+						'rightborder': 'bordera',
+						'bottomborder': 'bordera',
+						'topborder': 'bordera',
+					}
+				).applyto(ctrl)
+			else:
+				opattrs(
+					parvals={
+						'leftborder': 'off',
+						'rightborder': 'off',
+						'bottomborder': 'off',
+						'topborder': 'off',
+					}
+				).applyto(ctrl)
+
 	def BuildNodeMarkers(self):
 		dest = self.ownerComp.op('nodes_panel')
 		for marker in dest.ops('node__*'):
@@ -389,12 +333,12 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 				dest=dest,
 				name='node__' + nodeinfo.name,
 				nodeinfo=nodeinfo,
-				order=i,
 				previewbutton=hasapphost,
-				nodepos=[100, -200 * i])
+				attrs=opattrs(
+					order=i,
+					nodepos=[100, -200 * i]))
 		dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
 
-	@loggedmethod
 	def UpdateModuleHeight(self):
 		if not self.ownerComp.par.Autoheight:
 			return
@@ -424,6 +368,8 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 
 		hassubmods = bool(self.ModuleConnector and self.ModuleConnector.modschema.childmodpaths)
 		items = [
+			menu.ParToggleItem(self.ownerComp.par.Hidden),
+			menu.Divider(),
 			menu.Item(
 				'Parameters',
 				disabled=not self.ModuleConnector.CanOpenParameters,
@@ -435,15 +381,22 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 			menu.Item(
 				'Edit Master',
 				disabled=not self.ModuleConnector.CanEditModuleMaster,
-				callback=lambda: self.ModuleConnector.EditModuleMaster(),
-				dividerafter=True),
+				callback=lambda: self.ModuleConnector.EditModuleMaster()),
 			menu.Item(
-				'Show Advanced',
+				'Edit Host',
+				callback=lambda: self.ShowInNetworkEditor()),
+			menu.Item(
+				'Host Parameters',
+				callback=lambda: self.ownerComp.openParameters()),
+			menu.Divider(),
+			menu.ParToggleItem(
+				self.ownerComp.par.Showadvanced,
 				disabled=not self.ModuleConnector.modschema.hasadvanced,
-				checked=self.ownerComp.par.Showadvanced.eval(),
-				callback=lambda: setattr(self.ownerComp.par, 'Showadvanced', not self.ownerComp.par.Showadvanced),
-				dividerafter=True),
-			# _MenuItem('Host Parameters', callback=lambda: self.ownerComp.openParameters()),
+				callback=self.UpdateParameterVisiblity),
+			menu.ParToggleItem(
+				self.ownerComp.par.Showhidden,
+				callback=self.UpdateParameterVisiblity),
+			menu.Divider(),
 		]
 		if hassubmods:
 			items += [
@@ -500,12 +453,7 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 		if not self.ModuleConnector:
 			self._LogEvent('No module connector attached!')
 			self._OnSubModuleHostsConnected()
-			return None
-		template = self._ModuleHostTemplate
-		if not template:
-			self._LogEvent('No module host template! Cannot build sub module hosts!')
-			self._OnSubModuleHostsConnected()
-			return None
+			return Future.immediate()
 		hostconnectorpairs = [
 			{'host': None, 'connector': conn}
 			for conn in self.ModuleConnector.CreateChildModuleConnectors()
@@ -513,7 +461,7 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 		if not hostconnectorpairs:
 			self._LogEvent('No sub modules to build')
 			self._OnSubModuleHostsConnected()
-			return None
+			return Future.immediate()
 
 		def _makeCreateTask(hcpair, index):
 			def _task():
@@ -523,7 +471,13 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 		def _makeInitTask(hcpair):
 			return lambda: self._InitSubModuleHost(hcpair['host'], hcpair['connector'])
 
-		return self.AddTaskBatch(
+		completion = Future()
+
+		def _complete():
+			self._LogEvent('Resolving build sub-module hosts completion future')
+			completion.resolve()
+
+		self.AddTaskBatch(
 			[
 				_makeCreateTask(hostconnpair, i)
 				for i, hostconnpair in enumerate(hostconnectorpairs)
@@ -532,23 +486,26 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 				_makeInitTask(hostconnpair)
 				for hostconnpair in hostconnectorpairs
 			] + [
-				lambda: self._OnSubModuleHostsConnected()
-			],
-			autostart=True)
+				lambda: self._OnSubModuleHostsConnected(),
+				_complete,
+			], label='Build and create sub-hosts for module host {}'.format(self.ownerComp))
+		return completion
 
 	@loggedmethod
 	def _CreateSubModuleHost(self, connector, i):
-		template = self._ModuleHostTemplate
-		dest = self.ownerComp.op('./sub_modules_panel')
-		host = dest.copy(template, name='mod__' + connector.modschema.name)
-		host.par.Collapsed = True
-		host.par.Autoheight = True
-		host.par.Uibuilder.expr = 'parent.ModuleHost.par.Uibuilder or ""'
-		host.par.hmode = 'fill'
-		host.par.alignorder = i
-		host.nodeX = 100
-		host.nodeY = -100 * i
-		return host
+		return self.UiBuilder.CreateModuleHost(
+			dest=self.ownerComp.op('./sub_modules_panel'),
+			name='mod__' + connector.modschema.name,
+			collapsed=True,
+			autoheight=True,
+			attrs=opattrs(
+				order=i,
+				nodepos=[100, -100 * i],
+				parvals={
+					'hmode': 'fill'
+				}
+			)
+		)
 
 	@loggedmethod
 	def _InitSubModuleHost(self, host, connector):
@@ -560,7 +517,7 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 		self.UpdateModuleHeight()
 
 	def _SetSubModuleHostPars(self, name, val):
-		for m in self._SubModuleHosts:
+		for m in self.ownerComp.ops('sub_modules_panel/mod__*'):
 			setattr(m.par, name, val)
 
 	def PreviewPrimaryNode(self):
@@ -596,17 +553,22 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 		sourceop = sourceparent.op(dropName)
 		if not sourceop:
 			return
-		controlinfo = common.OPExternalStorage.Fetch(sourceop, 'controlinfo')  # type: schema.DeviceControlInfo
-		if 'vjz4mappable' not in ctrl.tags or ctrl.path not in self.parampartsbycontrolpath or not controlinfo:
+
+		parcontext = self._GetParameterComponentContext(ctrl)
+		if not parcontext:
 			self._LogEvent('Control does not support mapping: {}'.format(ctrl))
 			return
-		parampart = self.parampartsbycontrolpath[ctrl.path]
-		if 'vjz4ctrlmarker' not in sourceop.tags:
+		partschema = parcontext['partschema']  # type: schema.ParamPartSchema
+		if not partschema:
+			self._LogEvent('Control does not support mapping: {}'.format(ctrl))
+			return
+		controlinfo = common.OPExternalStorage.Fetch(sourceop, 'controlinfo')  # type: schema.DeviceControlInfo
+		if 'vjz4ctrlmarker' not in sourceop.tags or not controlinfo:
 			self._LogEvent('Unsupported drop source: {}'.format(sourceop))
 			return
 		self.AppHost.ControlMapper.AddOrReplaceMappingForParam(
 			modpath=self.ModuleConnector.modpath,
-			paramname=parampart.name,
+			paramname=partschema.name,
 			control=controlinfo)
 
 	@loggedmethod
@@ -616,6 +578,108 @@ class ModuleHost(app_components.ComponentBase, common.ActionsExt, common.TaskQue
 			return
 		mapper = apphost.ControlMapper
 		mapper.ToggleAutoMapModule(self.ModuleConnector.modpath)
+
+	def _GetParameterComponentContext(self, source):
+		if 'vjz4param' in source.tags:
+			parwrapper = source
+		elif hasattr(source.parent, 'ParamControl'):
+			parwrapper = source.parent.ParamControl
+		else:
+			self._LogEvent('Unable to find param wrapper for {}'.format(source))
+			return
+		paramschema = common.OPExternalStorage.Fetch(parwrapper, 'param')
+		if not paramschema:
+			self._LogEvent('Param schema not found for param wrapper: {}'.format(parwrapper))
+			return
+		partschema = common.OPExternalStorage.Fetch(source, 'parampart', searchparents=True)
+		if not partschema and len(paramschema.parts) == 1:
+			partschema = paramschema.parts[0]
+		sourceiscontrol = partschema and 'vjz4parctrl' in source.tags
+		return {
+			'parwrapper': parwrapper,
+			'paramschema': paramschema,
+			'partschema': partschema,
+			'sourceiscontrol': sourceiscontrol
+		}
+
+	def OnParameterClick(self, panelValue):
+		if not self.ModuleConnector:
+			return
+		parcontext = self._GetParameterComponentContext(panelValue.owner)
+		if not parcontext:
+			return
+		parwrapper = parcontext['parwrapper']
+		paramschema = parcontext['paramschema']
+		partschema = parcontext['partschema']
+		sourceiscontrol = parcontext['sourceiscontrol']
+		if panelValue.name == 'lselect' and sourceiscontrol:
+			return
+		menu.fromMouse().Show(
+			items=self._GetParameterContextMenuItems(parwrapper, paramschema, partschema),
+			autoClose=True)
+
+	def _GetParameterContextMenuItems(
+			self,
+			parwrapper: COMP,
+			paramschema: schema.ParamSchema,
+			partschema: Optional[schema.ParamPartSchema]):
+		if not self.ModuleConnector:
+			return []
+
+		partschemas = [partschema] if partschema else paramschema.parts
+
+		pars = []
+		for part in partschemas:
+			p = self.ModuleConnector.GetPar(part.name)
+			if p is not None:
+				pars.append(p)
+
+
+		def reset():
+			for par in pars:
+				par.val = par.default
+
+		def togglehidden():
+			parwrapper.par.Hidden = not parwrapper.par.Hidden
+			self.UpdateParameterVisiblity()
+
+		items = [
+			menu.Item(
+				'Reset',
+				disabled=not pars,
+				callback=reset),
+			menu.Item(
+				'Hidden',
+				checked=parwrapper.par.Hidden,
+				callback=togglehidden),
+			menu.Divider(),
+		]
+		items += self.AppHost.GetModuleParameterAdditionalMenuItems(
+			modhost=self,
+			paramschema=paramschema,
+			partschema=partschema,
+		) or []
+		items += [
+			menu.Divider(),
+			menu.Item(
+				'Show Param Schema',
+				callback=lambda: self.AppHost.ShowSchemaJson(paramschema)),
+			(partschema and len(paramschema.parts) > 1) and menu.Item(
+				'Show Param Part Schema',
+				callback=lambda: self.AppHost.ShowSchemaJson(partschema)),
+		]
+		return items
+
+	def UpdateParameterVisiblity(self):
+		showadvanced = self.ownerComp.par.Showadvanced.eval()
+		showhidden = self.ownerComp.par.Showhidden.eval()
+		for parwrapper in self.ownerComp.ops('controls_panel/par__*'):
+			visible = True
+			if parwrapper.par.Advanced and not showadvanced:
+				visible = False
+			if parwrapper.par.Hidden and not showhidden:
+				visible = False
+			parwrapper.par.display = visible
 
 
 class ModuleHostConnector:

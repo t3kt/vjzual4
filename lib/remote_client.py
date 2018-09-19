@@ -4,14 +4,15 @@ print('vjz4/remote_client.py loading')
 
 if False:
 	from _stubs import *
+	import app_host
 
 try:
 	import common
+	from common import loggedmethod, Future
 except ImportError:
 	common = mod.common
-mergedicts = common.mergedicts
-loggedmethod = common.loggedmethod
-Future = common.Future
+	loggedmethod = common.loggedmethod
+	Future = common.Future
 
 try:
 	import remote
@@ -29,11 +30,6 @@ except ImportError:
 	schema_utils = mod.schema_utils
 
 try:
-	import module_proxy
-except ImportError:
-	module_proxy = mod.module_proxy
-
-try:
 	import common
 except ImportError:
 	common = mod.common
@@ -44,7 +40,7 @@ except ImportError:
 	app_components = mod.app_components
 
 
-class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.SchemaProvider, common.TaskQueueExt):
+class RemoteClient(remote.RemoteBase, app_components.ComponentBase):
 	"""
 	Client which connects to a TD project that includes a RemoteServer, queries it for information about the project,
 	and facilitates communication between the two TD instances.
@@ -58,70 +54,16 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.Schem
 	"""
 	def __init__(self, ownerComp):
 		app_components.ComponentBase.__init__(self, ownerComp)
-		remote.RemoteBase.__init__(
-			self,
-			ownerComp,
-			actions={
-				'Connect': self.Connect,
-			},
-			handlers={
-				'appInfo': self._OnReceiveAppInfo,
-				'modInfo': self._OnReceiveModuleInfo,
-			})
-		common.TaskQueueExt.__init__(self, ownerComp)
-		self._AutoInitActionParams()
-		self.rawAppInfo = None  # type: schema.RawAppInfo
-		self.rawModuleInfos = []  # type: List[schema.RawModuleInfo]
-		self.rawModuleTypeInfos = []  # type: List[schema.RawModuleInfo]
-		self.AppSchema = None  # type: schema.AppSchema
+		remote.RemoteBase.__init__(self, ownerComp)
 		self.ServerInfo = None  # type: schema.ServerInfo
 
-	def GetModuleSchema(self, modpath) -> schema.ModuleSchema:
-		return self.AppSchema and self.AppSchema.modulesbypath.get(modpath)
-
-	@property
-	def _AppInfoTable(self): return self.ownerComp.op('set_app_info')
-
-	@property
-	def _ModuleTable(self): return self.ownerComp.op('set_modules')
-
-	@property
-	def _ModuleTypeTable(self): return self.ownerComp.op('set_module_types')
-
-	@property
-	def _ParamTable(self): return self.ownerComp.op('set_params')
-
-	@property
-	def _ParamPartTable(self): return self.ownerComp.op('set_param_parts')
-
-	@property
-	def _DataNodesTable(self): return self.ownerComp.op('set_data_nodes')
-
-	@property
-	def ProxyManager(self) -> module_proxy.ModuleProxyManager:
-		return self.ownerComp.op('proxy')
+	@loggedmethod
+	def Disconnect(self):
+		self.Connected.val = False
+		self.ServerInfo = None
 
 	@loggedmethod
-	def Detach(self):
-		self.Connected.val = False
-		self.Connection.ClearResponseTasks()
-		self.ClearTasks()
-		self.rawAppInfo = None
-		self.rawModuleInfos = []
-		self.AppSchema = None
-		self.ServerInfo = None
-		self._BuildAppInfoTable()
-		self._ClearModuleTable()
-		self._ClearModuleTypeTable()
-		self._ClearParamTables()
-		self._ClearDataNodesTable()
-		self.ProxyManager.par.Rootpath = ''
-		self.ProxyManager.ClearProxies()
-		apphost = self.AppHost
-		if apphost:
-			apphost.OnDetach()
-
-	def Connect(self, host=None, port=None):
+	def Connect(self, host=None, port=None) -> 'Future[schema.ServerInfo]':
 		if host is None:
 			host = self.ownerComp.par.Address.eval()
 		else:
@@ -130,16 +72,39 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.Schem
 			port = self.ownerComp.par.Commandsendport.eval()
 		else:
 			self.ownerComp.par.Commandsendport = port
-		self.SetStatusText('Connecting to {}:{}'.format(host, port))
-		self._LogBegin('Connect({}, {})'.format(host, port))
-		try:
-			self.Detach()
-			info = self.BuildClientInfo()
-			return self.Connection.SendRequest('connect', info.ToJsonDict()).then(
-				success=self._OnConfirmConnect,
-				failure=self._OnConnectFailure)
-		finally:
-			self._LogEnd()
+		self.Disconnect()
+		self.SetStatusText('Connecting to {}:{}'.format(host, port), log=True)
+		info = self.BuildClientInfo()
+		resultfuture = Future(label='Connect completion')
+
+		def _onfailure(cmdmesg: remote.CommandMessage):
+			self.SetStatusText('Connect attempt failed')
+			self._LogEvent('Connect failed: {}'.format(cmdmesg))
+			resultfuture.fail(cmdmesg.arg or 'Connect attempt failed')
+
+		self.Connection.SendRequest('connect', info.ToJsonDict()).then(
+			success=lambda cmdmesg: self._OnConnectSuccess(cmdmesg, resultfuture),
+			failure=_onfailure,
+		)
+		return resultfuture
+
+	def _OnConnectSuccess(self, cmdmesg: remote.CommandMessage, resultfuture: Future):
+		self.Connected.val = True
+		if not cmdmesg.arg:
+			self._LogEvent('No server info!')
+			serverinfo = schema.ServerInfo()
+		else:
+			serverinfo = schema.ServerInfo.FromJsonDict(cmdmesg.arg)  # type: schema.ServerInfo
+		if serverinfo.version is not None and serverinfo.version != self._Version:
+			error = 'Client/server version mismatch! client: {}, server: {}'.format(
+				self._Version, serverinfo.version)
+			self.SetStatusText(error, log=True)
+			resultfuture.fail(error)
+			return
+		self.ServerInfo = serverinfo
+		self._LogEvent('Connected to server: {}'.format(serverinfo))
+		self.SetStatusText('Connected to server')
+		resultfuture.resolve(serverinfo)
 
 	@property
 	def _Version(self):
@@ -161,283 +126,113 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.Schem
 			)
 
 	@loggedmethod
-	def SetClientInfo(self, info: schema.ClientInfo):
-		if not info:
-			return Future.immediate()
-		if not info.address and not info.cmdsend:
-			self.Detach()
+	def SetClientInfo(self, info: schema.ClientInfo) -> 'Future[schema.ServerInfo]':
+		if not info or (not info.address and not info.cmdsend):
+			self.Disconnect()
+			return Future.immediateerror('No/incomplete client info')
 		connpar = self.Connection.par
 		_ApplyParVal(self.ownerComp.par.Localaddress, info.address)
 		_ApplyParVal(self.ownerComp.par.Commandsendport, info.cmdsend)
 		_ApplyParVal(self.ownerComp.par.Commandreceiveport, info.cmdrecv)
-		_ApplyParVal(connpar.Oscendport, info.oscsend)
+		_ApplyParVal(connpar.Oscsendport, info.oscsend)
 		_ApplyParVal(connpar.Oscreceiveport, info.oscrecv)
 		_ApplyParVal(connpar.Osceventsendport, info.osceventsend)
 		_ApplyParVal(connpar.Osceventreceiveport, info.osceventrecv)
 		_ApplyParVal(self.ownerComp.par.Primaryvideoreceivename, info.primaryvidrecv)
 		_ApplyParVal(self.ownerComp.par.Secondaryvideoreceivename, info.secondaryvidrecv)
-		if info.address or info.cmdsend:
-			return self.Connect(host=info.address, port=info.cmdsend)
-		else:
-			return Future.immediate()
-
-	def _OnConfirmConnect(self, cmdmesg: remote.CommandMessage):
-		self.Connected.val = True
-		if not cmdmesg.arg:
-			self._LogEvent('No server info!')
-			serverinfo = schema.ServerInfo()
-		else:
-			serverinfo = schema.ServerInfo.FromJsonDict(cmdmesg.arg)  # type: schema.ServerInfo
-		if serverinfo.version is not None and serverinfo.version != self._Version:
-			raise Exception('Client/server version mismatch! client: {}, server: {}'.format(
-				self._Version, serverinfo.version))
-		self.ServerInfo = serverinfo
-		self.AppHost.OnConnected(serverinfo)
-		self.QueryApp()
-
-	def _OnConnectFailure(self, cmdmesg: remote.CommandMessage):
-		self._LogEvent('_OnConnectFailure({})'.format(cmdmesg))
+		return self.Connect(host=info.address, port=info.cmdsend)
 
 	@loggedmethod
-	def QueryApp(self):
+	def QueryAppInfo(self) -> 'Future[schema.RawAppInfo]':
 		if not self.Connected:
-			return
-		self.SetStatusText('Querying app info...')
-		self.Connection.SendRequest('queryApp').then(
-			success=self._OnReceiveAppInfo,
-			failure=self._OnQueryAppFailure)
+			return Future.immediateerror('Not connected')
+		resultfuture = Future(label='QueryAppInfo')
 
-	def _OnReceiveAppInfo(self, cmdmesg: remote.CommandMessage):
-		self.SetStatusText('App info received')
-		self._LogBegin('_OnReceiveAppInfo({!r})'.format(cmdmesg.arg))
-		try:
-			if not cmdmesg.arg:
-				raise Exception('No app info!')
-			appinfo = schema.RawAppInfo.FromJsonDict(cmdmesg.arg)
-			self.rawAppInfo = appinfo
-			self._BuildAppInfoTable()
-			self.ProxyManager.par.Rootpath = appinfo.path
+		def _onfailure(cmdmesg: remote.CommandMessage):
+			self.SetStatusText('Query app info failed')
+			self._LogEvent('Query app info failed: {}'.format(cmdmesg))
+			resultfuture.fail(cmdmesg.arg or 'Query app info failed')
 
-			def _makeQueryModTask(modpath):
-				return lambda: self.QueryModule(modpath, ismoduletype=False)
-
-			self.SetStatusText('Querying module schemas')
-			self.AddTaskBatch(
-				[
-					_makeQueryModTask(path)
-					for path in sorted(appinfo.modpaths)
-				] + [
-					lambda: self._OnAllModulesReceived()
-				], autostart=True)
-		finally:
-			self._LogEnd()
-
-	def _OnQueryAppFailure(self, cmdmesg: remote.CommandMessage):
-		self._LogEvent('_OnQueryAppFailure({})'.format(cmdmesg))
-
-	def _BuildAppInfoTable(self):
-		dat = self._AppInfoTable
-		dat.clear()
-		if self.rawAppInfo:
-			for key, val in self.rawAppInfo.ToJsonDict().items():
-				if not isinstance(val, (list, tuple, dict)):
-					dat.appendRow([key, val])
-
-	def _ClearModuleTable(self):
-		dat = self._ModuleTable
-		dat.clear()
-		dat.appendRow(schema.ModuleSchema.tablekeys)
-
-	def _ClearModuleTypeTable(self):
-		dat = self._ModuleTypeTable
-		dat.clear()
-		dat.appendRow(schema.ModuleTypeSchema.tablekeys)
-
-	def _ClearParamTables(self):
-		dat = self._ParamTable
-		dat.clear()
-		dat.appendRow(schema.ParamSchema.extratablekeys + schema.ParamSchema.tablekeys)
-		dat = self._ParamPartTable
-		dat.clear()
-		dat.appendRow(schema.ParamPartSchema.extratablekeys + schema.ParamPartSchema.tablekeys)
-
-	def _AddParamsToTable(self, modpath, params: List[schema.ParamSchema]):
-		if not params:
-			return
-		paramsdat = self._ParamTable
-		partsdat = self._ParamPartTable
-		for param in params:
-			param.AddToTable(
-				paramsdat,
-				attrs=param.GetExtraTableAttrs(modpath=modpath))
-			for i, part in enumerate(param.parts):
-				part.AddToTable(
-					partsdat,
-					attrs=part.GetExtraTableAttrs(param=param, vecIndex=i, modpath=modpath))
-
-	def _ClearDataNodesTable(self):
-		dat = self._DataNodesTable
-		dat.clear()
-		dat.appendRow(schema.DataNodeInfo.tablekeys + ['modpath'])
-
-	def _AddToDataNodesTable(self, modpath, nodes: List[schema.DataNodeInfo]):
-		if not nodes:
-			return
-		dat = self._DataNodesTable
-		for node in nodes:
-			node.AddToTable(
-				dat,
-				attrs={'modpath': modpath})
-
-	@loggedmethod
-	def QueryModule(self, modpath, ismoduletype=False):
-		if not self.Connected:
-			return
-		return self.Connection.SendRequest('queryMod', modpath).then(
-			success=lambda cmdmesg: self._OnReceiveModuleInfo(cmdmesg, modpath, ismoduletype=ismoduletype),
-			failure=self._OnQueryModuleFailure)
-
-	def _OnReceiveModuleInfo(self, cmdmesg: remote.CommandMessage, path, ismoduletype=False):
-		self._LogBegin('_OnReceiveModuleInfo({})'.format(path or ''))
-		try:
-			arg = cmdmesg.arg
-			if not arg:
-				self._LogEvent('no info for module: {}'.format(path))
-				return
-			modinfo = schema.RawModuleInfo.FromJsonDict(arg)
-			if ismoduletype:
-				self.rawModuleTypeInfos.append(modinfo)
+		def _onsuccess(cmdmesg: remote.CommandMessage):
+			self.SetStatusText('Retrieved app info')
+			self._LogEvent('Received app info: {!r}'.format(cmdmesg.arg))
+			try:
+				appinfo = schema.RawAppInfo.FromJsonDict(cmdmesg.arg)
+			except Exception as err:
+				resultfuture.fail(err)
 			else:
-				self.rawModuleInfos.append(modinfo)
-		finally:
-			self._LogEnd()
+				resultfuture.resolve(appinfo)
 
-	def _OnQueryModuleFailure(self, cmdmesg: remote.CommandMessage):
-		self._LogEvent('_OnQueryModuleFailure({})'.format(cmdmesg))
-
-	@loggedmethod
-	def _OnAllModulesReceived(self):
-		modpaths = []
-		masterpaths = set()
-		for modinfo in self.rawModuleInfos:
-			modpaths.append(modinfo.path)
-			if modinfo.masterpath:
-				masterpaths.add(modinfo.masterpath)
-		self._LogEvent('found {} module paths:\n{}'.format(len(modpaths), modpaths))
-		self._LogEvent('found {} module master paths:\n{}'.format(len(masterpaths), masterpaths))
-		if not masterpaths:
-			return self._OnAllModuleTypesReceived()
-
-		return self._QueryModuleTypes(masterpaths)
+		self.Connection.SendRequest('queryApp').then(
+			success=_onsuccess,
+			failure=_onfailure
+		)
+		return resultfuture
 
 	@loggedmethod
-	def _QueryModuleTypes(self, masterpaths):
-		def _makeQueryStateTask(modpath):
-			return lambda: self.QueryModule(modpath, ismoduletype=True)
+	def QueryModuleInfo(self, modpath) -> 'Future[schema.RawModuleInfo]':
+		if not self.Connected:
+			return Future.immediateerror('Not connected')
+		resultfuture = Future(label='QueryModuleInfo({})'.format(modpath))
 
-		self.SetStatusText('Querying module types')
-		return self.AddTaskBatch(
-			[
-				_makeQueryStateTask(modpath)
-				for modpath in masterpaths
-			] + [
-				lambda: self._OnAllModuleTypesReceived(),
-			],
-			autostart=True)
+		def _onfailure(cmdmesg: remote.CommandMessage):
+			self.SetStatusText('Query module info ({}) failed'.format(modpath))
+			self._LogEvent('Query module info ({}) failed: {}'.format(modpath, cmdmesg))
+			resultfuture.fail(cmdmesg.arg or 'Query module info ({}) failed'.format(modpath))
 
-	@loggedmethod
-	def _OnAllModuleTypesReceived(self):
-		self.SetStatusText('Loading module types')
-		self.AppSchema = schema_utils.AppSchemaBuilder(
-			hostobj=self,
-			appinfo=self.rawAppInfo,
-			modules=self.rawModuleInfos,
-			moduletypes=self.rawModuleTypeInfos).Build()
-		moduletable = self._ModuleTable
-		for modschema in self.AppSchema.modules:
-			modschema.AddToTable(moduletable)
-			self._AddParamsToTable(modschema.path, modschema.params)
-			self._AddToDataNodesTable(modschema.path, modschema.nodes)
-		moduletypetable = self._ModuleTypeTable
-		for modtype in self.AppSchema.moduletypes:
-			modtype.AddToTable(moduletypetable)
+		def _onsuccess(cmdmesg: remote.CommandMessage):
+			self._LogEvent('Retrieved module info ({})'.format(modpath))
+			try:
+				modinfo = schema.RawModuleInfo.FromJsonDict(cmdmesg.arg)
+			except Exception as error:
+				resultfuture.fail(error)
+			else:
+				resultfuture.resolve(modinfo)
 
-		def _makeQueryStateTask(modpath):
-			return lambda: self.QueryModuleState(modpath)
-
-		self.AddTaskBatch(
-			[
-				lambda: self.BuildModuleProxies(),
-				lambda: self.SetStatusText('Querying module states...'),
-			] + [
-				_makeQueryStateTask(m.path)
-				for m in self.AppSchema.modules
-			] + [
-				lambda: self.NotifyAppSchemaLoaded(),
-			],
-			autostart=True)
+		self.Connection.SendRequest('queryMod', modpath).then(
+			success=_onsuccess,
+			failure=_onfailure
+		)
+		return resultfuture
 
 	@loggedmethod
-	def BuildModuleProxies(self):
-		self.SetStatusText('Building module proxies')
-		for modschema in self.AppSchema.modules:
-			self.ProxyManager.AddProxy(modschema)
+	def QueryModuleState(self, modpath, params: List[str]) -> 'Future[schema.ModuleState]':
+		if not params:
+			return Future.immediate(schema.ModuleState(), label='QueryModuleState({}) - no params'.format(modpath))
+		resultfuture = Future(label='QueryModuleState({})'.format(modpath))
 
-	@loggedmethod
-	def NotifyAppSchemaLoaded(self):
-		self.SetStatusText('App schema loaded')
-		self.AppHost.OnAppSchemaLoaded(self.AppSchema)
+		def _onfailure(cmdmesg: remote.CommandMessage):
+			self.SetStatusText('Query module state ({}) failed'.format(modpath))
+			self._LogEvent('Query module state ({}) failed: {}'.format(modpath, cmdmesg.arg))
+			resultfuture.fail(cmdmesg.arg or 'Query module state ({}) failed'.format(modpath))
 
-	def QueryModuleState(self, modpath, params=None):
-		# params == None means all
-		if params is not None and not params:
-			# handle the case of passing in [] or ''
-			return
-		self._LogBegin('QueryModuleState({}, {})'.format(modpath, params or '*'))
-		try:
-			if params is None:
-				modschema = self.GetModuleSchema(modpath)
-				params = list(modschema.parampartnames) if modschema else None
-			if not params:
+		def _onsuccess(cmdmesg: remote.CommandMessage):
+			self._LogEvent('Received module state ({})'.format(modpath))
+			if not cmdmesg.arg:
+				resultfuture.fail('Empty/missing module state')
 				return
-			return self.Connection.SendRequest('queryModState', {'path': modpath, 'params': params}).then(
-				success=self._OnReceiveModuleState,
-				failure=self._OnQueryModuleStateFailure)
-		finally:
-			self._LogEnd()
-
-	def _OnQueryModuleStateFailure(self, cmdmesg: remote.CommandMessage):
-		self._LogEvent('_OnQueryModuleStateFailure({})'.format(cmdmesg))
-
-	def _OnReceiveModuleState(self, cmdmesg: remote.CommandMessage):
-		arg = cmdmesg.arg
-		self._LogBegin('_OnReceiveModuleState({})'.format((arg.get('path') if arg else None) or ''))
-		try:
-			if not arg:
-				self._LogEvent('arg is {!r}'.format(arg))
+			if not isinstance(cmdmesg.arg, dict):
+				resultfuture.fail('Invalid module state: {}'.format(cmdmesg.arg))
 				return
-			modpath, vals = arg.get('path'), arg.get('vals')
+			vals = cmdmesg.arg.get('vals')
 			if not vals:
-				self._LogEvent('arg has no vals: {!r}'.format(arg))
-				return
-			if not modpath:
-				self._LogEvent('arg has no module path: {!r}'.format(arg))
-				return
-			proxy = self.ProxyManager.GetProxy(modpath)
-			if not proxy:
-				self._LogEvent('proxy not found for path: {!r}'.format(modpath))
-				return
-			for name, val in vals.items():
-				par = getattr(proxy.par, name, None)
-				if par is None:
-					self._LogEvent('parameter not found: {!r}'.format(name))
-					continue
-				if par.isOP:
-					par.val = op(val) or ''
-				else:
-					par.val = val
-		finally:
-			self._LogEnd()
+				self._LogEvent('Module state ({}) has no vals'.format(modpath))
+				resultfuture.resolve(schema.ModuleState())
+			else:
+				resultfuture.resolve(schema.ModuleState(params=dict(vals)))
+
+		self.Connection.SendRequest('queryModState', {'path': modpath, 'params': list(params)}).then(
+			success=_onsuccess,
+			failure=_onfailure
+		)
+		return resultfuture
+
+	def HandleOscEvent(self, address, args):
+		if not self.Connected or ':' not in address or not args:
+			return
+		self._LogEvent('HandleOscEvent({!r}, {!r})'.format(address, args))
+		modpath, name = address.split(':', maxsplit=1)
+		self.AppHost.ProxyManager.SetProxyParamValue(modpath, name, args[0])
 
 	@common.simpleloggedmethod
 	def StoreRemoteAppState(self, appstate: schema.AppState):
@@ -455,13 +250,143 @@ class RemoteClient(remote.RemoteBase, app_components.ComponentBase, schema.Schem
 			return Future.immediateerror('Remove server does not allow local state storage')
 		return self.Connection.SendRequest('retrieveAppState')
 
-	def HandleOscEvent(self, address, args):
-		if not self.Connected or ':' not in address or not args:
-			return
-		self._LogEvent('HandleOscEvent({!r}, {!r})'.format(address, args))
-		modpath, name = address.split(':', maxsplit=1)
-		self.ProxyManager.SetParamValue(modpath, name, args[0])
+	@loggedmethod
+	def EnableParameterSending(self, enable: bool):
+		self.Connection.par.Oscactive = enable
+		self.ownerComp.op('on_proxy_par_val_change').par.active = enable
+
+
+class RemoteSchemaLoader(common.LoggableSubComponent):
+	def __init__(
+			self,
+			hostobj,
+			apphost: 'app_host.AppHost',
+			remoteclient: 'RemoteClient',
+	):
+		common.LoggableSubComponent.__init__(
+			self,
+			hostobj=hostobj,
+			logprefix='RemoteSchemaLoader'
+		)
+		self.apphost = apphost
+		self.remoteclient = remoteclient
+		self.appinfo = None  # type: schema.RawAppInfo
+		self.moduleinfos = []  # type: List[schema.RawModuleInfo]
+		self.moduletypeinfos = []  # type: List[schema.RawModuleInfo]
+		self.completionfuture = None  # type: Future[schema.AppSchema]
+
+	def SetStatusText(self, text, **kwargs):
+		self.apphost.SetStatusText(text, **kwargs)
+
+	def _Reset(self):
+		self.appinfo = None
+		self.moduleinfos.clear()
+		self.moduletypeinfos.clear()
+		self.completionfuture = None
+
+	def _NotifyFailure(self, error):
+		self.SetStatusText('Loading remote schema failed')
+		self._LogEvent('Loading remote schema failed: {}'.format(error))
+		if self.completionfuture and not self.completionfuture.isresolved:
+			self.completionfuture.fail(error or 'Loading remote schema failed')
+
+	@loggedmethod
+	def LoadRemoteAppSchema(self) -> 'Future[schema.AppSchema]':
+		self._Reset()
+		self.completionfuture = Future(label='RemoteSchemaLoader completion')
+
+		self.apphost.AddTaskBatch([
+			lambda:self.remoteclient.QueryAppInfo().then(
+				success=self._OnAppInfoReceived,
+				failure=self._NotifyFailure),
+		], label='load remote app schema')
+
+		return self.completionfuture
+
+	@loggedmethod
+	def _OnAppInfoReceived(self, appinfo: 'schema.RawAppInfo'):
+		self.appinfo = appinfo
+		if not appinfo.modpaths:
+			self._LogEvent('No modules to query')
+			self._CompleteAndBuildSchema()
+		else:
+			self._QueryModules()
+
+	def _QueryModules(self):
+		def _makeQueryModTask(modpath):
+			return lambda: self._QueryModuleInfo(modpath, ismoduletype=False)
+
+		self.SetStatusText('Querying module schemas')
+		self._LogEvent('Querying module schemas ({} modules)'.format(len(self.appinfo.modpaths)))
+		self.apphost.AddTaskBatch(
+			[
+				_makeQueryModTask(modpath)
+				for modpath in self.appinfo.modpaths
+			],
+			label='query mod schemas').then(
+			success=lambda _: self._OnAllModulesReceived()
+		)
+
+	@loggedmethod
+	def _QueryModuleInfo(self, modpath, ismoduletype=False):
+		return self.remoteclient.QueryModuleInfo(modpath).then(
+			success=lambda modinfo: self._OnModuleInfoReceived(modinfo, ismoduletype=ismoduletype),
+			failure=lambda error: self._NotifyFailure('Query module info ({}) failed: {}'.format(modpath, error))
+		)
+
+	def _OnModuleInfoReceived(self, modinfo: 'schema.RawModuleInfo', ismoduletype=False):
+		self._LogEvent('Received module info ({})'.format(modinfo.path))
+		if ismoduletype:
+			self.moduletypeinfos.append(modinfo)
+		else:
+			self.moduleinfos.append(modinfo)
+
+	@loggedmethod
+	def _OnAllModulesReceived(self):
+		modpaths = [m.path for m in self.moduleinfos]
+		masterpaths = set()
+		for modinfo in self.moduleinfos:
+			if modinfo.masterpath and modinfo.masterpath not in modpaths:
+				masterpaths.add(modinfo.masterpath)
+		self._LogEvent('found {} module paths:\n{}'.format(len(modpaths), modpaths))
+		self._LogEvent('found {} module master paths:\n{}'.format(len(masterpaths), masterpaths))
+		if not masterpaths:
+			self._LogEvent('No module types to query')
+			self._CompleteAndBuildSchema()
+		else:
+			self._QueryModuleTypes(masterpaths)
+
+	def _QueryModuleTypes(self, masterpaths):
+		def _makeQueryModTask(modpath):
+			return lambda: self._QueryModuleInfo(modpath, ismoduletype=True)
+
+		self.SetStatusText('Querying module types')
+		self._LogEvent('Querying module types ({} types)'.format(len(masterpaths)))
+		self.apphost.AddTaskBatch(
+			[
+				_makeQueryModTask(modpath)
+				for modpath in masterpaths
+			],
+			label='Query mod types').then(
+			success=lambda _: self._OnAllModuleTypesReceived()
+		)
+
+	@loggedmethod
+	def _OnAllModuleTypesReceived(self):
+		self._CompleteAndBuildSchema()
+
+	def _CompleteAndBuildSchema(self):
+		self.SetStatusText('Building app schema', log=True)
+
+		appschema = schema_utils.AppSchemaBuilder(
+			hostobj=self,
+			appinfo=self.appinfo,
+			modules=self.moduleinfos,
+			moduletypes=self.moduletypeinfos,
+		).Build()
+
+		self.completionfuture.resolve(appschema)
+
 
 def _ApplyParVal(par, val):
-	if val is not None:
-		par.val = val
+	common.UpdateParValue(par, val, resetmissing=False)

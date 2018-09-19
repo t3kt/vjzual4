@@ -5,15 +5,14 @@ print('vjz4/control_devices.py loading')
 
 if False:
 	from _stubs import *
-	from ui_builder import UiBuilder
 
 try:
 	import common
+	from common import loggedmethod, opattrs
 except ImportError:
 	common = mod.common
-mergedicts, cleandict = common.mergedicts, common.cleandict
-loggedmethod = common.loggedmethod
-opattrs = common.opattrs
+	loggedmethod = common.loggedmethod
+	opattrs = common.opattrs
 
 try:
 	import schema
@@ -44,12 +43,14 @@ class DeviceManager(app_components.ComponentBase, common.ActionsExt):
 			'Attachdevices': self.AttachDevices,
 			'Detachdevices': self.DetachDevices,
 		})
-		self._AutoInitActionParams()
 		self.devices = []  # type: List[MidiDevice]
 		self.devicesbyname = {}  # type: Dict[str, MidiDevice]
 		self.controls = []  # type: List[DeviceControlInfo]
 		self.controlsbyname = {}  # type: Dict[str, DeviceControlInfo]
 		self.AttachDevices()
+
+	def GetControlInfo(self, ctrlname):
+		return self.controlsbyname.get(ctrlname)
 
 	@loggedmethod
 	def AttachDevices(self):
@@ -166,13 +167,15 @@ class DeviceManager(app_components.ComponentBase, common.ActionsExt):
 	def GetDevice(self, devname) -> 'Optional[MidiDevice]':
 		return self.devicesbyname.get(devname)
 
+	def GetDevices(self) -> 'Dict[str, MidiDevice]':
+		return self.devicesbyname
+
 
 class MidiDevice(app_components.ComponentBase, common.ActionsExt):
 	def __init__(self, ownerComp):
 		app_components.ComponentBase.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions={
 		})
-		self._AutoInitActionParams()
 		self.Controls = []  # type: List[DeviceControlInfo]
 		self.markers = {}  # type: Dict[str, OP]
 		self.highlightedmarker = None  # type: OP
@@ -247,8 +250,9 @@ class MidiDevice(app_components.ComponentBase, common.ActionsExt):
 				dest=dest,
 				name='ctrl__' + control.name,
 				control=control,
-				order=i,
-				nodepos=[100, -150 * i])
+				attrs=opattrs(
+					order=i,
+					nodepos=[100, -150 * i]))
 			self.markers[control.fullname] = marker
 		self.SetHighlight(None)
 

@@ -2,8 +2,8 @@ print('vjz4/app_components.py loading')
 
 if False:
 	from _stubs import *
-	from app_host import AppHost
-	from ui_builder import UiBuilder
+	import app_host
+	import ui_builder
 
 try:
 	import common
@@ -14,18 +14,25 @@ except ImportError:
 class ComponentBase(common.ExtensionBase):
 
 	@property
-	def AppHost(self) -> 'AppHost':
+	def AppHost(self) -> 'app_host.AppHost':
 		return getattr(self.ownerComp.parent, 'AppHost', None)
 
-	def SetStatusText(self, text):
+	def SetStatusText(self, text, temporary=None, log=False):
 		apphost = self.AppHost
 		if not apphost:
 			return
-		apphost.SetStatusText(text)
+		apphost.SetStatusText(text, temporary=temporary)
+		if log:
+			self._LogEvent(text)
 
 	@property
-	def UiBuilder(self) -> 'UiBuilder':
+	def UiBuilder(self) -> 'ui_builder.UiBuilder':
 		apphost = self.AppHost
 		uibuilder = apphost.UiBuilder if apphost else None
 		return uibuilder or getattr(op, 'UiBuilder', None)
+
+	def ShowInNetworkEditor(self):
+		editor = common.GetActiveEditor()
+		if editor:
+			editor.owner = self.ownerComp
 

@@ -1,16 +1,13 @@
 import datetime
 import json
-from typing import Any, Callable, Dict, List, NamedTuple, Iterable, Set, Union, Optional
+from typing import Any, Callable, Dict, Generic, List, NamedTuple, Iterable, Set, TypeVar, Union, Optional
 
 print('vjz4/common.py loading')
 
 if False:
 	from _stubs import *
 
-try:
-	import td
-except ImportError:
-	pass
+T = TypeVar('T')
 
 def Log(msg, file=None):
 	print(
@@ -76,6 +73,11 @@ class ExtensionBase(LoggableBase):
 		self.path = ownerComp.path
 		self.op = ownerComp.op
 		self.ops = ownerComp.ops
+		# trick pycharm
+		if False:
+			self.storage = {}
+			self.docked = []
+			self.destroy = ownerComp.destroy
 
 	def _GetLogId(self):
 		if not self.ownerComp.valid or not hasattr(self.ownerComp.par, 'opshortcut'):
@@ -94,7 +96,7 @@ class ExtensionBase(LoggableBase):
 class LoggableSubComponent(LoggableBase):
 	def __init__(self, hostobj: LoggableBase, logprefix: str=None):
 		self.hostobj = hostobj
-		self.logprefix = logprefix if logprefix is not None else self.__class__.__name__
+		self.logprefix = logprefix if logprefix is not None else type(self).__name__
 
 	def _LogEvent(self, event, indentafter=False, unindentbefore=False):
 		if self.hostobj is None:
@@ -145,7 +147,7 @@ class ActionsExt:
 	An extension class for a component that has some number of actions which can be invoked using
 	auto-generated pulse parameters on the extension's COMP.
 	"""
-	def __init__(self, ownerComp, actions=None, autoinitparexec=True):
+	def __init__(self, ownerComp, actions=None, autoinitparexec=True, autoinitactionparams=True):
 		self.ownerComp = ownerComp
 		self.Actions = actions or {}
 		parexec = ownerComp.op('perform_action_on_pulse')
@@ -159,6 +161,8 @@ class ActionsExt:
 			parexec.par.valuechange = False
 			parexec.par.onpulse = True
 			parexec.text = 'def onPulse(par): par.owner.PerformAction(par.name)'
+		if autoinitactionparams:
+			self._AutoInitActionParams()
 
 	def PerformAction(self, name):
 		if name not in self.Actions:
@@ -174,7 +178,7 @@ class ActionsExt:
 					page = self.ownerComp.appendCustomPage('Actions')
 				page.appendPulse(name)
 
-class TaskQueueExt:
+class OLD_TaskQueueExt:
 	"""
 	An extension class for components that can queue up tasks to be performed, spread over multiple
 	frames, so that TD doesn't block the main thread for too long.
@@ -213,7 +217,7 @@ class TaskQueueExt:
 	def _QueueRunNextTask(self):
 		if not self._TaskBatches:
 			return
-		td.run('op({!r}).RunNextTask()'.format(self.ownerComp.path), delayFrames=1)
+		mod.td.run('op({!r}).RunNextTask()'.format(self.ownerComp.path), delayFrames=1)
 
 	def RunNextTask(self):
 		if not self._TaskBatches:
@@ -225,19 +229,30 @@ class TaskQueueExt:
 		if task is None:
 			return
 		result = task()
+		# Log('[TASK BATCH] ran task: {}, result: {}'.format(task, result))
 
-		def _onfinish(*_):
+		def _onsuccess(r):
+			# Log('[TASK BATCH]   future resolved successfully\n    task: {}\n       result: {}'.format(task, r))
+			batch.results.append(r)
 			if not batch.tasks:
 				if not batch.future.isresolved:
-					batch.future.resolve()
+					batch.future.resolve(batch.results)
+			self._QueueRunNextTask()
+
+		def _onfailure(err):
+			# Log('[TASK BATCH]   future FAILED\n    task: {}\n       error: {}'.format(task, err))
+			batch.tasks.clear()
+			batch.future.fail(err)
 			self._QueueRunNextTask()
 
 		if isinstance(result, Future):
+			# Log('[TASK BATCH]  - result IS a Future!')
 			result.then(
-				success=_onfinish,
-				failure=_onfinish)
+				success=_onsuccess,
+				failure=_onfailure)
 		else:
-			_onfinish()
+			# Log('[TASK BATCH]  - result is not a Future (type: {})'.format(type(result)))
+			_onsuccess(result)
 
 	def _PopNextTask(self):
 		while self._TaskBatches:
@@ -251,36 +266,134 @@ class TaskQueueExt:
 				return task, batch
 		return None, None
 
-	def AddTaskBatch(self, tasks: List[Callable], autostart=True):
+	def AddTaskBatch(self, tasks: List[Callable]) -> 'Future':
 		batch = _TaskBatch(tasks)
 		self._TaskBatches.append(batch)
 		self._UpdateProgress()
-		if autostart:
-			self._QueueRunNextTask()
+		self._QueueRunNextTask()
 		return batch.future
 
 	def ClearTasks(self):
 		self._TaskBatches.clear()
 		self._UpdateProgress()
 
+class NEW_TaskQueueExt:
+	def __init__(self, ownerComp):
+		self.ownerComp = ownerComp
+		self.tasks = []  # type: List[Callable]
+		self.totaltasks = 0
+		self.batchfuturetasks = 0
+
+	@property
+	def ProgressBar(self):
+		return None
+
+	def _UpdateProgress(self):
+		# Log('TaskQueue [{}] (remaining: {}, total: {}, batch futures: {})'.format(
+		# 	self.ownerComp.path,
+		# 	len(self.tasks), self.totaltasks, self.batchfuturetasks))
+		bar = self.ProgressBar
+		if bar is None:
+			return
+		ratio = self._ProgressRatio
+		bar.par.display = ratio < 1
+		bar.par.Ratio = ratio
+
+	@property
+	def _ProgressRatio(self):
+		if not self.tasks:
+			return 1
+		remaining = max(0, len(self.tasks) - self.batchfuturetasks)
+		total = self.totaltasks
+		if not total or not remaining:
+			return 1
+		return 1 - (remaining / total)
+
+	def RunNextTask(self):
+		if not self.tasks:
+			self.ClearTasks()
+			return
+		task = self.tasks.pop(0)
+		result = task()
+
+		def _onsuccess(*_):
+			# Log('TaskQueue [{}] task succeeded {}'.format(self.ownerComp.path, result))
+			self._UpdateProgress()
+			self._QueueNextTask()
+
+		def _onfailure(err):
+			# Log('TaskQueue [{}] ERROR from queued task ({})\n  {}'.format(self.ownerComp.path, task, err))
+			# self.ClearTasks()
+			self._UpdateProgress()
+			self._QueueNextTask()
+
+		if isinstance(result, Future):
+			result.then(
+				success=_onsuccess,
+				failure=_onfailure
+			)
+		else:
+			_onsuccess()
+
+	def _QueueNextTask(self):
+		if not self.tasks:
+			self.ClearTasks()
+			return
+		mod.td.run('op({!r}).RunNextTask()'.format(self.ownerComp.path), delayFrames=1)
+
+	def AddTaskBatch(self, tasks: List[Callable], label=None) -> 'Future':
+		label = 'TaskBatch({})'.format(label or '')
+		tasks = [task for task in tasks if task]
+		if not tasks:
+			return Future.immediate(label='{} (empty batch)'.format(label))
+		result = Future(label=label)
+		self.tasks.extend(tasks)
+
+		# TODO: get rid of this and fix the queue system!
+		def _noop():
+			# Log('NO-OP for batch: {}'.format(label))
+			pass
+		self.tasks.append(_noop)
+		self.batchfuturetasks += 1
+
+		def _finishbatch():
+			Log('Completing batch: {}'.format(label))
+			result.resolve()
+
+		self.tasks.append(_finishbatch)
+		self.totaltasks += len(tasks)
+		self.batchfuturetasks += 1
+		self._QueueNextTask()
+		return result
+
+	def ClearTasks(self):
+		self.tasks.clear()
+		self.totaltasks = 0
+		self.batchfuturetasks = 0
+		self._UpdateProgress()
+
+TaskQueueExt = NEW_TaskQueueExt
+
 class _TaskBatch:
 	def __init__(self, tasks: List[Callable]):
 		self.total = len(tasks)
 		self.tasks = tasks
+		self.results = []
 		self.future = Future()
 
-class Future:
-	def __init__(self, onlisten=None, oninvoke=None):
-		self._successcallbacks = []  # type: List[Callable]
+class Future(Generic[T]):
+	def __init__(self, onlisten=None, oninvoke=None, label=None):
+		self._successcallbacks = []  # type: List[Callable[[T], None]]
 		self._failurecallbacks = []  # type: List[Callable]
 		self._resolved = False
 		self._canceled = False
-		self._result = None
+		self._result = None  # type: Optional[T]
 		self._error = None
 		self._onlisten = onlisten  # type: Callable
 		self._oninvoke = oninvoke  # type: Callable
+		self.label = label
 
-	def then(self, success=None, failure=None):
+	def then(self, success: Callable[[T], None]=None, failure: Callable=None):
 		if not self._successcallbacks and not self._failurecallbacks:
 			if self._onlisten:
 				self._onlisten()
@@ -304,7 +417,7 @@ class Future:
 		if self._oninvoke:
 			self._oninvoke()
 
-	def _resolve(self, result, error):
+	def _resolve(self, result: T, error):
 		if self._canceled:
 			return
 		if self._resolved:
@@ -312,15 +425,19 @@ class Future:
 		self._resolved = True
 		self._result = result
 		self._error = error
+		# if self._error is not None:
+		# 	Log('FUTURE FAILED {}'.format(self))
+		# else:
+		# 	Log('FUTURE SUCCEEDED {}'.format(self))
 		if self._successcallbacks or self._failurecallbacks:
 			self._invoke()
 
-	def resolve(self, result=None):
+	def resolve(self, result: Optional[T]=None):
 		self._resolve(result, None)
 		return self
 
 	def fail(self, error):
-		self._resolve(None, error)
+		self._resolve(None, error or Exception())
 		return self
 
 	def cancel(self):
@@ -333,28 +450,34 @@ class Future:
 		return self._resolved
 
 	@property
-	def result(self):
+	def result(self) -> T:
 		return self._result
 
 	def __str__(self):
 		if self._canceled:
-			return '{}[canceled]'.format(self.__class__.__name__)
-		if not self._resolved:
-			return '{}[unresolved]'.format(self.__class__.__name__)
-		if self._error is not None:
-			return '{}[error: {!r}]'.format(self.__class__.__name__, self._error)
+			state = 'canceled'
+		elif self._resolved:
+			if self._error is not None:
+				state = 'failed: {}'.format(self._error)
+			elif self._result is None:
+				state = 'succeeded'
+			elif hasattr(self._result, 'ToBriefStr'):
+				state = 'succeeded: {}'.format(self._result.ToBriefStr())
+			else:
+				state = 'succeeded: {}'.format(self._result)
 		else:
-			return '{}[success: {!r}]'.format(self.__class__.__name__, self._result)
+			state = 'pending'
+		return '{}({}, {})'.format(self.__class__.__name__, self.label or '<>', state)
 
 	@classmethod
-	def immediate(cls, value=None, onlisten=None, oninvoke=None):
-		future = cls(onlisten=onlisten, oninvoke=oninvoke)
+	def immediate(cls, value: T=None, onlisten=None, oninvoke=None, label=None) -> 'Future[T]':
+		future = cls(onlisten=onlisten, oninvoke=oninvoke, label=label)
 		future.resolve(value)
 		return future
 
 	@classmethod
-	def immediateerror(cls, error, onlisten=None, oninvoke=None):
-		future = cls(onlisten=onlisten, oninvoke=oninvoke)
+	def immediateerror(cls, error, onlisten=None, oninvoke=None, label=None):
+		future = cls(onlisten=onlisten, oninvoke=oninvoke, label=label)
 		future.fail(error)
 		return future
 
@@ -365,7 +488,7 @@ class Future:
 		return cls.immediate(obj)
 
 	@classmethod
-	def all(cls, *futures: 'Future', onlisten=None, oninvoke=None):
+	def all(cls, *futures: 'Future', onlisten=None, oninvoke=None) -> 'Future[List]':
 		if not futures:
 			return cls.immediate([], onlisten=onlisten, oninvoke=oninvoke)
 		merged = cls(onlisten=onlisten, oninvoke=oninvoke)
@@ -450,6 +573,19 @@ def trygetdictval(d: Dict, *keys, default=None, parse=None):
 			return parse(val) if parse else val
 	return default
 
+def _CanApplyValueToPar(par, value):
+	if par is None or value is None:
+		return False
+	if par.isMenu and not par.isString and value not in par.menuNames:
+		return False
+	return True
+
+def UpdateParValue(par, value, resetmissing=True, default=None):
+	if _CanApplyValueToPar(par, value):
+			par.val = value
+	elif resetmissing:
+		par.val = default if default is not None else par.default
+
 def GetCustomPage(o, name):
 	if not o:
 		return None
@@ -503,6 +639,10 @@ class opattrs:
 			parexprs=None,
 			storage=None,
 			dropscript=None,
+			cloneimmune=None,
+			dockto=None,
+			showdocked=None,
+			externaldata=None,
 	):
 		self.order = order
 		self.nodepos = nodepos
@@ -512,6 +652,10 @@ class opattrs:
 		self.parexprs = parexprs  # type: Dict[str, str]
 		self.storage = storage  # type: Dict[str, Any]
 		self.dropscript = dropscript  # type: Union[OP, str]
+		self.cloneimmune = cloneimmune  # type: Union[bool, str]
+		self.dockto = dockto  # type: OP
+		self.showdocked = showdocked  # type: bool
+		self.externaldata = externaldata  # type: Dict[str, Any]
 
 	def override(self, other: 'opattrs'):
 		if not other:
@@ -519,6 +663,11 @@ class opattrs:
 		if other.order is not None:
 			self.order = other.order
 		self.nodepos = other.nodepos or self.nodepos
+		if other.cloneimmune is not None:
+			self.cloneimmune = other.cloneimmune
+		self.dockto = other.dockto or self.dockto
+		if other.showdocked is not None:
+			self.showdocked = other.showdocked
 		if other.tags:
 			if self.tags:
 				self.tags.update(other.tags)
@@ -529,38 +678,53 @@ class opattrs:
 				self.storage.update(other.storage)
 			else:
 				self.storage = dict(other.storage)
+		if other.externaldata:
+			if self.externaldata:
+				self.externaldata.update(other.externaldata)
+			else:
+				self.externaldata = dict(other.externaldata)
 		self.panelparent = other.panelparent or self.panelparent
 		self.dropscript = other.dropscript or self.dropscript
 		self.parvals = mergedicts(self.parvals, other.parvals)
 		self.parexprs = mergedicts(self.parexprs, other.parexprs)
 		return self
 
-	def applyto(self, comp):
+	def applyto(self, o: OP):
 		if self.order is not None:
-			comp.par.alignorder = self.order
+			o.par.alignorder = self.order
 		if self.parvals:
 			for key, val in self.parvals.items():
-				setattr(comp.par, key, val)
+				setattr(o.par, key, val)
 		if self.parexprs:
 			for key, expr in self.parexprs.items():
-				getattr(comp.par, key).expr = expr
+				getattr(o.par, key).expr = expr
 		if self.nodepos:
-			comp.nodeCenterX = self.nodepos[0]
-			comp.nodeCenterY = self.nodepos[1]
+			o.nodeCenterX = self.nodepos[0]
+			o.nodeCenterY = self.nodepos[1]
 		if self.tags:
-			comp.tags.update(self.tags)
+			o.tags.update(self.tags)
 		if self.panelparent:
-			self.panelparent.outputCOMPConnectors[0].connect(comp)
+			self.panelparent.outputCOMPConnectors[0].connect(o)
 		if self.dropscript:
-			comp.par.drop = 'legacy'
-			comp.par.dropscript = self.dropscript
+			o.par.drop = 'legacy'
+			o.par.dropscript = self.dropscript
 		if self.storage:
 			for key, val in self.storage.items():
 				if val is None:
-					comp.unstore(key)
+					o.unstore(key)
 				else:
-					comp.store(key, val)
-		return comp
+					o.store(key, val)
+		if self.cloneimmune == 'comp':
+			o.componentCloneImmune = True
+		elif self.cloneimmune is not None:
+			o.cloneImmune = self.cloneimmune
+		if self.dockto:
+			o.dock = self.dockto
+		if self.showdocked is not None:
+			o.showDocked = self.showdocked
+		if self.externaldata:
+			OPExternalStorage.Store(o, self.externaldata)
+		return o
 
 	@classmethod
 	def merged(cls, *attrs, **kwargs):
@@ -764,22 +928,54 @@ class _OPExternalDataStorage:
 			return entry
 		return None
 
-	def Store(self, o: OP, key: str, value):
-		if not o or not o.valid:
+	def Store(self, o: OP, values: Dict[str, Any]):
+		if not o or not o.valid or not values:
 			return
-		entry = self._GetEntry(o, autocreate=value is not None)
-		if entry is None:
-			return
-		entry.data[key] = value
 
-	def Fetch(self, o: OP, key: str):
+		entry = self._GetEntry(o, autocreate=True)
+		entry.data.update(values)
+
+	def Fetch(self, o: OP, key: str, searchparents=False):
 		if not o or not o.valid:
 			return None
 		entry = self._GetEntry(o, autocreate=False)
+		if entry and key in entry.data:
+			return entry.data[key]
+		if searchparents and o.parent():
+			return self.Fetch(o.parent(), key=key, searchparents=True)
+
+	def Unstore(self, o: OP, key: str=None):
+		if not o or not o.valid:
+			return
+		entry = self._GetEntry(o, autocreate=False)
 		if entry is None:
-			return None
-		return entry.data.get(key)
+			return
+		if not key:
+			del self.entries[o.path]
+		else:
+			if key not in entry.data:
+				return
+			del entry.data[key]
+			if not entry.data:
+				del self.entries[o.path]
+
+	def RemoveByPathPrefix(self, pathprefix):
+		pathstoremove = [
+			path
+			for path in self.entries.keys()
+			if path.startswith(pathprefix)
+		]
+		for path in pathstoremove:
+			del self.entries[path]
 
 _OPStorageEntry = NamedTuple('_OPStorageEntry', [('opid', int), ('data', Dict[str, Any])])
 
 OPExternalStorage = _OPExternalDataStorage()
+
+def GetActiveEditor():
+	pane = ui.panes.current
+	if pane.type == PaneType.NETWORKEDITOR:
+		return pane
+	for pane in ui.panes:
+		if pane.type == PaneType.NETWORKEDITOR:
+			return pane

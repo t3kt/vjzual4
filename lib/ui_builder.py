@@ -1,19 +1,20 @@
-from typing import Callable, Dict, Optional
+from typing import Dict, Optional
 
 print('vjz4/ui_builder.py loading')
 
 if False:
 	from _stubs import *
-	from _stubs.PopDialogExt import PopDialogExt
 	from module_host import ModuleHostConnector
 
 try:
 	import common
+	from common import mergedicts, UpdateOP, CreateFromTemplate, opattrs
 except ImportError:
 	common = mod.common
-cleandict, mergedicts = common.cleandict, common.mergedicts
-UpdateOP, CreateFromTemplate = common.UpdateOP, common.CreateFromTemplate
-opattrs = common.opattrs
+	mergedicts = common.mergedicts
+	UpdateOP = common.UpdateOP
+	CreateFromTemplate = common.CreateFromTemplate
+	opattrs = common.opattrs
 
 try:
 	import schema
@@ -24,6 +25,57 @@ class UiBuilder:
 	def __init__(self, ownerComp):
 		self.ownerComp = ownerComp
 
+	def _CreateKnobOrSlider(
+			self,
+			dest, name,
+			template,
+			label=None,
+			helptext=None,
+			isint=False,
+			value=None, valueexpr=None,
+			defval=None,
+			valrange=None, clamp=None,
+			attrs: opattrs=None):
+		return CreateFromTemplate(
+			template=template,
+			dest=dest,
+			name=name,
+			attrs=opattrs.merged(
+				opattrs(
+					parvals=mergedicts(
+						label is not None and {'Label': label},
+						helptext is not None and {'Help': helptext},
+						defval is not None and {'Default1': defval},
+						valrange and {'Rangelow1': valrange[0], 'Rangehigh1': valrange[1]},
+						value is not None and {'Value1': value},
+						clamp and {'Clamplow1': clamp[0], 'Clamphigh1': clamp[1]},
+						{'Integer': isint},
+						valueexpr and {'Push1': True}),
+					parexprs=mergedicts(
+						valueexpr and {'Value1': valueexpr})),
+				attrs))
+
+	def CreateKnob(
+			self, dest, name,
+			label=None,
+			helptext=None,
+			isint=False,
+			value=None, valueexpr=None,
+			defval=None,
+			valrange=None, clamp=None,
+			attrs: opattrs=None):
+		return self._CreateKnobOrSlider(
+			dest, name, template=self.ownerComp.op('knob'),
+			label=label,
+			helptext=helptext,
+			isint=isint,
+			value=value,
+			valueexpr=valueexpr,
+			defval=defval,
+			valrange=valrange,
+			clamp=clamp,
+			attrs=attrs)
+
 	def CreateSlider(
 			self, dest, name,
 			label=None,
@@ -32,42 +84,27 @@ class UiBuilder:
 			value=None, valueexpr=None,
 			defval=None,
 			valrange=None, clamp=None,
-			attrs: opattrs=None,
-			**kwargs):
-		attrs = attrs or opattrs(**kwargs)
-		return CreateFromTemplate(
-			template=self.ownerComp.op('sliderL'),
-			dest=dest, name=name,
-			attrs=opattrs.merged(
-				opattrs(
-					parvals=mergedicts(
-						label and {'Label': label},
-						helptext and {'Help': helptext},
-						defval is not None and {'Default1': defval},
-						valrange and {'Rangelow1': valrange[0], 'Rangehigh1': valrange[1]},
-						value is not None and {'Value1': value},
-						clamp and {'Clamplow1': clamp[0], 'Clamphigh1': clamp[1]},
-						{'Integer': isint},
-						valueexpr and {'Push1': True})),
-				attrs,
-				parexprs=mergedicts(
-					valueexpr and {'Value1': valueexpr}),
-				**kwargs))
+			attrs: opattrs=None):
+		return self._CreateKnobOrSlider(
+			dest, name, template=self.ownerComp.op('sliderL'),
+			label=label,
+			helptext=helptext,
+			isint=isint,
+			value=value,
+			valueexpr=valueexpr,
+			defval=defval,
+			valrange=valrange,
+			clamp=clamp,
+			attrs=attrs)
 
 	def CreateParSlider(
 			self, dest, name,
 			parinfo,  # type: schema.ParamSchema
 			dropscript=None,  # type: Optional[DAT]
 			modhostconnector=None,
-			attrs: opattrs=None, **kwargs):
+			attrs: opattrs=None):
 		return self.CreateSlider(
 			dest=dest, name=name,
-			attrs=opattrs.merged(
-				attrs,
-				opattrs(
-					parvals=_DropScriptParVals(dropscript)
-				),
-				**kwargs),
 			label=parinfo.label,
 			isint=parinfo.style == 'Int',
 			valueexpr=modhostconnector.GetParExpr(parinfo.parts[0].name) if modhostconnector else None,
@@ -80,19 +117,26 @@ class UiBuilder:
 				parinfo.parts[0].minnorm if parinfo.parts[0].minlimit is None else parinfo.parts[0].minlimit,
 				parinfo.parts[0].maxnorm if parinfo.parts[0].maxlimit is None else parinfo.parts[0].maxlimit,
 			],
-			tags=['vjz4mappable'])
+			attrs=opattrs.merged(
+				attrs,
+				opattrs(
+					parvals=_DropScriptParVals(dropscript),
+					tags=['vjz4parctrl', 'vjz4mappable'],
+					externaldata={'parampart': parinfo.parts[0]},
+				)),
+		)
 
 	def CreateParMultiSlider(
 			self, dest, name,
 			parinfo,  # type: schema.ParamSchema
 			dropscript=None,  # type: Optional[DAT]
 			modhostconnector=None,
-			attrs: opattrs=None, **kwargs):
+			attrs: opattrs=None):
 		n = len(parinfo.parts)
 		ctrl = CreateFromTemplate(
 			template=self.ownerComp.op('multi_slider'),
 			dest=dest, name=name,
-			attrs=opattrs.merged(attrs, **kwargs))
+			attrs=attrs)
 		isint = parinfo.style == 'Int'
 		if parinfo.style in ('Int', 'Float'):
 			suffixes = list(range(1, n + 1))
@@ -141,7 +185,8 @@ class UiBuilder:
 					_DropScriptParVals(dropscript)),
 				parexprs=mergedicts(
 					valexpr and {'Value1': valexpr}),
-				tags=['vjz4mappable'],
+				tags=['vjz4parctrl', 'vjz4mappable'],
+				externaldata={'parampart': part},
 			)
 			sliders.append(slider)
 		return sliders
@@ -154,18 +199,18 @@ class UiBuilder:
 			value=None, valueexpr=None,
 			runofftoon=None,
 			defval=None,
-			attrs: opattrs=None, **kwargs):
+			attrs: opattrs=None):
 		return CreateFromTemplate(
 			template=self.ownerComp.op('binaryC'),
 			dest=dest, name=name,
 			attrs=opattrs.merged(
 				opattrs(
 					parvals=mergedicts(
-						label and {
+						label is not None and {
 							'Texton': label,
 							'Textoff': label,
 						},
-						helptext and {
+						helptext is not None and {
 							'Textonroll': helptext + ' (on)',
 							'Textoffroll': helptext + ' (off)',
 						},
@@ -175,38 +220,37 @@ class UiBuilder:
 						behavior and {'Behavior': behavior},
 						valueexpr and {'Push1': True}),
 					parexprs=mergedicts(
-						valueexpr and {'Value1': valueexpr}),
-					tags=['vjz4mappable']),
-				attrs,
-				**kwargs))
+						valueexpr and {'Value1': valueexpr})),
+				attrs))
 
 	def CreateParToggle(
 			self, dest, name,
 			parinfo,  # type: schema.ParamSchema
 			dropscript=None,  # type: Optional[DAT]
 			modhostconnector=None,
-			attrs: opattrs=None, **kwargs):
+			attrs: opattrs=None):
 		return self.CreateButton(
 			dest=dest, name=name,
 			attrs=opattrs.merged(
 				attrs,
 				opattrs(
-					parvals=_DropScriptParVals(dropscript)),
-				**kwargs),
+					parvals=_DropScriptParVals(dropscript),
+					tags=['vjz4parctrl', 'vjz4mappable'],
+					externaldata={'parampart': parinfo.parts[0]})),
 			label=parinfo.label,
 			behavior='toggledown',
 			valueexpr=modhostconnector.GetParExpr(parinfo.parts[0].name) if modhostconnector else None,
 			defval=parinfo.parts[0].default,
-			tags=['vjz4mappable'])
+		)
 
 	def CreateParTrigger(
 			self, dest, name,
 			parinfo,  # type: schema.ParamSchema
-			attrs: opattrs=None, **kwargs):
+			attrs: opattrs=None):
 		# TODO: off to on action
 		return self.CreateButton(
 			dest=dest, name=name,
-			attrs=opattrs.merged(attrs, **kwargs),
+			attrs=attrs,
 			label=parinfo.label,
 			behavior='pulse')
 
@@ -224,8 +268,8 @@ class UiBuilder:
 			attrs=opattrs.merged(
 				opattrs(
 					parvals=mergedicts(
-						label and {'Label': label},
-						helptext and {'Help': helptext},
+						label is not None and {'Label': label},
+						helptext is not None and {'Help': helptext},
 						defval is not None and {'Default1': defval},
 						value is not None and {'Value1': value},
 						{'Type': fieldtype or 'string'},
@@ -250,7 +294,10 @@ class UiBuilder:
 			attrs=opattrs.merged(
 				attrs,
 				opattrs(
-					parvals=_DropScriptParVals(dropscript)),
+					parvals=_DropScriptParVals(dropscript),
+					tags=['vjz4parctrl'],
+					externaldata={'parampart': parinfo.parts[0]},
+				),
 				**kwargs))
 		celldat = ctrl.par.Celldat.eval()
 		# TODO: workaround for bug with initial value not being loaded
@@ -283,7 +330,9 @@ class UiBuilder:
 						_DropScriptParVals(dropscript)),
 					parexprs={
 						'Targetpar': valueexpr,
-					}),
+					},
+					externaldata={'parampart': parinfo.parts[0]},
+				),
 				attrs,
 				**kwargs))
 
@@ -307,19 +356,47 @@ class UiBuilder:
 						'Menunames': repr(parinfo.parts[0].menunames or []),
 						'Menulabels': repr(parinfo.parts[0].menulabels or []),
 						'Targetpar': valueexpr,
-					}),
+					},
+					tags=['vjz4parctrl'],
+					externaldata={'parampart': parinfo.parts[0]},
+				),
 				attrs,
 				**kwargs))
+
+	def CreateParamControlWrapper(
+			self, dest, name,
+			parinfo,  # type: schema.ParamSchema
+			attrs: opattrs=None):
+		return CreateFromTemplate(
+			template=self.ownerComp.op('parameter_control'),
+			dest=dest, name=name,
+			attrs=opattrs.merged(
+				opattrs(
+					parvals={
+						'Param': parinfo.name,
+						'Label': parinfo.label,
+						'Specialtype': parinfo.specialtype or '',
+						'Advanced': bool(parinfo.advanced),
+						'Allowpresets': bool(parinfo.allowpresets),
+						'Mappable': bool(parinfo.mappable),
+						'Helptext': parinfo.helptext or '',
+						'Groupname': parinfo.groupname or '',
+						'Pagename': parinfo.pagename or '',
+					},
+					tags=['vjz4param'],
+					externaldata={'param': parinfo},
+				),
+				attrs))
 
 	def CreateParControl(
 			self, dest, name,
 			parinfo,  # type: schema.ParamSchema
 			addtocontrolmap=None,  # type: Dict[str, COMP]
+			addtowrappermap=None,  # type: Dict[str, COMP]
 			dropscript=None,  # type: Optional[DAT]
 			modhostconnector=None,  # type: ModuleHostConnector
-			attrs: opattrs=None, **kwargs):
-
-		attrs = opattrs.merged(attrs, **kwargs)
+			ctrlattrs: opattrs=None,
+			wrapperattrs: opattrs=None):
 
 		def _register(ctrlop):
 			if addtocontrolmap is not None:
@@ -332,13 +409,31 @@ class UiBuilder:
 					addtocontrolmap[parinfo.parts[i].name] = ctrlop
 			return ctrls
 
+		wrapper = self.CreateParamControlWrapper(
+			dest=dest, name=name,
+			parinfo=parinfo,
+			attrs=opattrs.merged(
+				opattrs(
+					parvals={
+						'hmode': 'fill',
+					}
+				),
+				wrapperattrs
+			))
+		if addtowrappermap is not None:
+			addtowrappermap[parinfo.name] = wrapper
+		ctrlname = 'ctrl'
+
+		ctrlattrs = opattrs.merged(
+			opattrs(dropscript=dropscript),
+			ctrlattrs)
+
 		if parinfo.style in ('Float', 'Int') and len(parinfo.parts) == 1:
 			# print('creating slider control for {}'.format(parinfo))
 			ctrl = self.CreateParSlider(
-				dest=dest, name=name,
+				dest=wrapper, name=ctrlname,
 				parinfo=parinfo,
-				dropscript=dropscript,
-				attrs=attrs,
+				attrs=ctrlattrs,
 				modhostconnector=modhostconnector)
 		elif parinfo.style in [
 			'Float', 'Int',
@@ -347,60 +442,57 @@ class UiBuilder:
 		]:
 			# print('creating multi slider control for {}'.format(parinfo))
 			sliders = self.CreateParMultiSlider(
-				dest=dest, name=name,
+				dest=wrapper, name=ctrlname,
 				parinfo=parinfo,
-				dropscript=dropscript,
-				attrs=attrs,
+				attrs=ctrlattrs,
 				modhostconnector=modhostconnector)
 			_registerparts(sliders)
 			ctrl = sliders[0].parent()
 		elif parinfo.style == 'Toggle':
 			# print('creating toggle control for {}'.format(parinfo))
 			ctrl = self.CreateParToggle(
-				dest=dest, name=name,
+				dest=wrapper, name=ctrlname,
 				parinfo=parinfo,
-				dropscript=dropscript,
-				attrs=attrs,
+				attrs=ctrlattrs,
 				modhostconnector=modhostconnector)
 		elif parinfo.style == 'Pulse':
 			# print('creating trigger control for {}'.format(parinfo))
 			ctrl = self.CreateParTrigger(
-				dest=dest, name=name,
+				dest=wrapper, name=ctrlname,
 				parinfo=parinfo,
-				dropscript=dropscript,
-				attrs=attrs)
+				attrs=ctrlattrs)
 		elif parinfo.style == 'Str' and not parinfo.isnode:
 			# print('creating text field control for plain string {}'.format(parinfo))
 			ctrl = self.CreateParTextField(
-				dest=dest, name=name,
+				dest=wrapper, name=ctrlname,
 				parinfo=parinfo,
-				dropscript=dropscript,
-				attrs=attrs,
+				attrs=ctrlattrs,
 				modhostconnector=modhostconnector)
 		elif parinfo.isnode:
 			ctrl = self.CreateParNodeSelector(
-				dest=dest, name=name,
+				dest=wrapper, name=ctrlname,
 				parinfo=parinfo,
-				dropscript=dropscript,
-				attrs=attrs,
+				attrs=ctrlattrs,
 				modhostconnector=modhostconnector)
 		elif parinfo.style == 'Menu':
 			ctrl = self.CreateParMenuField(
-				dest=dest, name=name,
+				dest=wrapper, name=ctrlname,
 				parinfo=parinfo,
-				dropscript=dropscript,
-				attrs=attrs,
+				attrs=ctrlattrs,
 				modhostconnector=modhostconnector)
 		else:
 			print('Unsupported par style: {!r})'.format(parinfo))
+			wrapper.destroy()
 			return None
-		return _register(ctrl)
+		_register(ctrl)
+		_register(wrapper)
+		return wrapper
 
 	def CreateMappingMarker(
 			self, dest, name,
-			mapping: schema.ControlMapping,
-			attrs: opattrs=None, **kwargs):
-		ctrl = CreateFromTemplate(
+			mapping,  # type: schema.ControlMapping,
+			attrs: opattrs=None):
+		return CreateFromTemplate(
 			template=self.ownerComp.op('mapping_marker'),
 			dest=dest, name=name,
 			attrs=opattrs.merged(
@@ -413,17 +505,16 @@ class UiBuilder:
 						'Rangelow': mapping.rangelow,
 						'Rangehigh': mapping.rangehigh,
 					},
-					tags=['vjz4mappingmarker']),
-				attrs,
-				**kwargs))
-		common.OPExternalStorage.Store(ctrl, 'mapping', mapping)
-		return ctrl
+					tags=['vjz4mappingmarker'],
+					externaldata={'mapping': mapping},
+				),
+				attrs))
 
 	def CreateControlMarker(
 			self, dest, name,
 			control,  # type: schema.DeviceControlInfo
-			attrs: opattrs=None, **kwargs):
-		ctrl = CreateFromTemplate(
+			attrs: opattrs=None):
+		return CreateFromTemplate(
 			template=self.ownerComp.op('control_marker'),
 			dest=dest, name=name,
 			attrs=opattrs.merged(
@@ -436,18 +527,16 @@ class UiBuilder:
 						'Inputcc': control.inputcc if control.inputcc is not None else -1,
 						'Outputcc': control.outputcc if control.outputcc is not None else -1,
 					},
-					tags=['vjz4ctrlmarker']),
-				attrs,
-				**kwargs)
-		)
-		common.OPExternalStorage.Store(ctrl, 'controlinfo', control)
-		return ctrl
+					tags=['vjz4ctrlmarker'],
+					externaldata={'controlinfo': control},
+				),
+				attrs))
 
 	def CreateNodeMarker(
 			self, dest, name,
 			nodeinfo,  # type: schema.DataNodeInfo
 			previewbutton=False,
-			attrs: opattrs=None, **kwargs):
+			attrs: opattrs=None):
 		return CreateFromTemplate(
 			template=self.ownerComp.op('node_marker'),
 			dest=dest, name=name,
@@ -465,13 +554,12 @@ class UiBuilder:
 						'h': 30,
 					},
 					tags=['vjz4nodemarker']),
-				attrs,
-				**kwargs))
+				attrs))
 
 	def CreatePresetMarker(
 			self, dest, name,
 			preset,  # type: schema.ModulePreset
-			attrs: opattrs=None, **kwargs):
+			attrs: opattrs=None):
 		return CreateFromTemplate(
 			template=self.ownerComp.op('module_preset_marker'),
 			dest=dest, name=name,
@@ -488,13 +576,12 @@ class UiBuilder:
 						'Params': repr(preset.state.params),
 					},
 					tags=['vjz4presetmarker']),
-				attrs,
-				**kwargs))
+				attrs))
 
 	def CreateStateSlotMarker(
 			self, dest, name,
 			state=None,  # type: Optional[schema.ModuleState]
-			attrs: opattrs=None, **kwargs):
+			attrs: opattrs=None):
 		return CreateFromTemplate(
 			template=self.ownerComp.op('module_state_slot_marker'),
 			dest=dest, name=name,
@@ -510,19 +597,18 @@ class UiBuilder:
 						'Params': repr((state and state.params) or None),
 					},
 					tags=['vjz4stateslotmarker']),
-				attrs,
-				**kwargs))
+				attrs))
 
 	def CreateLfoGenerator(
 			self, dest, name,
-			spec,  # type: schema.ModulationSourceSpec
-			attrs: opattrs=None, **kwargs):
+			spec=None,  # type: schema.ModulationSourceSpec
+			attrs: opattrs=None):
 		return CreateFromTemplate(
 			template=self.ownerComp.op('lfo_generator'),
 			dest=dest, name=name,
 			attrs=opattrs.merged(
 				opattrs(
-					parvals={
+					parvals=spec and {
 						'Name': spec.name,
 						'Play': spec.play,
 						'Sync': spec.sync,
@@ -533,45 +619,110 @@ class UiBuilder:
 						'Bias': spec.bias,
 					},
 					tags=['vjz4lfo', 'vjz4modsource']),
-				attrs,
-				**kwargs))
+				attrs))
+
+	def CreateDashboardControlGroup(
+			self, dest, name,
+			group,  # type: schema.DashboardControlGroup
+			attrs: opattrs=None):
+		return CreateFromTemplate(
+			template=self.ownerComp.op('dashboard_control_group'),
+			dest=dest, name=name,
+			attrs=opattrs.merged(
+				opattrs(
+					parvals={
+						'Groupname': group.name or '',
+						'Grouplabel': group.label or '',
+					}),
+				attrs))
+
+	def CreateDashboardControl(
+			self, dest, name,
+			ctrlspec,  # type: schema.DashboardControlSpec
+			proxyparexpr: str,
+			wrapperattrs: opattrs=None,
+			ctrlattrs: opattrs=None):
+		wrapper = CreateFromTemplate(
+			template=self.ownerComp.op('dashboard_control'),
+			dest=dest, name=name,
+			attrs=opattrs.merged(
+				opattrs(
+					parvals={
+						'Name': ctrlspec.name,
+						'Label': ctrlspec.label or ctrlspec.name,
+						'Ctrltype': ctrlspec.ctrltype,
+					},
+					tags=['vjz4dashctrl'],
+					cloneimmune=True,
+				),
+				wrapperattrs))
+		ctrlattrs = opattrs.merged(
+			opattrs(
+				parvals={
+					'vmode': 'fill',
+					'hmode': 'fill',
+				},
+				tags=['vjz4dashctrlctrl'],
+				cloneimmune=True,
+			),
+			ctrlattrs)
+		if ctrlspec.ctrltype == schema.DashboardControlTypes.toggle:
+			self.CreateButton(
+				dest=wrapper,
+				name='ctrl',
+				behavior='toggledown',
+				label='',
+				helptext='',
+				valueexpr=proxyparexpr,
+				attrs=opattrs.merged(
+					opattrs(
+						parvals={
+							'Texton': 'On',
+							'Textoff': 'Off',
+						}
+					),
+					ctrlattrs),
+			)
+		elif ctrlspec.ctrltype == schema.DashboardControlTypes.knob:
+			self.CreateKnob(
+				dest=wrapper,
+				name='ctrl',
+				valueexpr=proxyparexpr,
+				label='',
+				helptext='',
+				attrs=ctrlattrs,
+				defval=0,
+				valrange=[0, 1],
+			)
+		else:
+			print('Unsupported dash control type: {!r})'.format(ctrlspec))
+			wrapper.destroy()
+			return None
+		return wrapper
+
+	def CreateModuleHost(
+			self, dest, name,
+			autoheight=True,
+			collapsed=True,
+			collapsehorizontal=False,
+			attrs: opattrs=None):
+		template = self.ownerComp.par.Modulehosttemplate.eval()
+		return CreateFromTemplate(
+			template=template,
+			dest=dest, name=name,
+			attrs=opattrs.merged(
+				opattrs(
+					parvals={
+						'Autoheight': autoheight,
+						'Collapsed': collapsed,
+						'Collapsehorizontal': collapsehorizontal,
+					}
+				),
+				attrs))
+
 
 def _DropScriptParVals(dropscript: 'Optional[DAT]'=None):
 	return dropscript and {
 		'drop': 'legacy',
 		'dropscript': dropscript.path
 	}
-
-# TODO: move dialog stuff elsewhere
-
-def _getPopDialog():
-	dialog = op.TDResources.op('popDialog')  # type: PopDialogExt
-	return dialog
-
-def ShowPromptDialog(
-		title=None,
-		text=None,
-		default='',
-		textentry=True,
-		oktext='OK',
-		canceltext='Cancel',
-		ok: Callable=None,
-		cancel: Callable=None):
-	def _callback(info):
-		if info['buttonNum'] == 1:
-			if ok:
-				if not text:
-					ok()
-				else:
-					ok(info.get('enteredText'))
-		elif info['buttonNum'] == 2:
-			if cancel:
-				cancel()
-	_getPopDialog().Open(
-		title=title,
-		text=text,
-		textEntry=False if not textentry else (default or ''),
-		buttons=[oktext, canceltext],
-		enterButton=1, escButton=2, escOnClickAway=True,
-		callback=_callback)
-

@@ -15,17 +15,19 @@ except ImportError:
 
 try:
 	import common
+	from common import loggedmethod, opattrs
 except ImportError:
 	common = mod.common
-loggedmethod = common.loggedmethod
-opattrs = common.opattrs
+	loggedmethod = common.loggedmethod
+	opattrs = common.opattrs
 
 try:
 	import schema
+	from schema import ControlMapping, ControlMappingSet
 except ImportError:
 	schema = mod.schema
-ControlMapping = schema.ControlMapping
-ControlMappingSet = schema.ControlMappingSet
+	ControlMapping = schema.ControlMapping
+	ControlMappingSet = schema.ControlMappingSet
 
 try:
 	import menu
@@ -43,9 +45,9 @@ class ControlMapper(app_components.ComponentBase, common.ActionsExt):
 		common.ActionsExt.__init__(self, ownerComp, actions={
 			'Clearmappings': self.ClearMappings,
 		})
-		self._AutoInitActionParams()
 		self.custommappings = ControlMappingSet()
 		self.automappings = None  # type: Optional[ControlMappingSet]
+		self.learnstate = None  # type: Optional[_LearnState]
 		self._Rebuild()
 
 	def _Rebuild(self, clearselected=True):
@@ -138,14 +140,17 @@ class ControlMapper(app_components.ComponentBase, common.ActionsExt):
 						control=control.fullname,
 					)
 				self._LogEvent('Adding new mapping: {}'.format(mapping))
-				self.AddMappings([mapping])
+				self._AddMappings([mapping])
 		self._Rebuild()
 
 	@loggedmethod
 	def AddMappings(self, mappings: List[ControlMapping]):
+		self._AddMappings(mappings)
+		self._Rebuild()
+
+	def _AddMappings(self, mappings: List[ControlMapping]):
 		for mapping in mappings:
 			self.custommappings.mappings.append(mapping)
-		self._Rebuild()
 
 	@property
 	def _MappingTable(self):
@@ -398,3 +403,103 @@ class ControlMapper(app_components.ComponentBase, common.ActionsExt):
 				checked=modisauto,
 				callback=lambda: self.ToggleAutoMapModule(modpath)),
 		]
+
+	def GetModuleParameterAdditionalMenuItems(
+			self,
+			modhost: 'ModuleHost',
+			paramschema: schema.ParamSchema,
+			partschema: schema.ParamPartSchema):
+		if not paramschema.mappable or not partschema:
+			return []
+		islearning = self.learnstate and self.learnstate.matches(
+			modhost, paramschema, partschema)
+		items = []
+		if islearning:
+			items.append(
+				menu.Item(
+					'Cancel mapping learn [{}]'.format(self.learnstate.device.DeviceLabel),
+					callback=lambda: self._EndLearning())
+			)
+
+		def _makeLearnItem(dev: 'MidiDevice'):
+			return menu.Item(
+				'Learn mapping from {}'.format(dev.DeviceLabel),
+				callback=lambda: self._StartLearningForParam(
+					modhost=modhost,
+					paramname=paramschema.name,
+					partname=partschema.name,
+					device=dev))
+
+		for device in self._DeviceManager.GetDevices().values():
+			items.append(_makeLearnItem(device))
+		items.append(menu.Divider())
+		return items
+
+	def _StartLearningForParam(self, modhost: 'ModuleHost', paramname, partname, device: 'MidiDevice'):
+		self.learnstate = _LearnState(
+			device=device,
+			modhost=modhost,
+			paramname=paramname,
+			partname=partname)
+		opattrs(
+			parvals={
+				'active': True,
+				'channel': device.DeviceName + ':*',
+			}).applyto(self.ownerComp.op('learn_on_input_change'))
+		self.SetStatusText('Starting mapping learning for {}.{}'.format(
+			modhost.ModuleConnector.modpath, partname))
+		modhost.SetLearnHighlight(paramname, partname)
+
+	def _EndLearning(self):
+		opattrs(
+			parvals={
+				'active': False,
+				'channel': '',
+			}).applyto(self.ownerComp.op('learn_on_input_change'))
+		if self.learnstate:
+			self.learnstate.modhost.SetLearnHighlight(None, None)
+			self.learnstate = None
+			self.SetStatusText('Ending mapping learning')
+
+	def HandleLearnChannelChange(self, channel):
+		if not self.learnstate:
+			return
+		controlinfo = self._DeviceManager.GetControlInfo(channel.name)
+		if not controlinfo or controlinfo.devname != self.learnstate.device.DeviceName:
+			return
+		self.learnstate.modhost.SetLearnHighlight(None, None)
+		self.AddOrReplaceMappingForParam(
+			modpath=self.learnstate.modhost.ModuleConnector.modpath,
+			paramname=self.learnstate.partname,
+			control=controlinfo)
+		self.SetStatusText('Learned control mapping for {}.{}: {}'.format(
+			self.learnstate.modhost.ModuleConnector.modpath,
+			self.learnstate.partname,
+			controlinfo.fullname,
+		))
+		self.learnstate = None
+
+class _LearnState:
+	def __init__(
+			self,
+			device: 'MidiDevice'=None,
+			modhost: 'ModuleHost'=None,
+			paramname=None,
+			partname=None):
+		self.device = device
+		self.modhost = modhost
+		self.paramname = paramname
+		self.partname = partname
+
+	def matches(
+			self,
+			modhost: 'ModuleHost',
+			paramschema: schema.ParamSchema,
+			partschema: Optional[schema.ParamPartSchema]):
+		if modhost != self.modhost:
+			return False
+		if not paramschema or paramschema.name != self.paramname:
+			return False
+		if not partschema or partschema.name != self.partname:
+			return False
+		return True
