@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 print('vjz4/schema_utils.py loading')
 
@@ -29,12 +29,18 @@ class KnownModuleType:
 		return '{}(masterpath={!r}, typeid={!r})'.format(
 			self.__class__.__name__, self.masterpath, self.typeid)
 
+def _GetParStyleToMatch(partuplet: Tuple[schema.RawParamInfo]):
+	style = partuplet[0].style
+	if style in ('Int', 'Float') and len(partuplet) > 1:
+		return '{}[{}]'.format(style, len(partuplet))
+	return style
+
 def _Vjzual3Matcher(parstyles: Dict[str, str]):
 	def _test(modinfo: schema.RawModuleInfo):
 		if 'tmod' not in modinfo.tags:
 			return False
 		actualparstyles = {
-			t[0].tupletname: t[0].style
+			t[0].tupletname: _GetParStyleToMatch(t)
 			for t in modinfo.partuplets
 			if t[0].pagename != 'Module' or t[0].tupletname == 'Bypass'
 		}
@@ -86,11 +92,49 @@ def _GenerateKnownModuleTypes():
 			'author': vjz3author,
 		},
 		parattrs={
-			'Source': {'specialtype': schema.ParamSpecialTypes.videonode, 'allowpresets': '0'},
+			'Source': {'specialtype': schema.ParamSpecialTypes.videonode, 'advanced': '1', 'allowpresets': '0'},
 			'Horzsource': {'advanced': '1'},
 			'Vertsource': {'advanced': '1'},
 			'Extend': {'advanced': '1'},
 			'Displacemode': {'advanced': '1'},
+		}
+	)
+	yield KnownModuleType(
+		typeid='com.optexture.vjzual3.module.trails',
+		masterpath='/_/components/trails_module',
+		test=_Vjzual3Matcher({
+			'Bypass': 'Toggle',
+			'Level': 'Float',
+			'Operand': 'Menu',
+			'Levelexp': 'Float',
+		}),
+		typeattrs={
+			'description': 'Trails (Vjzual3)',
+			'website': vjz3website,
+			'author': vjz3author,
+		},
+		parattrs={
+			'Levelexp': {'advanced': '1', 'allowpresets': '0'},
+		}
+	)
+	yield KnownModuleType(
+		typeid='com.optexture.vjzual3.module.feedback',
+		masterpath='/_/components/feedback_module',
+		test=_Vjzual3Matcher({
+			'Bypass': 'Toggle',
+			'Level': 'Float',
+			'Source': 'Str',
+			'Operand': 'Menu',
+			'Levelexp': 'Float',
+		}),
+		typeattrs={
+			'description': 'Feedback (Vjzual3)',
+			'website': vjz3website,
+			'author': vjz3author,
+		},
+		parattrs={
+			'Source': {'specialtype': schema.ParamSpecialTypes.videonode, 'advanced': '1', 'allowpresets': '0'},
+			'Levelexp': {'advanced': '1', 'allowpresets': '0'},
 		}
 	)
 
