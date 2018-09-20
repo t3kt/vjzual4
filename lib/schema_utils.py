@@ -203,11 +203,19 @@ class _BaseModuleSchemaBuilder(common.LoggableSubComponent):
 		matchingtypes = known_module_types.GetMatchingTypes(self.modinfo)
 		if not matchingtypes:
 			self.knownmoduletype = None
+			self._LogEvent('No matching known module type')
 		elif len(matchingtypes) > 1:
-			self._LogEvent('Multiple known module types match modinfo: {}'.format([t.typeid for t in matchingtypes]))
+			self._LogEvent('Multiple known module types match modinfo: {}'.format(matchingtypes))
 			self.knownmoduletype = None
 		else:
 			self.knownmoduletype = matchingtypes[0]
+			self._LogEvent('Found matching known module type: {}'.format(self.knownmoduletype))
+
+	def _GetTypeAttrs(self):
+		return mergedicts(
+			self.knownmoduletype and self.knownmoduletype.typeattrs,
+			self.modinfo.typeattrs
+		)
 
 	def _GetDefaultGroup(self):
 		if self.defaultgroup:
@@ -443,7 +451,7 @@ class _ModuleSchemaBuilder(_BaseModuleSchemaBuilder):
 			modinfo: RawModuleInfo):
 		super().__init__(
 			hostobj=hostobj,
-			logprefix='ModuleSchemaBuilder',
+			logprefix='ModuleSchemaBuilder[{}]'.format(modinfo.path),
 			modinfo=modinfo)
 		self.nodes = []  # type: List[DataNodeInfo]
 
@@ -457,15 +465,17 @@ class _ModuleSchemaBuilder(_BaseModuleSchemaBuilder):
 			self.nodes.append(node)
 
 	def Build(self):
+		self._FindMatchingKnownModuleType()
 		self._BuildParams()
 		self._BuildParamGroups()
 		self._BuildNodes()
 		modinfo = self.modinfo
+		typeattrs = self._GetTypeAttrs()
 		return ModuleSchema(
 			name=modinfo.name,
 			label=modinfo.label,
 			path=modinfo.path,
-			typeid=self.knownmoduletype and self.knownmoduletype.typeid,
+			typeid=typeattrs.get('typeid'),
 			masterpath=modinfo.masterpath or (self.knownmoduletype and self.knownmoduletype.masterpath),
 			parentpath=modinfo.parentpath,
 			childmodpaths=list(modinfo.childmodpaths) if modinfo.childmodpaths else None,
@@ -483,16 +493,17 @@ class _ModuleTypeSchemaBuilder(_BaseModuleSchemaBuilder):
 			modinfo: RawModuleInfo):
 		super().__init__(
 			hostobj=hostobj,
-			logprefix='ModuleTypeSchemaBuilder',
+			logprefix='ModuleTypeSchemaBuilder[{}]'.format(modinfo.path),
 			modinfo=modinfo)
 
 	def Build(self):
+		self._FindMatchingKnownModuleType()
 		self._BuildParams()
 		self._BuildParamGroups()
 		modinfo = self.modinfo
-		typeattrs = modinfo.typeattrs or {}
+		typeattrs = self._GetTypeAttrs()
 		return ModuleTypeSchema(
-			typeid=typeattrs.get('typeid') or (self.knownmoduletype and self.knownmoduletype.typeid),
+			typeid=typeattrs.get('typeid'),
 			name=modinfo.name,
 			label=modinfo.label,
 			path=modinfo.path,
