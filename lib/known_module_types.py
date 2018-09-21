@@ -293,6 +293,7 @@ def _GenerateKnownModuleTypes():
 			'Pixelformat': 'Menu',
 		},
 		parattrs={
+			'Bypass': {'hidden': '1'},
 			'Blend': {'advanced': '1'},
 			'Clamp': {'advanced': '1'},
 			'Radius': {'advanced': '1'},
@@ -302,6 +303,31 @@ def _GenerateKnownModuleTypes():
 			'Gradient': {'advanced': '1'},
 			'Normalization': {'advanced': '1'},
 			'Pixelformat': {'advanced': '1', 'hidden': '1', 'allowpresets': '0'},
+		}
+	)
+	yield _KnownVjz3Type(
+		typeid='com.optexture.vjzual3.module.noisegen',
+		masterpath='/_/components/noise_gen_module',
+		description='Noise Gen (Vjzual3)',
+		hasbypass=True,
+		hasrenderres=True,
+		matchpars={
+			'Noisetype': 'Menu',
+			'Period': 'Float',
+			'Amp': 'Float',
+			'Offset': 'Float',
+			'Harmonics': 'Int',
+			'Spread': 'Float',
+			'Gain': 'Float',
+			'Rate': 'XYZ',
+			'Paused': 'Toggle',
+			'Alphamode': 'Menu',
+			'Mono': 'Toggle',
+			'Exponent': 'Float',
+		},
+		parattrs={
+			'Alphamode': {'advanced': '1'},
+			'Mono': {'advanced': '1'},
 		}
 	)
 	yield _KnownVjz3Type(
@@ -334,6 +360,107 @@ def _GenerateKnownModuleTypes():
 		},
 		parattrs={
 			'Antialias': {'advanced': '1', 'allowpresets': '0'},
+		}
+	)
+	yield _KnownVjz3Type(
+		typeid='com.optexture.vjzual3.module.blend',
+		masterpath='/_/components/blend_module',
+		description='Blend (Vjzual3)',
+		hasbypass=True,
+		matchpars={
+			'Modinput1': 'Toggle',
+			'Modinput2': 'Toggle',
+			'Cross': 'Float',
+			'Swap': 'Toggle',
+			'Operand': 'Menu',
+		},
+		nodepars=['Src1', 'Src2'],
+		parattrs={
+			'Modinput1': {'advanced': '1', 'hidden': '1', 'allowpresets': '0'},
+			'Modinput2': {'advanced': '1', 'hidden': '1', 'allowpresets': '0'},
+			'Src1': {'advanced': '1', 'allowpresets': '0'},
+			'Src2': {'advanced': '1', 'allowpresets': '0'},
+		}
+	)
+	yield _KnownVjz3Type(
+		typeid='com.optexture.vjzual3.module.channelwarp',
+		masterpath='/_/components/channel_warp_module',
+		description='Channel Warp (Vjzual3)',
+		hasbypass=True,
+		haslevel=True,
+		hasfeedback=True,
+		matchpars=mergedicts(
+			{
+				'Uniformdisplaceweight': 'Float',
+				'Displaceweightscale': 'Float',
+				'Extend': 'Menu',
+				'Channels': 'Menu',
+				'Inputfiltertype': 'Menu',
+			},
+			*[
+				{
+					'Horzsource{}'.format(i): 'Menu',
+					'Vertsource{}'.format(i): 'Menu',
+					'Displaceweight{}'.format(i): 'XY',
+				}
+				for i in range(1, 5)
+			]
+		),
+		nodepars=['Source{}'.format(i) for i in range(1, 5)],
+		parattrs=mergedicts(
+			{
+				'Displaceweightscale': {'advanced': '1'},
+				'Extend': {'advanced': '1'},
+				'Channels': {'advanced': '1'},
+				'Inputfiltertype': {'advanced': '1'},
+			},
+			*[
+				{
+					'Source{}'.format(i): {'advanced': '1'},
+					'Horzsource{}'.format(i): {'advanced': '1'},
+					'Vertsource{}'.format(i): {'advanced': '1'},
+				}
+				for i in range(1, 5)
+			]
+		)
+	)
+	yield _KnownVjz3Type(
+		typeid='com.optexture.vjzual3.module.kaleido',
+		masterpath='/_/components/kaleido_module',
+		description='Kaleido (Vjzual3)',
+		hasbypass=True,
+		haslevel=True,
+		hasrenderres=True,
+		matchpars={
+			'Offset': 'Float',
+			'Segments': 'Float',
+			'Extend': 'Menu',
+			'Translate': 'XY',
+		},
+		parattrs={
+			'Extend': {'advanced': '1'},
+		}
+	)
+	yield _KnownVjz3Type(
+		typeid='com.optexture.vjzual3.module.matte',
+		masterpath='/_/components/matte_module',
+		description='Matte (Vjzual3)',
+		hasbypass=True,
+		haslevel=True,
+		matchpars={
+			'Modinput': 'Toggle',
+			'Swapinputs': 'Float',
+			'Maskbrightness': 'Float',
+			'Maskcontrast': 'Float',
+			'Mattechannel': 'Menu',
+		},
+		nodepars=['Src1', 'Src2', 'Masksrc'],
+		parattrs={
+			'Modinput': {'advanced': '1', 'hidden': '1', 'allowpresets': '0'},
+			'Src1': {'advanced': '1', 'allowpresets': '0'},
+			'Src2': {'advanced': '1', 'allowpresets': '0'},
+			'Masksrc': {'advanced': '1', 'allowpresets': '0'},
+			'Mattechannel': {'advanced': '1'}
 		}
 	)
 
