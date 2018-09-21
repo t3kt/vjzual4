@@ -463,6 +463,72 @@ def _GenerateKnownModuleTypes():
 			'Mattechannel': {'advanced': '1'}
 		}
 	)
+	yield _KnownVjz3Type(
+		typeid='com.optexture.vjzual3.module.multinoisegen',
+		masterpath='/_/components/multi_noise_gen_module',
+		description='Multi Noise Gen (Vjzual3)',
+		hasbypass=True,
+		hasrenderres=True,
+		matchpars=mergedicts(
+			{
+				'Noisetype': 'Menu',
+				'Period': 'Float',
+				'Amp': 'Float',
+				'Offset': 'Float',
+				'Harmonics': 'Int',
+				'Spread': 'Float',
+				'Gain': 'Float',
+				'Rate': 'XYZ',
+				'Paused': 'Toggle',
+				'Alphamode': 'Menu',
+				'Mono': 'Toggle',
+				'Keepsquare': 'Toggle',
+				'Noisealpha': 'Float[4]',
+				'Exponent': 'Float[4]',
+				'Blendmode': 'Menu',
+				'Singlegen': 'Int',
+				'Operand': 'Menu',
+				'Selectedgen': 'Menu',
+			},
+			*[
+				{'Noiseres{}'.format(i): 'XY'}
+				for i in range(1, 5)
+			]
+		),
+		parattrs=mergedicts(
+			{
+				'Noisetype': {'advanced': '1'},
+				'Alphamode': {'advanced': '1'},
+				'Keepsquare': {'advanced': '1'},
+				'Blendmode': {'advanced': '1'},
+				'Singlegen': {'advanced': '1'},
+				'Operand': {'advanced': '1'},
+				'Selectedgen': {'advanced': '1', 'hidden': '1', 'allowpresets': '0'},
+			}
+		)
+	)
+	yield _KnownVjz3Type(
+		typeid='com.optexture.vjzual3.module.recolor',
+		masterpath='/_/components/recolor_module',
+		description='Recolor (Vjzual3)',
+		hasbypass=True,
+		haslevel=True,
+		matchpars={
+			'Phase': 'Float',
+			'Period': 'Float',
+			'Hue': 'Float[4]',
+			'Saturation': 'Float[4]',
+			'Value': 'Float[4]',
+			'Alpha': 'Float[4]',
+			'Usesourceluma': 'Toggle',
+			'Phaselfoon': 'Toggle',
+			'Phaselforate': 'Float',
+		},
+		parattrs={
+			'Usesourceluma': {'advanced': '1'},
+			'Alpha': {'advanced': '1'},
+		}
+	)
 
 _KnownModuleTypes = list(_GenerateKnownModuleTypes())
 
