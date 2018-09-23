@@ -214,7 +214,8 @@ class KnownModuleType:
 			typeid,
 			masterpath=None,
 			checktags: List[str]=None,
-			pars: 'List[ParamMatcher]'=None,
+			pars: 'List[Union[ParamMatcher, List[ParamMatcher]]]'=None,
+			ignorepages: List[str]=None,
 			ignoreextrapars=False,
 			typeattrs: Dict[str, Any]=None):
 		self.typeid = typeid
@@ -222,33 +223,46 @@ class KnownModuleType:
 		self.checktags = set(checktags or [])
 		self.pars = pars
 		self.ignoreextrapars = ignoreextrapars
+		self.ignorepages = ignorepages or []
 		self.typeattrs = typeattrs or {}
 		self.typeattrs['typeid'] = typeid
 
-	def __str__(self):
-		return '{}(masterpath={!r}, typeid={!r})'.format(
-			self.__class__.__name__, self.masterpath, self.typeid)
+	def __repr__(self):
+		return '{}(typeid={!r})'.format(self.__class__.__name__, self.typeid)
 
 	def _GetMatchingPar(self, partuplet: Tuple[schema.RawParamInfo]):
 		for parmatcher in self.pars:
 			if parmatcher.spec.MatchesRawParamTuplet(partuplet):
 				return parmatcher
 
+	def _MatchPars(self, modinfo: schema.RawModuleInfo):
+		matchedpars = list()
+		unmatchedpars = list(self.pars)
+		extrapartuplets = list()
+
+		for partuplet in modinfo.partuplets:
+			if partuplet[0].pagename in self.ignorepages and partuplet[0].tupletname != 'Bypass':
+				continue
+			parmatcher = self._GetMatchingPar(partuplet)
+			if parmatcher:
+				if parmatcher in unmatchedpars:
+					unmatchedpars.remove(parmatcher)
+				matchedpars.append(parmatcher)
+			else:
+				extrapartuplets.append(partuplet)
+		return matchedpars, unmatchedpars, extrapartuplets
+
 	def MatchesRawModuleInfo(self, modinfo: schema.RawModuleInfo):
 		if self.checktags and not self.checktags.issubset(set(modinfo.tags or [])):
 			return False
 
-		requiredmissingmatchers = {pm for pm in self.pars if not pm.spec.optional}
+		matchedpars, unmatchedpars, extrapartuplets = self._MatchPars(modinfo)
 
-		for partuplet in modinfo.partuplets:
-			parmatcher = self._GetMatchingPar(partuplet)
-			if parmatcher:
-				if parmatcher in requiredmissingmatchers:
-					requiredmissingmatchers.remove(parmatcher)
-			elif self.ignoreextrapars:
-					continue
-			else:
-				return False
+		if extrapartuplets and not self.ignoreextrapars:
+			return False
+
+		requiredmissingmatchers = {pm for pm in unmatchedpars if not pm.spec.optional}
+
 		if requiredmissingmatchers:
 			return False
 		return True
@@ -305,7 +319,7 @@ def _KnownVjz3Type(
 		haspixelformat=False,
 		description: str=None,
 		nodepars: List[str]=None,
-		pars: List[ParamMatcher]=None,
+		pars: List[Union[ParamMatcher, List[ParamMatcher]]]=None,
 		ignoreextrapars=False):
 	defaultpars = []
 	if hasbypass:
@@ -349,15 +363,33 @@ def _KnownVjz3Type(
 	return KnownModuleType(
 		typeid=typeid,
 		masterpath=masterpath,
+		checktags=['tmod'],
+		ignorepages=['Module'],
 		ignoreextrapars=ignoreextrapars,
 		pars=_MergeParamMatchers(
 			defaultpars,
-			pars),
+			_Flatten(pars)),
 		typeattrs={
 			'description': description,
 			'website': 'https://github.com/t3kt/vjzual3',
 			'author': 'tekt',
 		})
+
+def _Flatten(items):
+	output = []
+	_FlattenInto(items, output)
+	return output
+
+def _FlattenInto(items, output):
+	if not items:
+		return
+	for item in items:
+		if item is None:
+			continue
+		if isinstance(item, (list, tuple, set)):
+			_FlattenInto(item, output)
+		else:
+			output.append(item)
 
 def _GenerateKnownModuleTypes():
 	yield _KnownVjz3Type(
@@ -378,8 +410,11 @@ def _GenerateKnownModuleTypes():
 		description='Warp (Vjzual3)',
 		hasbypass=True,
 		haslevel=True,
+		hasfeedback=True,
 		pars=[
-			ParamMatcher(('Source', 'Str'), _ParamSettings(advanced=True)),
+			ParamMatcher(
+				('Source', 'Str'),
+				_ParamSettings(advanced=True, specialtype=schema.ParamSpecialTypes.videonode, allowpresets=False)),
 			ParamMatcher(('Horzsource', 'Menu'), _ParamSettings(advanced=True)),
 			ParamMatcher(('Vertsource', 'Menu'), _ParamSettings(advanced=True)),
 			ParamMatcher(('Displaceweight', 'XY')),
@@ -446,385 +481,282 @@ def _GenerateKnownModuleTypes():
 			ParamMatcher(('Edgecolor', 'RGBA')),
 			ParamMatcher(('Operand', 'Menu')),
 		])
-	# yield _KnownVjz3Type(
-	# 	typeid='com.optexture.vjzual3.module.bloom',
-	# 	masterpath='/_/components/bloom_module',
-	# 	description='Bloom (Vjzual3)',
-	# 	hasbypass=True,
-	# 	haslevel=True,
-	# 	matchpars={
-	# 		'Method': 'Menu',
-	# 		'Blurtype': 'Menu',
-	# 		'Extend': 'Menu',
-	# 		'Innersize': 'Float',
-	# 		'Outersize': 'Float',
-	# 		'Inneralpha': 'Float',
-	# 		'Outeralpha': 'Float',
-	# 		'Stepcompop': 'Menu',
-	# 		'Steps': 'Int',
-	# 	},
-	# 	parattrs={
-	# 		'Method': {'advanced': '1'},
-	# 		'Blurtype': {'advanced': '1'},
-	# 		'Extend': {'advanced': '1'},
-	# 	}
-	# )
-	# yield _KnownVjz3Type(
-	# 	typeid='com.optexture.vjzual3.module.flip',
-	# 	masterpath='/_/components/flip_module',
-	# 	description='Flip (Vjzual3)',
-	# 	hasbypass=True,
-	# 	haslevel=True,
-	# 	matchpars={
-	# 		'Flip1x': 'Toggle', 'Flip1y': 'Toggle',
-	# 		'Flip2x': 'Toggle', 'Flip2y': 'Toggle',
-	# 		'Operand1': 'Menu', 'Operand2': 'Menu',
-	# 	},
-	# )
-	# yield _KnownVjz3Type(
-	# 	typeid='com.optexture.vjzual3.module.advancednoisegen',
-	# 	masterpath='/_/components/advanced_noise_gen_module',
-	# 	description='Advanced Noise Gen (Vjzual3)',
-	# 	hasbypass=True,
-	# 	hasrenderres=True,
-	# 	matchpars={
-	# 		'Noisetype': 'Menu',
-	# 		'Periodmult': 'Float',
-	# 		'Period': 'Float[4]',
-	# 		'Amp': 'Float',
-	# 		'Offset': 'Float',
-	# 		'Ratemult': 'Float',
-	# 		'Rate': 'Float[4]',
-	# 		'Paused': 'Toggle',
-	# 		'Derivative': 'Toggle',
-	# 		'Blend': 'Float',
-	# 		'Clamp': 'Float[2]',
-	# 		'Radius': 'Float[2]',
-	# 		'Probability': 'Float',
-	# 		'Dimness': 'Float',
-	# 		'Value': 'Float',
-	# 		'Gradient': 'Float',
-	# 		'Normalization': 'Float',
-	# 		'Pixelformat': 'Menu',
-	# 	},
-	# 	parattrs={
-	# 		'Bypass': {'hidden': '1'},
-	# 		'Blend': {'advanced': '1'},
-	# 		'Clamp': {'advanced': '1'},
-	# 		'Radius': {'advanced': '1'},
-	# 		'Probability': {'advanced': '1'},
-	# 		'Dimness': {'advanced': '1'},
-	# 		'Value': {'advanced': '1'},
-	# 		'Gradient': {'advanced': '1'},
-	# 		'Normalization': {'advanced': '1'},
-	# 		'Pixelformat': {'advanced': '1', 'hidden': '1', 'allowpresets': '0'},
-	# 	}
-	# )
-	# yield _KnownVjz3Type(
-	# 	typeid='com.optexture.vjzual3.module.noisegen',
-	# 	masterpath='/_/components/noise_gen_module',
-	# 	description='Noise Gen (Vjzual3)',
-	# 	hasbypass=True,
-	# 	hasrenderres=True,
-	# 	matchpars={
-	# 		'Noisetype': 'Menu',
-	# 		'Period': 'Float',
-	# 		'Amp': 'Float',
-	# 		'Offset': 'Float',
-	# 		'Harmonics': 'Int',
-	# 		'Spread': 'Float',
-	# 		'Gain': 'Float',
-	# 		'Rate': 'XYZ',
-	# 		'Paused': 'Toggle',
-	# 		'Alphamode': 'Menu',
-	# 		'Mono': 'Toggle',
-	# 		'Exponent': 'Float',
-	# 	},
-	# 	parattrs={
-	# 		'Alphamode': {'advanced': '1'},
-	# 		'Mono': {'advanced': '1'},
-	# 	}
-	# )
-	# yield _KnownVjz3Type(
-	# 	typeid='com.optexture.vjzual3.module.coloradjust',
-	# 	masterpath='/_/components/color_adjust_module',
-	# 	description='Color Adjust (Vjzual3)',
-	# 	hasbypass=True,
-	# 	haslevel=True,
-	# 	matchpars={
-	# 		'Brightness': 'Float',
-	# 		'Opacity': 'Float',
-	# 		'Contrast': 'Float',
-	# 		'Hueoffset': 'Float',
-	# 		'Saturation': 'Float',
-	# 		'Invert': 'Float',
-	# 	},
-	# )
-	# yield _KnownVjz3Type(
-	# 	typeid='com.optexture.vjzual3.module.voronoifx',
-	# 	masterpath='/_/components/voronoi_fx_module',
-	# 	description='Voronoi Effect (Vjzual3)',
-	# 	hasbypass=True,
-	# 	haslevel=True,
-	# 	hasfeedback=True,
-	# 	matchpars={
-	# 		'Bubble': 'Float',
-	# 		'Feature': 'Menu',
-	# 		'Simplefeature': 'Float',
-	# 		'Antialias': 'Toggle',
-	# 	},
-	# 	parattrs={
-	# 		'Antialias': {'advanced': '1', 'allowpresets': '0'},
-	# 	}
-	# )
-	# yield _KnownVjz3Type(
-	# 	typeid='com.optexture.vjzual3.module.blend',
-	# 	masterpath='/_/components/blend_module',
-	# 	description='Blend (Vjzual3)',
-	# 	hasbypass=True,
-	# 	matchpars={
-	# 		'Modinput1': 'Toggle',
-	# 		'Modinput2': 'Toggle',
-	# 		'Cross': 'Float',
-	# 		'Swap': 'Toggle',
-	# 		'Operand': 'Menu',
-	# 	},
-	# 	nodepars=['Src1', 'Src2'],
-	# 	parattrs={
-	# 		'Modinput1': {'advanced': '1', 'hidden': '1', 'allowpresets': '0'},
-	# 		'Modinput2': {'advanced': '1', 'hidden': '1', 'allowpresets': '0'},
-	# 		'Src1': {'advanced': '1', 'allowpresets': '0'},
-	# 		'Src2': {'advanced': '1', 'allowpresets': '0'},
-	# 	}
-	# )
-	# yield _KnownVjz3Type(
-	# 	typeid='com.optexture.vjzual3.module.channelwarp',
-	# 	masterpath='/_/components/channel_warp_module',
-	# 	description='Channel Warp (Vjzual3)',
-	# 	hasbypass=True,
-	# 	haslevel=True,
-	# 	hasfeedback=True,
-	# 	matchpars=mergedicts(
-	# 		{
-	# 			'Uniformdisplaceweight': 'Float',
-	# 			'Displaceweightscale': 'Float',
-	# 			'Extend': 'Menu',
-	# 			'Channels': 'Menu',
-	# 			'Inputfiltertype': 'Menu',
-	# 		},
-	# 		*[
-	# 			{
-	# 				'Horzsource{}'.format(i): 'Menu',
-	# 				'Vertsource{}'.format(i): 'Menu',
-	# 				'Displaceweight{}'.format(i): 'XY',
-	# 			}
-	# 			for i in range(1, 5)
-	# 		]
-	# 	),
-	# 	nodepars=['Source{}'.format(i) for i in range(1, 5)],
-	# 	parattrs=mergedicts(
-	# 		{
-	# 			'Displaceweightscale': {'advanced': '1'},
-	# 			'Extend': {'advanced': '1'},
-	# 			'Channels': {'advanced': '1'},
-	# 			'Inputfiltertype': {'advanced': '1'},
-	# 		},
-	# 		*[
-	# 			{
-	# 				'Source{}'.format(i): {'advanced': '1'},
-	# 				'Horzsource{}'.format(i): {'advanced': '1'},
-	# 				'Vertsource{}'.format(i): {'advanced': '1'},
-	# 			}
-	# 			for i in range(1, 5)
-	# 		]
-	# 	)
-	# )
-	# yield _KnownVjz3Type(
-	# 	typeid='com.optexture.vjzual3.module.kaleido',
-	# 	masterpath='/_/components/kaleido_module',
-	# 	description='Kaleido (Vjzual3)',
-	# 	hasbypass=True,
-	# 	haslevel=True,
-	# 	hasrenderres=True,
-	# 	matchpars={
-	# 		'Offset': 'Float',
-	# 		'Segments': 'Float',
-	# 		'Extend': 'Menu',
-	# 		'Translate': 'XY',
-	# 	},
-	# 	parattrs={
-	# 		'Extend': {'advanced': '1'},
-	# 	}
-	# )
-	# yield _KnownVjz3Type(
-	# 	typeid='com.optexture.vjzual3.module.matte',
-	# 	masterpath='/_/components/matte_module',
-	# 	description='Matte (Vjzual3)',
-	# 	hasbypass=True,
-	# 	haslevel=True,
-	# 	matchpars={
-	# 		'Modinput': 'Toggle',
-	# 		'Swapinputs': 'Float',
-	# 		'Maskbrightness': 'Float',
-	# 		'Maskcontrast': 'Float',
-	# 		'Mattechannel': 'Menu',
-	# 	},
-	# 	nodepars=['Src1', 'Src2', 'Masksrc'],
-	# 	parattrs={
-	# 		'Modinput': {'advanced': '1', 'hidden': '1', 'allowpresets': '0'},
-	# 		'Src1': {'advanced': '1', 'allowpresets': '0'},
-	# 		'Src2': {'advanced': '1', 'allowpresets': '0'},
-	# 		'Masksrc': {'advanced': '1', 'allowpresets': '0'},
-	# 		'Mattechannel': {'advanced': '1'}
-	# 	}
-	# )
-	# yield _KnownVjz3Type(
-	# 	typeid='com.optexture.vjzual3.module.multinoisegen',
-	# 	masterpath='/_/components/multi_noise_gen_module',
-	# 	description='Multi Noise Gen (Vjzual3)',
-	# 	hasbypass=True,
-	# 	hasrenderres=True,
-	# 	matchpars=mergedicts(
-	# 		{
-	# 			'Noisetype': 'Menu',
-	# 			'Period': 'Float',
-	# 			'Amp': 'Float',
-	# 			'Offset': 'Float',
-	# 			'Harmonics': 'Int',
-	# 			'Spread': 'Float',
-	# 			'Gain': 'Float',
-	# 			'Rate': 'XYZ',
-	# 			'Paused': 'Toggle',
-	# 			'Alphamode': 'Menu',
-	# 			'Mono': 'Toggle',
-	# 			'Keepsquare': 'Toggle',
-	# 			'Noisealpha': 'Float[4]',
-	# 			'Exponent': 'Float[4]',
-	# 			'Blendmode': 'Menu',
-	# 			'Singlegen': 'Int',
-	# 			'Operand': 'Menu',
-	# 			'Selectedgen': 'Menu',
-	# 		},
-	# 		*[
-	# 			{'Noiseres{}'.format(i): 'XY'}
-	# 			for i in range(1, 5)
-	# 		]
-	# 	),
-	# 	parattrs=mergedicts(
-	# 		{
-	# 			'Noisetype': {'advanced': '1'},
-	# 			'Alphamode': {'advanced': '1'},
-	# 			'Keepsquare': {'advanced': '1'},
-	# 			'Blendmode': {'advanced': '1'},
-	# 			'Singlegen': {'advanced': '1'},
-	# 			'Operand': {'advanced': '1'},
-	# 			'Selectedgen': {'advanced': '1', 'hidden': '1', 'allowpresets': '0'},
-	# 		}
-	# 	)
-	# )
-	# yield _KnownVjz3Type(
-	# 	typeid='com.optexture.vjzual3.module.recolor',
-	# 	masterpath='/_/components/recolor_module',
-	# 	description='Recolor (Vjzual3)',
-	# 	hasbypass=True,
-	# 	haslevel=True,
-	# 	matchpars={
-	# 		'Phase': 'Float',
-	# 		'Period': 'Float',
-	# 		'Hue': 'Float[4]',
-	# 		'Saturation': 'Float[4]',
-	# 		'Value': 'Float[4]',
-	# 		'Alpha': 'Float[4]',
-	# 		'Usesourceluma': 'Toggle',
-	# 		'Phaselfoon': 'Toggle',
-	# 		'Phaselforate': 'Float',
-	# 	},
-	# 	parattrs={
-	# 		'Usesourceluma': {'advanced': '1'},
-	# 		'Alpha': {'advanced': '1'},
-	# 	}
-	# )
-	# yield _KnownVjz3Type(
-	# 	typeid='com.optexture.vjzual3.module.stutter',
-	# 	masterpath='/_/components/stutter_module',
-	# 	description='Stutter (Vjzual3)',
-	# 	hasbypass=True,
-	# 	haslevel=True,
-	# 	matchpars={
-	# 		'Cachesize': 'Int',
-	# 		'Record': 'Toggle',
-	# 		'Recordmode': 'Menu',
-	# 		'Play': 'Toggle',
-	# 		'Playrate': 'Float',
-	# 		'Stepsize': 'Int',
-	# 		'Playexp': 'Float',
-	# 		'Loopmode': 'Menu',
-	# 		'Operand': 'Menu',
-	# 		'Compinput': 'Toggle',
-	# 	},
-	# 	parattrs={
-	# 		'Cachesize': {'advanced': '1', 'allowpresets': '0'},
-	# 		'Recordmode': {'advanced': '1'},
-	# 		'Stepsize': {'advanced': '1'},
-	# 		'Playexp': {'advanced': '1'},
-	# 		'Loopmode': {'advanced': '1'},
-	# 	}
-	# )
-	# yield _KnownVjz3Type(
-	# 	typeid='com.optexture.vjzual3.module.videoplayer',
-	# 	masterpath='/_/components/video_player_module',
-	# 	description='Video Player (Vjzual3)',
-	# 	hasbypass=True,
-	# 	hasrenderres=True,
-	# 	matchpars=mergedicts(
-	# 		{
-	# 			'File': 'File',
-	# 			'Filelabel': 'Str',
-	# 			'Play': 'Toggle',
-	# 			'Audio': 'Toggle',
-	# 			'Volume': 'Float',
-	# 			'Rate': 'Float',
-	# 			'Reverse': 'Toggle',
-	# 			'Loopcrossfade': 'Float',
-	# 			'Timerange': 'Float[2]',
-	# 			'Locktotimeline': 'Toggle',
-	# 			'Extendright': 'Menu',
-	# 			'Fitmode': 'Menu',
-	# 			'Useinputres': 'Toggle',
-	# 		},
-	# 		*[
-	# 			{
-	# 				'Cuepoint{}'.format(i): 'Float',
-	# 				'Cuetrigger{}'.format(i): 'Pulse',
-	# 				'Cueset{}'.format(i): 'Pulse',
-	# 				'Cuemode{}'.format(i): 'Menu',
-	# 			}
-	# 			for i in range(1, 5)
-	# 		]
-	# 	),
-	# 	parattrs=mergedicts(
-	# 		{
-	# 			'Bypass': {'hidden': '1'},
-	# 			'Filelabel': {'hidden': '1'},
-	# 			'Audio': {'advanced': '1', 'allowpresets': '0'},
-	# 			'Volume': {'advanced': '1', 'allowpresets': '0'},
-	# 			'Loopcrossfade': {'advanced': '1'},
-	# 			'Locktotimeline': {'advanced': '1', 'allowpresets': '0'},
-	# 			'Extendright': {'advanced': '1', 'allowpresets': '0'},
-	# 			'Fitmode': {'advanced': '1', 'allowpresets': '0'},
-	# 			'Useinputres': {'advanced': '1', 'allowpresets': '0'},
-	# 		},
-	# 		*[
-	# 			{
-	# 				'Cuepoint{}'.format(i): {'advanced': '1'},
-	# 				'Cuetrigger{}'.format(i): {'allowpresets': '0'},
-	# 				'Cueset{}'.format(i): {'advanced': '1', 'allowpresets': '0'},
-	# 				'Cuemode{}'.format(i): {'advanced': '1'},
-	# 			}
-	# 			for i in range(1, 5)
-	# 		]
-	# 	)
-	# )
+	yield _KnownVjz3Type(
+		typeid='com.optexture.vjzual3.module.bloom',
+		masterpath='/_/components/bloom_module',
+		description='Bloom (Vjzual3)',
+		hasbypass=True,
+		haslevel=True,
+		pars=[
+			ParamMatcher(('Method', 'Menu'), _ParamSettings(advanced=True)),
+			ParamMatcher(('Blurtype', 'Menu'), _ParamSettings(advanced=True)),
+			ParamMatcher(('Extend', 'Menu'), _ParamSettings(advanced=True)),
+			ParamMatcher(('Innersize', 'Float')),
+			ParamMatcher(('Outersize', 'Float')),
+			ParamMatcher(('Inneralpha', 'Float')),
+			ParamMatcher(('Outeralpha', 'Float')),
+			ParamMatcher(('Stepcompop', 'Menu'), _ParamSettings(advanced=True)),
+			ParamMatcher(('Steps', 'Int')),
+		])
+	yield _KnownVjz3Type(
+		typeid='com.optexture.vjzual3.module.flip',
+		masterpath='/_/components/flip_module',
+		description='Flip (Vjzual3)',
+		hasbypass=True,
+		haslevel=True,
+		pars=[
+			ParamMatcher(('Flip1x', 'Toggle')),
+			ParamMatcher(('Flip1y', 'Toggle')),
+			ParamMatcher(('Flip2x', 'Toggle')),
+			ParamMatcher(('Flip2y', 'Toggle')),
+			ParamMatcher(('Operand1', 'Menu')),
+			ParamMatcher(('Operand2', 'Menu')),
+		])
+	yield _KnownVjz3Type(
+		typeid='com.optexture.vjzual3.module.advancednoisegen',
+		masterpath='/_/components/advanced_noise_gen_module',
+		description='Advanced Noise Gen (Vjzual3)',
+		hasbypass=True,
+		hasrenderres=True,
+		haspixelformat=True,
+		pars=[
+			ParamMatcher(('Bypass', 'Toggle'), _ParamSettings(hidden=True, advanced=True, allowpresets=False)),
+			ParamMatcher(('Noisetype', 'Menu')),
+			ParamMatcher(('Periodmult', 'Float')),
+			ParamMatcher(('Period', 'Float', 4)),
+			ParamMatcher(('Amp', 'Float')),
+			ParamMatcher(('Offset', 'Float')),
+			ParamMatcher(('Ratemult', 'Float')),
+			ParamMatcher(('Rate', 'Float', 4)),
+			ParamMatcher(('Paused', 'Toggle')),
+			ParamMatcher(('Derivative', 'Toggle')),
+			ParamMatcher(('Blend', 'Float'), _ParamSettings(advanced=True)),
+			ParamMatcher(('Clamp', 'Float', 2), _ParamSettings(advanced=True)),
+			ParamMatcher(('Radius', 'Float', 2), _ParamSettings(advanced=True)),
+			ParamMatcher(('Probability', 'Float'), _ParamSettings(advanced=True)),
+			ParamMatcher(('Dimness', 'Float'), _ParamSettings(advanced=True)),
+			ParamMatcher(('Value', 'Float'), _ParamSettings(advanced=True)),
+			ParamMatcher(('Gradient', 'Float'), _ParamSettings(advanced=True)),
+		])
+	yield _KnownVjz3Type(
+		typeid='com.optexture.vjzual3.module.noisegen',
+		masterpath='/_/components/noise_gen_module',
+		description='Noise Gen (Vjzual3)',
+		hasbypass=True,
+		hasrenderres=True,
+		pars=[
+			ParamMatcher(('Bypass', 'Toggle'), _ParamSettings(hidden=True, advanced=True, allowpresets=False)),
+			ParamMatcher(('Noisetype', 'Menu')),
+			ParamMatcher(('Period', 'Float')),
+			ParamMatcher(('Amp', 'Float')),
+			ParamMatcher(('Offset', 'Float')),
+			ParamMatcher(('Harmonics', 'Int')),
+			ParamMatcher(('Spread', 'Float')),
+			ParamMatcher(('Paused', 'Toggle')),
+			ParamMatcher(('Gain', 'Float')),
+			ParamMatcher(('Rate', 'XYZ')),
+			ParamMatcher(('Alphamode', 'Menu'), _ParamSettings(advanced=True)),
+			ParamMatcher(('Mono', 'Toggle'), _ParamSettings(advanced=True)),
+			ParamMatcher(('Exponent', 'Float')),
+		])
+	yield _KnownVjz3Type(
+		typeid='com.optexture.vjzual3.module.coloradjust',
+		masterpath='/_/components/color_adjust_module',
+		description='Color Adjust (Vjzual3)',
+		hasbypass=True,
+		haslevel=True,
+		pars=[
+			ParamMatcher(('Brightness', 'Float')),
+			ParamMatcher(('Opacity', 'Float')),
+			ParamMatcher(('Contrast', 'Float')),
+			ParamMatcher(('Hueoffset', 'Float')),
+			ParamMatcher(('Saturation', 'Float')),
+			ParamMatcher(('Invert', 'Float')),
+		])
+	yield _KnownVjz3Type(
+		typeid='com.optexture.vjzual3.module.voronoifx',
+		masterpath='/_/components/voronoi_fx_module',
+		description='Voronoi Effect (Vjzual3)',
+		hasbypass=True,
+		haslevel=True,
+		hasfeedback=True,
+		pars=[
+			ParamMatcher(('Bubble', 'Float')),
+			ParamMatcher(('Feature', 'Menu')),
+			ParamMatcher(('Simplefeature', 'Float')),
+			ParamMatcher(('Antialias', 'Toggle'), _ParamSettings(advanced=True, allowpresets=False)),
+		])
+	yield _KnownVjz3Type(
+		typeid='com.optexture.vjzual3.module.blend',
+		masterpath='/_/components/blend_module',
+		description='Blend (Vjzual3)',
+		hasbypass=True,
+		pars=[
+			ParamMatcher(('Modinput1', 'Toggle'), _ParamSettings(advanced=True, hidden=True, allowpresets=False)),
+			ParamMatcher(('Modinput2', 'Toggle'), _ParamSettings(advanced=True, hidden=True, allowpresets=False)),
+			ParamMatcher(('Cross', 'Float')),
+			ParamMatcher(
+				('Src1', 'Str'),
+				_ParamSettings(advanced=True, allowpresets=False, specialtype=schema.ParamSpecialTypes.videonode)),
+			ParamMatcher(
+				('Src2', 'Str'),
+				_ParamSettings(advanced=True, allowpresets=False, specialtype=schema.ParamSpecialTypes.videonode)),
+		])
+	yield _KnownVjz3Type(
+		typeid='com.optexture.vjzual3.module.channelwarp',
+		masterpath='/_/components/channel_warp_module',
+		description='Channel Warp (Vjzual3)',
+		hasbypass=True,
+		haslevel=True,
+		hasfeedback=True,
+		pars=[
+				ParamMatcher(('Uniformdisplaceweight', 'Float')),
+				ParamMatcher(('Displaceweightscale', 'Float'), _ParamSettings(advanced=True)),
+				ParamMatcher(('Extend', 'Menu'), _ParamSettings(advanced=True)),
+				ParamMatcher(('Channels', 'Menu'), _ParamSettings(advanced=True)),
+				ParamMatcher(('Inputfiltertype', 'Menu'), _ParamSettings(advanced=True)),
+			] + _Flatten(
+			[
+				[
+					ParamMatcher(
+						('Source{}'.format(i), 'Str'),
+						_ParamSettings(advanced=True, specialtype=schema.ParamSpecialTypes.videonode)),
+					ParamMatcher(('Horzsource{}'.format(i), 'Menu'), _ParamSettings(advanced=True)),
+					ParamMatcher(('Vertsource{}'.format(i), 'Menu'), _ParamSettings(advanced=True)),
+					ParamMatcher(('Displaceweight{}'.format(i), 'XY'))
+				]
+				for i in range(1, 5)
+			]))
+	yield _KnownVjz3Type(
+		typeid='com.optexture.vjzual3.module.kaleido',
+		masterpath='/_/components/kaleido_module',
+		description='Kaleido (Vjzual3)',
+		hasbypass=True,
+		haslevel=True,
+		hasrenderres=True,
+		pars=[
+			ParamMatcher(('Offset', 'Float')),
+			ParamMatcher(('Segments', 'Float')),
+			ParamMatcher(('Extend', 'Menu'), _ParamSettings(advanced=True)),
+			ParamMatcher(('Translate', 'XY')),
+		])
+	yield _KnownVjz3Type(
+		typeid='com.optexture.vjzual3.module.matte',
+		masterpath='/_/components/matte_module',
+		description='Matte (Vjzual3)',
+		hasbypass=True,
+		haslevel=True,
+		pars=[
+			ParamMatcher(('Modinput', 'Toggle'), _ParamSettings(advanced=True, hidden=True, allowpresets=False)),
+			ParamMatcher(
+				('Src1', 'Str'),
+				_ParamSettings(advanced=True, allowpresets=False, specialtype=schema.ParamSpecialTypes.videonode)),
+			ParamMatcher(
+				('Src2', 'Str'),
+				_ParamSettings(advanced=True, allowpresets=False, specialtype=schema.ParamSpecialTypes.videonode)),
+			ParamMatcher(('Swapinputs', 'Float')),
+			ParamMatcher(('Maskbrightness', 'Float')),
+			ParamMatcher(('Maskcontrast', 'Float')),
+			ParamMatcher(('Mattechannel', 'Menu'), _ParamSettings(advanced=True)),
+			ParamMatcher(
+				('Masksrc', 'Str'),
+				_ParamSettings(advanced=True, allowpresets=False, specialtype=schema.ParamSpecialTypes.videonode)),
+		])
+	yield _KnownVjz3Type(
+		typeid='com.optexture.vjzual3.module.multinoisegen',
+		masterpath='/_/components/multi_noise_gen_module',
+		description='Multi Noise Gen (Vjzual3)',
+		hasbypass=True,
+		hasrenderres=True,
+		pars=[
+			ParamMatcher(('Bypass', 'Toggle'), _ParamSettings(hidden=True, advanced=True, allowpresets=False)),
+			ParamMatcher(('Noisetype', 'Menu'), _ParamSettings(advanced=True)),
+			ParamMatcher(('Period', 'Float')),
+			ParamMatcher(('Amp', 'Float')),
+			ParamMatcher(('Offset', 'Float')),
+			ParamMatcher(('Harmonics', 'Int')),
+			ParamMatcher(('Spread', 'Float')),
+			ParamMatcher(('Paused', 'Toggle')),
+			ParamMatcher(('Gain', 'Float')),
+			ParamMatcher(('Rate', 'XYZ')),
+			ParamMatcher(('Alphamode', 'Menu'), _ParamSettings(advanced=True)),
+			ParamMatcher(('Mono', 'Toggle'), _ParamSettings(advanced=True)),
+			ParamMatcher(('Exponent', 'Float', 4)),
+			ParamMatcher(('Keepsquare', 'Toggle'), _ParamSettings(advanced=True)),
+			ParamMatcher(('Noisealpha', 'Float', 4)),
+			ParamMatcher(('Blendmode', 'Menu'), _ParamSettings(advanced=True)),
+			ParamMatcher(('Singlegen', 'Int'), _ParamSettings(advanced=True)),
+			ParamMatcher(('Operand', 'Menu'), _ParamSettings(advanced=True)),
+			ParamMatcher(('Selectedgen', 'Int'), _ParamSettings(hidden=True, advanced=True, allowpresets=False)),
+		] + [
+			ParamMatcher(('Noiseres{}'.format(i), 'XY'))
+			for i in range(1, 5)
+		])
+	yield _KnownVjz3Type(
+		typeid='com.optexture.vjzual3.module.recolor',
+		masterpath='/_/components/recolor_module',
+		description='Recolor (Vjzual3)',
+		hasbypass=True,
+		haslevel=True,
+		pars=[
+			ParamMatcher(('Phase', 'Float')),
+			ParamMatcher(('Period', 'Float')),
+			ParamMatcher(('Hue', 'Float', 4)),
+			ParamMatcher(('Saturation', 'Float', 4)),
+			ParamMatcher(('Value', 'Float', 4)),
+			ParamMatcher(('Alpha', 'Float', 4), _ParamSettings(advanced=True)),
+			ParamMatcher(('Usesourceluma', 'Toggle'), _ParamSettings(advanced=True)),
+			ParamMatcher(('Phaselfoon', 'Toggle')),
+			ParamMatcher(('Phaselforate', 'Float')),
+		])
+	yield _KnownVjz3Type(
+		typeid='com.optexture.vjzual3.module.stutter',
+		masterpath='/_/components/stutter_module',
+		description='Stutter (Vjzual3)',
+		hasbypass=True,
+		haslevel=True,
+		pars=[
+			ParamMatcher(('Cachesize', 'Int'), _ParamSettings(advanced=True, allowpresets=False)),
+			ParamMatcher(('Record', 'Toggle')),
+			ParamMatcher(('Recordmode', 'Menu'), _ParamSettings(advanced=True)),
+			ParamMatcher(('Play', 'Toggle')),
+			ParamMatcher(('Playrate', 'Float')),
+			ParamMatcher(('Stepsize', 'Int'), _ParamSettings(advanced=True)),
+			ParamMatcher(('Playexp', 'Float'), _ParamSettings(advanced=True)),
+			ParamMatcher(('Loopmode', 'Menu'), _ParamSettings(advanced=True)),
+			ParamMatcher(('Operand', 'Menu')),
+			ParamMatcher(('Compinput', 'Toggle')),
+		])
+	yield _KnownVjz3Type(
+		typeid='com.optexture.vjzual3.module.videoplayer',
+		masterpath='/_/components/video_player_module',
+		description='Video Player (Vjzual3)',
+		hasbypass=True,
+		hasrenderres=True,
+		pars=[
+			ParamMatcher(('Bypass', 'Toggle'), _ParamSettings(hidden=True)),
+			ParamMatcher(('File', 'File')),
+			ParamMatcher(('Filelabel', 'Str'), _ParamSettings(hidden=True)),
+			ParamMatcher(('Play', 'Toggle')),
+			ParamMatcher(('Audio', 'Toggle'), _ParamSettings(advanced=True, allowpresets=False)),
+			ParamMatcher(('Volume', 'Float'), _ParamSettings(advanced=True, allowpresets=False)),
+			ParamMatcher(('Rate', 'Float')),
+			ParamMatcher(('Reverse', 'Toggle')),
+			ParamMatcher(('Loopcrossfade', 'Float'), _ParamSettings(advanced=True)),
+			ParamMatcher(('Timerange', 'Float', 2)),
+			ParamMatcher(('Locktotimeline', 'Toggle'), _ParamSettings(advanced=True, allowpresets=False)),
+			ParamMatcher(('Extendright', 'Menu'), _ParamSettings(advanced=True, allowpresets=False)),
+			ParamMatcher(('Fitmode', 'Menu'), _ParamSettings(advanced=True)),
+			ParamMatcher(('Useinputres', 'Toggle'), _ParamSettings(advanced=True, allowpresets=False)),
+		] + _Flatten([
+			[
+				ParamMatcher(('Cuepoint{}'.format(i), 'Float'), _ParamSettings(advanced=True)),
+				ParamMatcher(('Cuetrigger{}'.format(i), 'Pulse'), _ParamSettings(allowpresets=False)),
+				ParamMatcher(('Cueset{}'.format(i), 'Pulse'), _ParamSettings(allowpresets=False)),
+				ParamMatcher(('Cuemode{}'.format(i), 'Menu'), _ParamSettings(advanced=True)),
+			]
+			for i in range(1, 5)
+		]))
 
 _KnownModuleTypes = list(_GenerateKnownModuleTypes())
 

@@ -89,6 +89,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		})
 		self.AppSchema = None  # type: schema.AppSchema
 		self.ServerInfo = None  # type: schema.ServerInfo
+
+		# for debugging only
+		self.RawModuleInfos = None  # type: List[schema.RawModuleInfo]
+
 		self.ShowSchemaJson(None)
 		self.nodeMarkersByPath = {}  # type: Dict[str, List[str]]
 		self.previewMarkers = []  # type: List[op]
@@ -139,9 +143,12 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			hostobj=self,
 			apphost=self,
 			remoteclient=self.RemoteClient)
-		loader.LoadRemoteAppSchema().then(
-			success=self.OnAppSchemaLoaded,
-		)
+
+		def _success(appschema):
+			self.OnAppSchemaLoaded(appschema)
+			self.RawModuleInfos = loader.moduleinfos
+
+		loader.LoadRemoteAppSchema().then(success=_success)
 
 	@loggedmethod
 	def OnAppSchemaLoaded(self, appschema: schema.AppSchema):
@@ -188,6 +195,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		for o in self.ownerComp.ops('nodes/node__*'):
 			o.destroy()
 		self.AppSchema = None
+		self.RawModuleInfos = None
 		self.nodeMarkersByPath.clear()
 		self.ProxyManager.Detach()
 		self.ModuleManager.Detach()
@@ -290,13 +298,17 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 	def ShowAppSchema(self):
 		self.ShowSchemaJson(self.AppSchema)
 
-	def ShowSchemaJson(self, info: 'Optional[common.BaseDataObject]'):
+	def ShowSchemaJson(self, info: 'Optional[Union[List[common.BaseDataObject], common.BaseDataObject]]'):
 		dat = self.ownerComp.op('schema_json')
 		if not info:
 			dat.text = ''
 			dat.closeViewer()
 		else:
-			dat.text = json.dumps(info.ToJsonDict(), indent='  ')
+			if isinstance(info, list):
+				obj = common.BaseDataObject.ToJsonDicts(info)
+			else:
+				obj = info.ToJsonDict()
+			dat.text = json.dumps(obj, indent='  ')
 			dat.openViewer(unique=True)
 
 	@loggedmethod
@@ -691,6 +703,10 @@ class AppHostMenu(app_components.ComponentBase):
 					'App Schema',
 					disabled=not self.AppHost.AppSchema,
 					callback=lambda: self.AppHost.ShowAppSchema()),
+				menu.Item(
+					'Raw Module Infos',
+					disabled=not self.AppHost.RawModuleInfos,
+					callback=lambda: self.AppHost.ShowSchemaJson(self.AppHost.RawModuleInfos)),
 				_viewitem('App Info', 'app_info'),
 				_viewitem('Modules', 'modules'),
 				_viewitem('Module Types', 'module_types'),
