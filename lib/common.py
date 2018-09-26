@@ -9,9 +9,14 @@ if False:
 
 T = TypeVar('T')
 
+_TimestampFormat = '%H:%M:%S'
+_PreciseTimestampFormat = '%H:%M:%S.%f'
+
 def Log(msg, file=None):
 	print(
-		'[%s]' % datetime.datetime.now().strftime('%H:%M:%S'),
+		'[%s]' % datetime.datetime.now().strftime(
+			_PreciseTimestampFormat
+		),
 		msg,
 		file=file)
 

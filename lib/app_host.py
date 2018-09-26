@@ -11,6 +11,7 @@ if False:
 	import control_modulation
 	import module_proxy
 	from dashboard import Dashboard
+	import database
 
 try:
 	import ui_builder
@@ -165,7 +166,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		def _continue():
 			self.AddTaskBatch(
 				[
-					lambda: self.BuildTables(),
+					lambda: self.Database.BuildSchemaTables(self.AppSchema),
 					lambda: self.ModuleManager.Attach(appschema),
 					lambda: self.ModuleManager.RetrieveAllModuleStates(),
 					lambda: self.ModuleManager.BuildSubModuleHosts(),
@@ -199,7 +200,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		self.nodeMarkersByPath.clear()
 		self.ProxyManager.Detach()
 		self.ModuleManager.Detach()
-		self.BuildTables()
+		self.Database.ClearDatabase()
 		self.SetPreviewSource(None)
 		common.OPExternalStorage.CleanOrphans()
 		self.statetoload = None
@@ -419,6 +420,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 	def Dashboard(self) -> 'Dashboard':
 		return self.ownerComp.op('dashboard')
 
+	@property
+	def Database(self) -> 'database.AppDatabase':
+		return self.ownerComp.op('database')
+
 	def BuildState(self):
 		return schema.AppState(
 			client=self.RemoteClient.BuildClientInfo(),
@@ -539,78 +544,6 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			statusbar.SetStatus(text, temporary=temporary)
 		if log:
 			self._LogEvent(text)
-
-	@loggedmethod
-	def BuildTables(self):
-		self.SetStatusText('Building schema tables')
-		self._BuildAppInfoTable()
-		dat = self.ownerComp.op('host_core/set_data_nodes')
-		dat.clear()
-		dat.appendRow(schema.DataNodeInfo.tablekeys + ['modpath'])
-		self._BuildModuleTable()
-		self._BuildModuleTypeTable()
-		self._BuildParamTable()
-
-	def _BuildAppInfoTable(self):
-		dat = self.ownerComp.op('host_core/set_app_info')
-		dat.clear()
-		attrs = ['name', 'label', 'path']
-		if not self.AppSchema:
-			dat.appendCol(attrs)
-		else:
-			for name in attrs:
-				dat.appendRow([name, getattr(self.AppSchema, name, None) or ''])
-
-	def _BuildModuleTable(self):
-		dat = self.ownerComp.op('host_core/set_modules')
-		dat.clear()
-		dat.appendRow(schema.ModuleSchema.tablekeys)
-		if not self.AppSchema:
-			return
-		for modschema in self.AppSchema.modules:
-			modschema.AddToTable(dat)
-			self._AddDataNodesToTable(modpath=modschema.path, nodes=modschema.nodes)
-
-	def _BuildModuleTypeTable(self):
-		dat = self.ownerComp.op('host_core/set_module_types')
-		dat.clear()
-		dat.appendRow(schema.ModuleTypeSchema.tablekeys)
-		if not self.AppSchema:
-			return
-		for modtypeschema in self.AppSchema.moduletypes:
-			modtypeschema.AddToTable(dat)
-
-	def _BuildParamTable(self):
-		paramdat = self.ownerComp.op('host_core/set_params')
-		paramdat.clear()
-		paramdat.appendRow(schema.ParamSchema.extratablekeys + schema.ParamSchema.tablekeys)
-		partdat = self.ownerComp.op('host_core/set_param_parts')
-		partdat.clear()
-		partdat.appendRow(schema.ParamPartSchema.extratablekeys + schema.ParamPartSchema.tablekeys)
-		if not self.AppSchema:
-			return
-		for modschema in self.AppSchema.modules:
-			modpath = modschema.path
-			if not modschema.params:
-				continue
-			for param in modschema.params:
-				param.AddToTable(
-					paramdat,
-					attrs=param.GetExtraTableAttrs(modpath=modpath))
-				for i, part in enumerate(param.parts):
-					part.AddToTable(
-						partdat,
-						attrs=part.GetExtraTableAttrs(param=param, vecIndex=i, modpath=modpath))
-
-	def _AddDataNodesToTable(self, modpath, nodes: 'List[schema.DataNodeInfo]'):
-		if not nodes:
-			return
-		dat = self.ownerComp.op('host_core/set_data_nodes')
-		for node in nodes:
-			node.AddToTable(
-				dat,
-				attrs={'modpath': modpath}
-			)
 
 def _ParseAddress(text: str, defaulthost='localhost', defaultport=9500) -> Tuple[str, int]:
 	text = text and text.strip()
@@ -910,4 +843,3 @@ class ModuleManager(app_components.ComponentBase):
 		if panelValue.name == 'rselect':
 			items = self.AppHost.AppHostMenu.ViewMenu
 			menu.fromMouse().Show(items, autoClose=True)
-
