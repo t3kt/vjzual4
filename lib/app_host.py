@@ -166,7 +166,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		def _continue():
 			self.AddTaskBatch(
 				[
-					lambda: self.Database.BuildSchemaTables(self.AppSchema),
+					lambda: self.Database.BuildSchemaTables(),
 					lambda: self.ModuleManager.Attach(appschema),
 					lambda: self.ModuleManager.RetrieveAllModuleStates(),
 					lambda: self.ModuleManager.BuildSubModuleHosts(),
