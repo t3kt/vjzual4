@@ -32,6 +32,7 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 			ownerComp,
 			actions={
 				'Updatemodulemetadata': lambda: self.UpdateModuleMetadata(),
+				'Incrementmoduleversion': lambda: self.IncrementModuleVersion(),
 				'Adaptvjz3module': lambda: self.AdaptVjz3Module(destructive=False),
 				'Adaptvjz3moduledestructive': lambda: self.AdaptVjz3Module(destructive=True),
 				'Savemoduletox': lambda: self.SaveModuleTox(),
@@ -91,6 +92,17 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 			comp_metadata.UpdateCompMetadata(module, **kwargs)
 		finally:
 			self._LogEnd()
+
+	@loggedmethod
+	def IncrementModuleVersion(self):
+		module = self.Module
+		if not module:
+			return
+		if hasattr(module.par, 'Compversion'):
+			version = module.par.Compversion + 1
+		else:
+			version = 0
+		comp_metadata.UpdateCompMetadata(module, version=version)
 
 	@loggedmethod
 	def AddMissingParams(self):
