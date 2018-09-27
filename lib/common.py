@@ -1,6 +1,7 @@
 import datetime
 import json
 from typing import Any, Callable, Dict, Generic, List, NamedTuple, Iterable, Set, TypeVar, Union, Optional
+import sys
 
 print('vjz4/common.py loading')
 
@@ -12,11 +13,17 @@ T = TypeVar('T')
 _TimestampFormat = '%H:%M:%S'
 _PreciseTimestampFormat = '%H:%M:%S.%f'
 
+_EnableFileLogging = True
+
+def _LoggerTimestamp():
+	return datetime.datetime.now().strftime(
+		# _TimestampFormat
+		_PreciseTimestampFormat
+	)
+
 def Log(msg, file=None):
 	print(
-		'[%s]' % datetime.datetime.now().strftime(
-			_PreciseTimestampFormat
-		),
+		'[{}]'.format(_LoggerTimestamp()),
 		msg,
 		file=file)
 
@@ -55,7 +62,26 @@ class IndentedLogger:
 	def LogEnd(self, path, opid, event):
 		self.LogEvent(path, opid, event, unindentbefore=True)
 
-_logger = IndentedLogger()
+class _Tee:
+	def __init__(self, *files):
+		self.files = files
+
+	def write(self, obj):
+		for f in self.files:
+			f.write(obj)
+			# f.flush()  # make the output to be visible immediately
+
+	def flush(self):
+		for f in self.files:
+			f.flush()
+
+def _InitFileLog():
+	f = open('log.txt', mode='a')
+	print('\n-----[Initialize Log: {}]-----\n'.format(_LoggerTimestamp()), file=f)
+	return IndentedLogger(outfile=_Tee(sys.stdout, f))
+
+#_logger = IndentedLogger()
+_logger = _InitFileLog()
 
 class LoggableBase:
 	def _GetLogId(self) -> Optional[str]:
@@ -362,7 +388,7 @@ class NEW_TaskQueueExt:
 		self.batchfuturetasks += 1
 
 		def _finishbatch():
-			Log('Completing batch: {}'.format(label))
+			_logger.LogEvent('', '', 'Completing batch: {}'.format(label))
 			result.resolve()
 
 		self.tasks.append(_finishbatch)
