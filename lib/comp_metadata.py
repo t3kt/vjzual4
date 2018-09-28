@@ -20,11 +20,11 @@ def UpdateCompMetadata(
 	page = comp.appendCustomPage(':meta')
 	_makeLastPage(comp, page)
 	if typeid:
-		AddOrUpdatePar(page.appendStr, 'Comptypeid', ':Type Id', typeid, readonly=True)
-	AddOrUpdatePar(page.appendStr, 'Compdescription', ':Description', description, readonly=True)
-	AddOrUpdatePar(page.appendInt, 'Compversion', ':Version', version, readonly=True)
-	AddOrUpdatePar(page.appendStr, 'Compwebsite', ':Website', website, readonly=True)
-	AddOrUpdatePar(page.appendStr, 'Compauthor', ':Author', author, readonly=True)
+		AddOrUpdatePar(page.appendStr, 'Comptypeid', ':Type Id', typeid, readonly=True, setdefault=True)
+	AddOrUpdatePar(page.appendStr, 'Compdescription', ':Description', description, readonly=True, setdefault=True)
+	AddOrUpdatePar(page.appendInt, 'Compversion', ':Version', version, readonly=True, setdefault=True)
+	AddOrUpdatePar(page.appendStr, 'Compwebsite', ':Website', website, readonly=True, setdefault=True)
+	AddOrUpdatePar(page.appendStr, 'Compauthor', ':Author', author, readonly=True, setdefault=True)
 	page.sort('Comptypeid', 'Compdescription', 'Compversion', 'Compwebsite', 'Compauthor')
 
 

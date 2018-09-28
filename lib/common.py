@@ -637,12 +637,16 @@ def ParseAttrTable(dat):
 		for cells in dat.rows()[1:]
 	}
 
-def UpdateAttrTable(dat, attrs: Dict, clear=False):
+def UpdateAttrTable(dat, attrs: Dict, clear=False, sort=False):
 	if clear:
 		dat.clear()
 	if not attrs:
 		return
-	for rowkey, rowattrs in attrs.items():
+	rowkeys = attrs.keys()
+	if sort:
+		rowkeys = sorted(rowkeys)
+	for rowkey in rowkeys:
+		rowattrs = attrs.get(rowkey)
 		if not rowkey or not rowattrs:
 			continue
 		for k, v in rowattrs.items():
@@ -816,12 +820,16 @@ def GetOrCreateOP(
 			**kwargs)
 	return comp
 
-def AddOrUpdatePar(appendmethod, name, label, value=None, expr=None, readonly=None):
+def AddOrUpdatePar(appendmethod, name, label, value=None, expr=None, readonly=None, setdefault=False):
 	p = appendmethod(name, label=label)[0]
 	if expr is not None:
 		p.expr = expr
+		if setdefault:
+			p.defaultExpr = expr
 	elif value is not None:
 		p.val = value
+		if setdefault:
+			p.default = value
 	if readonly is not None:
 		p.readOnly = readonly
 	return p
