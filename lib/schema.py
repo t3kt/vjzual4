@@ -8,10 +8,13 @@ if False:
 
 try:
 	import common
+	from common import cleandict, mergedicts, excludekeys, BaseDataObject
 except ImportError:
 	common = mod.common
-cleandict, excludekeys, mergedicts = common.cleandict, common.excludekeys, common.mergedicts
-BaseDataObject = common.BaseDataObject
+	cleandict = common.cleandict
+	mergedicts = common.mergedicts
+	excludekeys = common.excludekeys
+	BaseDataObject = common.BaseDataObject
 
 
 class RawAppInfo(BaseDataObject):
@@ -268,6 +271,9 @@ class RawModuleInfo(BaseDataObject):
 			'modattrs': self.modattrs,
 			'typeattrs': self.typeattrs,
 		}))
+
+	def ToBriefStr(self):
+		return '{}(path: {})'.format(type(self).__name__, self.path)
 
 class ParamPartSchema(BaseDataObject):
 	"""
@@ -1155,39 +1161,39 @@ class AppState(BaseDataObject):
 	def __init__(
 			self,
 			client: ClientInfo=None,
-			modstates: 'Dict[str, ModuleHostState]' =None,
+			modulestates: 'Dict[str, ModuleHostState]' =None,
 			presets: 'List[ModulePreset]'=None,
-			modsources: 'List[ModulationSourceSpec]'=None,
+			modulationsources: 'List[ModulationSourceSpec]'=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.client = client
-		self.modstates = modstates or {}
+		self.modulestates = modulestates or {}
 		self.presets = presets or []
-		self.modsources = modsources or []
+		self.modulationsources = modulationsources or []
 
 	def ToJsonDict(self):
 		return cleandict(mergedicts(
 			self.otherattrs,
 			{
 				'client': self.client.ToJsonDict() if self.client else None,
-				'modstates': ModuleHostState.ToJsonDictMap(self.modstates),
+				'modulestates': ModuleHostState.ToJsonDictMap(self.modulestates),
 				'presets': ModulePreset.ToJsonDicts(self.presets),
-				'modsources': ModulationSourceSpec.ToJsonDicts(self.modsources),
+				'modulationsources': ModulationSourceSpec.ToJsonDicts(self.modulationsources),
 			}))
 
 	@classmethod
 	def FromJsonDict(cls, obj):
 		return cls(
 			client=ClientInfo.FromOptionalJsonDict(obj.get('client')),
-			modstates=ModuleHostState.FromJsonDictMap(obj.get('modstates')),
+			modulestates=ModuleHostState.FromJsonDictMap(obj.get('modulestates')),
 			presets=ModulePreset.FromJsonDicts(obj.get('presets')),
-			modsources=ModulationSourceSpec.FromJsonDicts(obj.get('modsources')),
-			**excludekeys(obj, ['client', 'modstates', 'presets', 'modsources']))
+			modulationsources=ModulationSourceSpec.FromJsonDicts(obj.get('modulationsources')),
+			**excludekeys(obj, ['client', 'modulestates', 'presets', 'modulationsources']))
 
 	def GetModuleState(self, path, create=False):
-		if path not in self.modstates and create:
-			self.modstates[path] = ModuleHostState()
-		return self.modstates.get(path)
+		if path not in self.modulestates and create:
+			self.modulestates[path] = ModuleHostState()
+		return self.modulestates.get(path)
 
 
 class ModuleHostState(BaseDataObject):
@@ -1198,14 +1204,20 @@ class ModuleHostState(BaseDataObject):
 	def __init__(
 			self,
 			collapsed=None,
+			hidden=None,
 			uimode=None,
+			showhiddenparams=None,
+			showadvancedparams=None,
 			currentstate: 'ModuleState'=None,
 			currentstateindex=0,
 			states: 'List[ModuleState]'=None,
 			**otherattrs):
 		super().__init__(**otherattrs)
 		self.collapsed = collapsed
+		self.hidden = hidden
 		self.uimode = uimode
+		self.showhiddenparams = showhiddenparams
+		self.showadvancedparams = showadvancedparams
 		self.currentstateindex = currentstateindex or 0
 		self.currentstate = currentstate or ModuleState()
 		self.states = states or []  # type: List[ModuleState]
@@ -1215,7 +1227,10 @@ class ModuleHostState(BaseDataObject):
 			self.otherattrs,
 			{
 				'collapsed': self.collapsed,
+				'hidden': self.hidden,
 				'uimode': self.uimode,
+				'showhiddenparams': self.showhiddenparams,
+				'showadvancedparams': self.showadvancedparams,
 				'currentstate': self.currentstate.ToJsonDict(),
 				'currentstateindex': self.currentstateindex,
 				'states': ModuleState.ToJsonDicts(self.states),
@@ -1337,7 +1352,80 @@ class ModulationSourceSpec(BaseDataObject):
 			'bias': self.bias,
 		}))
 
-class SchemaProvider:
-	def GetModuleSchema(self, modpath) -> Optional[ModuleSchema]:
-		raise NotImplementedError()
+
+class DashboardSpec(BaseDataObject):
+	def __init__(
+			self,
+			name: str=None,
+			label: str=None,
+			groups: 'List[DashboardControlGroup]'=None,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.name = name
+		self.label = label
+		self.groups = groups or []  # type: List[DashboardControlGroup]
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'name': self.name,
+			'label': self.label,
+			'groups': DashboardControlGroup.ToJsonDicts(self.groups),
+		}))
+
+	@classmethod
+	def FromJsonDict(cls, obj):
+		return cls(
+			groups=DashboardControlGroup.FromJsonDicts(obj.get('groups')),
+			**excludekeys(obj, ['groups']))
+
+
+class DashboardControlGroup(BaseDataObject):
+	def __init__(
+			self,
+			name: str,
+			label: str=None,
+			controls: 'List[DashboardControlSpec]'=None,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.name = name
+		self.label = label
+		self.controls = controls or []  # type: List[DashboardControlSpec]
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'name': self.name,
+			'label': self.label,
+			'controls': DashboardControlSpec.ToJsonDicts(self.controls),
+		}))
+
+	@classmethod
+	def FromJsonDict(cls, obj):
+		return cls(
+			controls=DashboardControlSpec.FromJsonDicts(obj.get('controls')),
+			**excludekeys(obj, ['controls']))
+
+
+class DashboardControlTypes:
+	toggle = 'toggle'
+	knob = 'knob'
+
+
+class DashboardControlSpec(BaseDataObject):
+	def __init__(
+			self,
+			name: str,
+			label: str=None,
+			ctrltype: str=None,
+			**otherattrs):
+		super().__init__(**otherattrs)
+		self.name = name.capitalize()
+		self.label = label
+		self.ctrltype = ctrltype or 'knob'
+
+	def ToJsonDict(self):
+		return cleandict(mergedicts(self.otherattrs, {
+			'name': self.name,
+			'label': self.label,
+			'ctrltype': self.ctrltype,
+		}))
 

@@ -85,7 +85,7 @@ def ExtractSettings(comp: 'OP'):
 	typeattrop = master if (master and master is not comp) else comp
 	for parname, key in _typeattrpars.items():
 		par = getattr(typeattrop.par, parname, None)
-		if par is not None and par.page.name == ':meta':
+		if par is not None and par.page.name == ':meta' and par.name in _typeattrpars:
 			settings.typeattrs[key] = par.eval()
 	return settings
 
@@ -131,4 +131,4 @@ def ApplySettings(comp: 'OP', settings: ModuleSettings):
 	}
 	if typeparvals:
 		comp_metadata.UpdateCompMetadata(comp, **typeparvals)
-	UpdateAttrTable(parattrsdat, settings.parattrs, clear=False)
+	UpdateAttrTable(parattrsdat, settings.parattrs, clear=False, sort=True)

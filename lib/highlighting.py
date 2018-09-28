@@ -25,8 +25,7 @@ class HighlightManager(common.ExtensionBase, common.ActionsExt):
 	def __init__(self, ownerComp):
 		common.ExtensionBase.__init__(self, ownerComp)
 		common.ActionsExt.__init__(self, ownerComp, actions={
-		}, autoinitparexec=True)
-		self._AutoInitActionParams()
+		})
 		self.categories = {}  # type: Dict[str, _HighlightCategory]
 		self._BuildCategoryTable()
 

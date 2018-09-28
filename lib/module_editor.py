@@ -32,6 +32,7 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 			ownerComp,
 			actions={
 				'Updatemodulemetadata': lambda: self.UpdateModuleMetadata(),
+				'Incrementmoduleversion': lambda: self.IncrementModuleVersion(),
 				'Adaptvjz3module': lambda: self.AdaptVjz3Module(destructive=False),
 				'Adaptvjz3moduledestructive': lambda: self.AdaptVjz3Module(destructive=True),
 				'Savemoduletox': lambda: self.SaveModuleTox(),
@@ -42,9 +43,7 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 				'Fixmessedupdrywetswitchoops': self.FixMessedUpDryWetSwitchOops,
 				'Generatetypeid': self.GenerateModuleTypeId,
 				'Reloadcode': self.ReloadCode,
-			},
-			autoinitparexec=True)
-		self._AutoInitActionParams()
+			})
 
 	@staticmethod
 	def ReloadCode():
@@ -93,6 +92,17 @@ class ModuleEditor(common.ExtensionBase, common.ActionsExt):
 			comp_metadata.UpdateCompMetadata(module, **kwargs)
 		finally:
 			self._LogEnd()
+
+	@loggedmethod
+	def IncrementModuleVersion(self):
+		module = self.Module
+		if not module:
+			return
+		if hasattr(module.par, 'Compversion'):
+			version = module.par.Compversion + 1
+		else:
+			version = 0
+		comp_metadata.UpdateCompMetadata(module, version=version)
 
 	@loggedmethod
 	def AddMissingParams(self):
@@ -638,16 +648,8 @@ def _initModuleParams(m):
 	pass
 
 
-def _GetActiveEditor():
-	pane = ui.panes.current
-	if pane.type == PaneType.NETWORKEDITOR:
-		return pane
-	for pane in ui.panes:
-		if pane.type == PaneType.NETWORKEDITOR:
-			return pane
-
 def _GetTargetPane():
-	return _GetActiveEditor()
+	return common.GetActiveEditor()
 
 def _GetSelected():
 	pane = _GetTargetPane()

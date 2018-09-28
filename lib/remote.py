@@ -9,10 +9,10 @@ if False:
 
 try:
 	import common
+	from common import Future
 except ImportError:
 	common = mod.common
-cleandict, mergedicts = common.cleandict, common.mergedicts
-Future = common.Future
+	Future = common.Future
 
 class CommandMessage(namedtuple('CommandMessage', ['cmd', 'arg', 'cmdid', 'kind'])):
 	COMMAND = 'cmd'
@@ -143,7 +143,8 @@ class RemoteConnection(common.ExtensionBase):
 		if cmdmesg.isRequest:
 			responsefuture = Future(
 				onlisten=lambda: self._AddResponseFuture(cmdmesg.cmdid, responsefuture),
-				oninvoke=lambda: self._RemoveResponseFuture(cmdmesg.cmdid))
+				oninvoke=lambda: self._RemoveResponseFuture(cmdmesg.cmdid),
+				label=cmdmesg.ToBriefStr())
 			return responsefuture
 
 	def SendCommand(self, cmd, arg=None):
@@ -208,13 +209,14 @@ class RemoteConnection(common.ExtensionBase):
 			return None
 		return CommandMessage.fromJsonDict(obj)
 
+	# @common.loggedmethod
 	def SendOsc(self, address, *values, asBundle=False):
 		self._osceventsend.sendOSC(address, *values, asBundle=asBundle)
 
 class RemoteBase(common.ExtensionBase, common.ActionsExt, CommandHandler):
-	def __init__(self, ownerComp, actions=None, handlers=None):
+	def __init__(self, ownerComp, actions=None, handlers=None, autoinitparexec=True):
 		common.ExtensionBase.__init__(self, ownerComp)
-		common.ActionsExt.__init__(self, ownerComp, actions)
+		common.ActionsExt.__init__(self, ownerComp, actions, autoinitparexec=autoinitparexec)
 		CommandHandler.__init__(self, handlers)
 		self.Connected = tdu.Dependency(False)
 
@@ -222,8 +224,10 @@ class RemoteBase(common.ExtensionBase, common.ActionsExt, CommandHandler):
 	def Connection(self) -> RemoteConnection:
 		return self.ownerComp.op('connection')
 
+	# @common.loggedmethod
 	def SendOsc(self, address, *values, asBundle=False):
 		if not self.Connected:
+			self._LogEvent('SendOsc - NOT CONNECTED!')
 			return
 		self.Connection.SendOsc(address, *values, asBundle=asBundle)
 

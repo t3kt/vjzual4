@@ -10,11 +10,12 @@ if False:
 
 try:
 	import common
+	from common import cleandict, trygetdictval, loggedmethod
 except ImportError:
 	common = mod.common
-cleandict, excludekeys, mergedicts = common.cleandict, common.excludekeys, common.mergedicts
-trygetdictval = common.trygetdictval
-loggedmethod = common.loggedmethod
+	cleandict = common.cleandict
+	trygetdictval = common.trygetdictval
+	loggedmethod = common.loggedmethod
 
 def __dynamiclocalimport(module):
 	globs = globals()
@@ -29,6 +30,11 @@ except ImportError:
 	# i really hope there's a better way to do this..
 	schema = mod.schema
 	__dynamiclocalimport(schema)
+
+try:
+	import known_module_types
+except ImportError:
+	known_module_types = mod.known_module_types
 
 
 class AppSchemaBuilder(common.LoggableSubComponent):
@@ -69,14 +75,20 @@ class AppSchemaBuilder(common.LoggableSubComponent):
 	@loggedmethod
 	def _BuildModuleSchemas(self):
 		for modinfo in self.rawmodules:
-			modschema = _ModuleSchemaBuilder(modinfo).Build()
+			modschema = _ModuleSchemaBuilder(
+				hostobj=self,
+				modinfo=modinfo,
+			).Build()
 			self.modules[modinfo.path] = modschema
 			self.moduletypeattrs[modinfo.path] = dict(modinfo.typeattrs or {})
 
 	@loggedmethod
 	def _BuildModuleTypeSchemas(self):
 		for modinfo in self.rawmoduletypes:
-			typeschema = _ModuleTypeSchemaBuilder(modinfo).Build()
+			typeschema = _ModuleTypeSchemaBuilder(
+				hostobj=self,
+				modinfo=modinfo,
+			).Build()
 			self.moduletypes[typeschema.typeid] = typeschema
 			self.moduletypesbypath[typeschema.path] = typeschema
 
@@ -172,13 +184,37 @@ def _ModuleSchemaAsImplicitType(modschema: ModuleSchema, typeattrs=None):
 		])
 
 
-class _BaseModuleSchemaBuilder:
-	def __init__(self, modinfo: RawModuleInfo):
+class _BaseModuleSchemaBuilder(common.LoggableSubComponent):
+	def __init__(
+			self,
+			hostobj: AppSchemaBuilder,
+			logprefix: str,
+			modinfo: RawModuleInfo):
+		super().__init__(hostobj=hostobj, logprefix=logprefix)
 		self.modinfo = modinfo
 		self.params = []
 		self.groups = OrderedDict()  # type: Dict[str, ParamGroupSchema]
 		self.defaultgroup = None  # type: ParamGroupSchema
 		self.tags = set(modinfo.tags or [])
+		self.knownmoduletype = None  # type: known_module_types.KnownModuleType
+
+	def _FindMatchingKnownModuleType(self):
+		matchingtypes = known_module_types.GetMatchingModuleTypes(self.modinfo)
+		if not matchingtypes:
+			self.knownmoduletype = None
+			self._LogEvent('No matching known module type')
+		elif len(matchingtypes) > 1:
+			self._LogEvent('Multiple known module types match modinfo: {}'.format(matchingtypes))
+			self.knownmoduletype = matchingtypes[0]
+		else:
+			self.knownmoduletype = matchingtypes[0]
+			self._LogEvent('Found matching known module type: {}'.format(self.knownmoduletype))
+
+	def _GetTypeAttrs(self):
+		return mergedicts(
+			self.knownmoduletype and self.knownmoduletype.typeattrs,
+			self.modinfo.typeattrs
+		)
 
 	def _GetDefaultGroup(self):
 		if self.defaultgroup:
@@ -274,6 +310,8 @@ class _BaseModuleSchemaBuilder:
 				parschema = self._BuildParam(partuplet, parattrs.get(partuplet[0].tupletname))
 				if parschema:
 					self.params.append(parschema)
+			if self.knownmoduletype:
+				self.knownmoduletype.ApplyToParamSchemas(self.params)
 			self.params.sort(key=attrgetter('pageindex', 'order'))
 
 	def _BuildParam(
@@ -302,7 +340,7 @@ class _BaseModuleSchemaBuilder:
 		if self._IsVjzual3SpecialParam(name, page):
 			return None
 
-		return ParamSchema(
+		paramschema = ParamSchema(
 			name=name,
 			label=label,
 			style=parinfo.style,
@@ -318,6 +356,8 @@ class _BaseModuleSchemaBuilder:
 			groupname=trygetdictval(attrs, 'group', 'groupname', parse=str),
 			parts=[self._BuildParamPart(part) for part in partuplet],
 		)
+		known_module_types.ApplySpecialParamMatchers(paramschema)
+		return paramschema
 
 	@staticmethod
 	def _BuildParamPart(part: RawParamInfo, attrs: Dict[str, str] = None):
@@ -398,8 +438,14 @@ class _BaseModuleSchemaBuilder:
 		raise NotImplementedError()
 
 class _ModuleSchemaBuilder(_BaseModuleSchemaBuilder):
-	def __init__(self, modinfo: RawModuleInfo):
-		super().__init__(modinfo)
+	def __init__(
+			self,
+			hostobj: AppSchemaBuilder,
+			modinfo: RawModuleInfo):
+		super().__init__(
+			hostobj=hostobj,
+			logprefix='ModuleSchemaBuilder[{}]'.format(modinfo.path),
+			modinfo=modinfo)
 		self.nodes = []  # type: List[DataNodeInfo]
 
 	def _BuildNodes(self):
@@ -412,15 +458,18 @@ class _ModuleSchemaBuilder(_BaseModuleSchemaBuilder):
 			self.nodes.append(node)
 
 	def Build(self):
+		self._FindMatchingKnownModuleType()
 		self._BuildParams()
 		self._BuildParamGroups()
 		self._BuildNodes()
 		modinfo = self.modinfo
+		typeattrs = self._GetTypeAttrs()
 		return ModuleSchema(
 			name=modinfo.name,
 			label=modinfo.label,
 			path=modinfo.path,
-			masterpath=modinfo.masterpath,
+			typeid=typeattrs.get('typeid'),
+			masterpath=modinfo.masterpath or (self.knownmoduletype and self.knownmoduletype.masterpath),
 			parentpath=modinfo.parentpath,
 			childmodpaths=list(modinfo.childmodpaths) if modinfo.childmodpaths else None,
 			tags=self.tags,
@@ -431,14 +480,21 @@ class _ModuleSchemaBuilder(_BaseModuleSchemaBuilder):
 		)
 
 class _ModuleTypeSchemaBuilder(_BaseModuleSchemaBuilder):
-	def __init__(self, modinfo: RawModuleInfo):
-		super().__init__(modinfo)
+	def __init__(
+			self,
+			hostobj: AppSchemaBuilder,
+			modinfo: RawModuleInfo):
+		super().__init__(
+			hostobj=hostobj,
+			logprefix='ModuleTypeSchemaBuilder[{}]'.format(modinfo.path),
+			modinfo=modinfo)
 
 	def Build(self):
+		self._FindMatchingKnownModuleType()
 		self._BuildParams()
 		self._BuildParamGroups()
 		modinfo = self.modinfo
-		typeattrs = modinfo.typeattrs or {}
+		typeattrs = self._GetTypeAttrs()
 		return ModuleTypeSchema(
 			typeid=typeattrs.get('typeid'),
 			name=modinfo.name,
@@ -452,96 +508,3 @@ class _ModuleTypeSchemaBuilder(_BaseModuleSchemaBuilder):
 			params=self.params,
 			paramgroups=list(self._GetFilteredGroups()),
 		)
-
-
-class _ParamSpec:
-	def __init__(
-			self,
-			name,
-			alternatenames=None,
-			style=None,
-			optional=False,
-			ignoremismatch=False):
-		self.name = name
-		self.possiblenames = set()
-		self.possiblenames.add(name)
-		if isinstance(alternatenames, (list, set, tuple)):
-			self.possiblenames.update(alternatenames)
-		elif alternatenames:
-			self.possiblenames.add(alternatenames)
-		self.optional = optional
-		self.ignoremismatch = ignoremismatch
-		if not style:
-			self.styles = None
-		elif isinstance(style, str):
-			self.styles = [style]
-		else:
-			self.styles = list(style)
-
-	def Matches(self, param: ParamSchema):
-		if self.styles and param.style not in self.styles:
-			return False
-		return True
-
-class _ParamGroupMatcher:
-	def __init__(
-			self,
-			specialtype=None,
-			groupname=None,
-			paramspecs=None,
-			allowprefix=False):
-		self.specialtype = specialtype
-		self.groupname = groupname
-		self.paramspecs = list(paramspecs or [])  # type: List[_ParamSpec]
-		self.allowprefix = allowprefix
-
-	def _GetParam(self, group: ParamGroupSchema, name):
-		name = name.lower()
-		for param in group.params or []:
-			lowparname = param.name.lower()
-			if lowparname == name:
-				return param
-			if self.allowprefix and group.parprefix and lowparname.startswith(group.parprefix.lower()):
-				lowprefix = group.parprefix.lower()
-				if lowparname == lowprefix:
-					# ignore if there isn't anything after the prefix in the par name
-					continue
-				if lowparname[len(lowprefix):] == name:
-					return param
-		return None
-
-	def _GetParamForSpec(self, group: ParamGroupSchema, spec: _ParamSpec):
-		for name in spec.possiblenames:
-			param = self._GetParam(group, name)
-			if param is not None:
-				return param
-
-	def Match(self, group: ParamGroupSchema) -> Optional[Dict[str, ParamSchema]]:
-		if self.groupname and group.grouptype != self.groupname:
-			return None
-		namemap = {}
-		if self.paramspecs:
-			for spec in self.paramspecs:
-				param = self._GetParamForSpec(group, spec)
-				if param is None:
-					if spec.optional:
-						continue
-					else:
-						return None
-				else:
-					if spec.Matches(param):
-						namemap[spec.name] = param
-					elif not spec.optional and not spec.ignoremismatch:
-						return None
-		return namemap
-
-feedbackGroupMatcher = _ParamGroupMatcher(
-	specialtype='feedback',
-	allowprefix=False,
-	paramspecs=[
-		_ParamSpec('Feedbackenabled', 'Toggle'),
-		_ParamSpec('Feedbacklevel', 'Float'),
-		_ParamSpec('Feedbacklevelexp', 'Float', optional=True),
-		_ParamSpec('Feedbackoperand', 'Menu'),
-		_ParamSpec('Feedbackblacklevel', 'Float', optional=True),
-	])

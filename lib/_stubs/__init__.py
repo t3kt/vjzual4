@@ -56,10 +56,13 @@ class op:
 
 	def unstore(self, keys1, *morekeys): pass
 
-	def findChildren(self, maxDepth=1, tags=None) -> '_List[op]':
-		pass
+	def findChildren(self, maxDepth=1, tags=None) -> '_List[op]': pass
 
 	def addScriptError(self, msg): pass
+
+	def copy(self, o: 'op', name=None) -> 'op': pass
+
+	def create(self, OPtype, name, initialize=True) -> 'op': pass
 
 	TDResources = _Expando()
 
@@ -79,7 +82,7 @@ class td:
 	error = _TD_ERROR
 
 	@staticmethod
-	def run(codeorwhatever, delayFrames=0): pass
+	def run(codeorwhatever, delayFrames=0, delayMilliSeconds=0, delayRef=None): pass
 
 del _TD_ERROR
 
