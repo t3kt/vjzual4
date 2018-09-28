@@ -720,6 +720,27 @@ class UiBuilder:
 				),
 				attrs))
 
+	def CreateModuleCustomInterface(
+			self, dest, name,
+			typeid: str,
+			attrs: opattrs=None):
+		template = self._ModuleCustomTemplate(typeid)
+		if not template:
+			return None
+		return CreateFromTemplate(
+			template=template,
+			dest=dest, name=name, attrs=attrs)
+
+	def _ModuleCustomTemplate(self, typeid: str):
+		templatepath = typeid and _moduleCustomTemplates.get(typeid)
+		return templatepath and self.ownerComp.op(templatepath)
+
+	def HasModuleCustomInterface(self, typeid: str):
+		return self._ModuleCustomTemplate(typeid) is not None
+
+_moduleCustomTemplates = {
+	'com.optexture.vjzual4.module.switcher': 'custom_interfaces/switcher_interface',
+}
 
 def _DropScriptParVals(dropscript: 'Optional[DAT]'=None):
 	return dropscript and {

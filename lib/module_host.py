@@ -5,6 +5,7 @@ print('vjz4/module_host.py loading')
 if False:
 	from _stubs import *
 	from app_state import ModuleStateManager
+	import custom_interfaces
 
 try:
 	import schema
@@ -51,6 +52,9 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 		self.controlsbyparam = {}  # type: Dict[str, COMP]
 		self.wrappersbyparam = {}  # type: Dict[str, COMP]
 		self.parampartsbycontrolpath = {}  # type: Dict[str, schema.ParamPartSchema]
+		self.controlsbuilt = False
+		self.nodemarkersbuilt = False
+		self.custombuilt = False
 		self.ownerComp.tags.add('vjz4modhost')
 
 	@property
@@ -60,14 +64,6 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 	@property
 	def _DataNodes(self):
 		return self.ModuleConnector and self.ModuleConnector.modschema.nodes or []
-
-	@property
-	def _ControlsBuilt(self):
-		return not self._Params or any(self.ownerComp.ops('controls_panel/par__*'))
-
-	@property
-	def _NodeMarkersBuilt(self):
-		return not self._Params or any(self.ownerComp.ops('nodes_panel/node__*'))
 
 	def BuildState(self):
 		return schema.ModuleHostState(
@@ -121,6 +117,10 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 	def StateManager(self) -> 'ModuleStateManager':
 		return self.ownerComp.op('states')
 
+	@property
+	def _CustomInterface(self) -> 'custom_interfaces.ModuleCustomInterface':
+		return self.ownerComp.op('custom')
+
 	@loggedmethod
 	def AttachToModuleConnector(self, connector: 'ModuleHostConnector') -> Optional[Future]:
 		self.ModuleConnector = connector
@@ -160,18 +160,21 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 				previewbutton.par.display = True
 			if connector.modschema.hasmappable:
 				automapbutton.par.display = True
+			if self.UiBuilder.HasModuleCustomInterface(connector.modschema.typeid):
+				uimodenames.append('custom')
 		if not uimodenames:
 			uimodenames.append('nodes')
 		labelsbyname = {
 			'ctrl': 'Controls',
 			'nodes': 'Data Nodes',
 			'submods': 'Sub-Modules',
+			'custom': 'Custom Interface',
 		}
 		uimodelabels = [labelsbyname[m] for m in uimodenames]
 		uimodepar = self.ownerComp.par.Uimode
 		uimodepar.menuNames = uimodenames
 		uimodepar.menuLabels = uimodelabels
-		for mode in ['submods', 'ctrl', 'nodes']:
+		for mode in ['custom', 'submods', 'ctrl', 'nodes']:
 			if mode in uimodenames:
 				uimodepar.val = mode
 				break
@@ -183,6 +186,7 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 		self._ClearControls()
 		self.BuildControlsIfNeeded()
 		self.BuildNodeMarkersIfNeeded()
+		self._BuildCustomInterfaceIfNeeded()
 
 		completionfuture = Future()
 
@@ -258,6 +262,7 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 		self.parampartsbycontrolpath.clear()
 		if not self.ModuleConnector or not uibuilder:
 			self._RebuildParamControlTable()
+			self.controlsbuilt = True
 			return
 		dropscript = self.ownerComp.op('control_drop')
 		for i, parinfo in enumerate(self._Params):
@@ -284,6 +289,7 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 		self._RebuildParamControlTable()
 		self.UpdateParameterVisiblity()
 		dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
+		self.controlsbuilt = True
 
 	# def GetParamWrapper(self, paramname):
 	# 	return self.wrappersbyparam.get(paramname)
@@ -326,6 +332,7 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 			marker.destroy()
 		uibuilder = self.UiBuilder
 		if not self.ModuleConnector or not uibuilder:
+			self.nodemarkersbuilt = True
 			return
 		hasapphost = bool(self.AppHost)
 		for i, nodeinfo in enumerate(self.ModuleConnector.modschema.nodes):
@@ -338,6 +345,7 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 					order=i,
 					nodepos=[100, -200 * i]))
 		dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
+		self.nodemarkersbuilt = True
 
 	def UpdateModuleHeight(self):
 		if not self.ownerComp.par.Autoheight:
@@ -432,18 +440,50 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 			o.destroy()
 
 	def BuildControlsIfNeeded(self):
-		if self.ownerComp.par.Uimode == 'ctrl' and not self.ownerComp.par.Collapsed and not self._ControlsBuilt:
+		if self.ownerComp.par.Uimode == 'ctrl' and not self.ownerComp.par.Collapsed and not self.controlsbuilt:
 			controls = self.ownerComp.op('controls_panel')
 			self.BuildControls(controls)
 
 	def BuildNodeMarkersIfNeeded(self):
-		# if self.ownerComp.par.Uimode == 'nodes' and not self.ownerComp.par.Collapsed and not self._NodeMarkersBuilt:
-		if not self._NodeMarkersBuilt:
+		# if self.ownerComp.par.Uimode == 'nodes' and not self.ownerComp.par.Collapsed and not self.nodemarkersbuilt:
+		if not self.nodemarkersbuilt:
 			self.BuildNodeMarkers()
+
+	def _BuildCustomInterfaceIfNeeded(self):
+		if self.ownerComp.par.Uimode == 'custom' and not self.ownerComp.par.Collapsed and not self.custombuilt:
+			self._BuildCustomInterface()
+
+	@loggedmethod
+	def _BuildCustomInterface(self):
+		custom = self.UiBuilder.CreateModuleCustomInterface(
+			dest=self.ownerComp,
+			name='custom',
+			typeid=self.ModuleConnector.modschema.typeid,
+			attrs=opattrs(
+				panelparent=self.ownerComp.op('body_panel'),
+				nodepos=[950, -500],
+				order=0.3,
+				parvals={
+					'hmode': 'fill',
+				},
+				parexprs={
+					'display': "parent.ModuleHost.par.Uimode == 'custom'",
+					'borderar': "var('pnlborderr')",
+					'borderag': "var('pnlborderg')",
+					'borderab': "var('pnlborderb')",
+					'borderaalpha': "var('pnlbordera')",
+				}
+			)
+		)
+		self.custombuilt = True
+		if custom:
+			self._LogEvent('Attaching custom interface')
+			custom.AttachToModuleConnector(self.ModuleConnector)
 
 	def BuildUiIfNeeded(self):
 		self.BuildControlsIfNeeded()
 		# self.BuildNodeMarkersIfNeeded()
+		self._BuildCustomInterfaceIfNeeded()
 
 	@loggedmethod
 	def _BuildSubModuleHosts(self):

@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List
 
 print('vjz4/custom_interfaces.py loading')
 
@@ -12,7 +12,6 @@ try:
 except ImportError:
 	common = mod.common
 loggedmethod = common.loggedmethod
-Future = common.Future
 opattrs = common.opattrs
 
 class ModuleCustomInterface(common.ExtensionBase):
@@ -30,7 +29,7 @@ class ModuleCustomInterface(common.ExtensionBase):
 		modhost = self._ModuleHost
 		return modhost.AppHost if modhost else None
 
-	def AttachToModuleConnector(self, connector: 'ModuleHostConnector') -> Optional[Future]:
+	def AttachToModuleConnector(self, connector: 'ModuleHostConnector'):
 		self.ModuleConnector = connector
 		return None
 
@@ -39,7 +38,7 @@ class SwitcherModuleInterface(ModuleCustomInterface):
 		super().__init__(ownerComp)
 		self.alltracks = []  # type: List[_SwitcherTrack]
 
-	def AttachToModuleConnector(self, connector: 'ModuleHostConnector') -> Optional[Future]:
+	def AttachToModuleConnector(self, connector: 'ModuleHostConnector'):
 		super().AttachToModuleConnector(connector)
 		self._InitializeTracks()
 		self.RebuildUI()
@@ -71,6 +70,8 @@ class SwitcherModuleInterface(ModuleCustomInterface):
 	def RebuildUI(self):
 		for o in self.ownerComp.ops('trk__*'):
 			o.destroy()
+		for track in self.alltracks:
+			track.comp = None
 		activetrack = self.ModuleConnector.GetPar('Activetrack')
 		if not self.alltracks or activetrack is None:
 			return
@@ -79,7 +80,7 @@ class SwitcherModuleInterface(ModuleCustomInterface):
 		for track in self.alltracks:
 			if not track.sourcepar.eval():
 				continue
-			common.CreateFromTemplate(
+			comp = common.CreateFromTemplate(
 				template=template,
 				dest=self.ownerComp,
 				name='trk__{}'.format(track.tracknum),
@@ -94,7 +95,16 @@ class SwitcherModuleInterface(ModuleCustomInterface):
 						'display': True,
 					},
 				))
+			track.comp = comp
 			i += 1
+
+	@loggedmethod
+	def OnTrackClick(self, trackcomp):
+		trackindex = trackcomp.par.Tracknum
+		self.ModuleConnector.SetParVals({'Activetrack': trackindex})
+		for track in self.alltracks:
+			if track.comp and track.comp.valid:
+				track.comp.par.Active = track.comp.par.Tracknum == trackindex
 
 class _SwitcherTrack:
 	def __init__(
@@ -109,6 +119,7 @@ class _SwitcherTrack:
 		self.sourcepar = sourcepar  # type: Par
 		self.labelparschema = labelparschema  # type: schema.ParamSchema
 		self.labelpar = labelpar  # type: Par
+		self.comp = None  # type: COMP
 
 	@property
 	def labeltext(self):
