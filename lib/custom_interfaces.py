@@ -97,6 +97,7 @@ class SwitcherModuleInterface(ModuleCustomInterface):
 				))
 			track.comp = comp
 			i += 1
+		self.ownerComp.par.h = i * template.par.h
 
 	@loggedmethod
 	def OnTrackClick(self, trackcomp):
