@@ -85,7 +85,7 @@ def ExtractSettings(comp: 'OP'):
 	typeattrop = master if (master and master is not comp) else comp
 	for parname, key in _typeattrpars.items():
 		par = getattr(typeattrop.par, parname, None)
-		if par is not None and par.page.name == ':meta' and par.name not in _typeattrpars:
+		if par is not None and par.page.name == ':meta' and par.name in _typeattrpars:
 			settings.typeattrs[key] = par.eval()
 	return settings
 
