@@ -10,8 +10,8 @@ if False:
 
 T = TypeVar('T')
 
-_TimestampFormat = '%H:%M:%S'
-_PreciseTimestampFormat = '%H:%M:%S.%f'
+_TimestampFormat = '[%H:%M:%S]'
+_PreciseTimestampFormat = '[%H:%M:%S.%f]'
 
 _EnableFileLogging = True
 
@@ -23,7 +23,7 @@ def _LoggerTimestamp():
 
 def Log(msg, file=None):
 	print(
-		'[{}]'.format(_LoggerTimestamp()),
+		_LoggerTimestamp(),
 		msg,
 		file=file)
 
@@ -76,8 +76,9 @@ class _Tee:
 			f.flush()
 
 def _InitFileLog():
-	f = open('log.txt', mode='a')
-	print('\n-----[Initialize Log: {}]-----\n'.format(_LoggerTimestamp()), file=f)
+	f = open(project.name + '-log.txt', mode='a')
+	print('\n-----[Initialize Log: {}]-----\n'.format(
+		datetime.datetime.now().strftime('%Y.%m.%d %H:%M:%S.%f')), file=f)
 	return IndentedLogger(outfile=_Tee(sys.stdout, f))
 
 #_logger = IndentedLogger()
