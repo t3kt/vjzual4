@@ -187,6 +187,7 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 		self.BuildControlsIfNeeded()
 		self.BuildNodeMarkersIfNeeded()
 		self._BuildCustomInterfaceIfNeeded()
+		self.UpdateModuleHeight()
 
 		completionfuture = Future()
 
@@ -354,7 +355,10 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 		if self.ownerComp.par.Collapsed:
 			panels = self.ownerComp.ops('module_header')
 		else:
-			panels = self.ownerComp.ops('module_header', 'states', 'nodes_panel', 'controls_panel', 'sub_modules_panel')
+			panels = self.ownerComp.ops(
+				'module_header',
+				'states', 'nodes_panel', 'controls_panel', 'sub_modules_panel', 'custom',
+			)
 		h = self.HeightOfVisiblePanels(panels)
 		if 0 < maxheight < h:
 			h = maxheight
