@@ -1,4 +1,4 @@
-from typing import List
+from typing import Dict, List
 
 print('vjz4/database.py loading')
 
@@ -36,6 +36,7 @@ def _ReInitTableWithRowHeaders(dat, headers):
 class AppDatabase(app_components.ComponentBase):
 	def __init__(self, ownerComp):
 		super().__init__(ownerComp)
+		self.nodemarkersbypath = {}  # type: Dict[str, List[COMP]]
 		self._InitTables()
 
 	@property
@@ -89,6 +90,7 @@ class AppDatabase(app_components.ComponentBase):
 	@loggedmethod
 	def ClearDatabase(self):
 		self._InitTables()
+		self.nodemarkersbypath.clear()
 
 	@loggedmethod
 	def _BuildAppInfoTable(self, appschema: schema.AppSchema):
@@ -148,4 +150,20 @@ class AppDatabase(app_components.ComponentBase):
 				dat,
 				attrs={'modpath': modpath}
 			)
+
+	def RegisterNodeMarker(self, marker):
+		for par in marker.pars('Path', 'Video', 'Audio', 'Texbuf'):
+			path = par.eval()
+			if not path:
+				continue
+			if path in self.nodemarkersbypath:
+				self.nodemarkersbypath[path].append(marker)
+			else:
+				self.nodemarkersbypath[path] = [marker]
+
+	def GetMarkersForNodePath(self, path):
+		if path in self.nodemarkersbypath:
+			return self.nodemarkersbypath[path]
+		else:
+			return []
 

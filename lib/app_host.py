@@ -95,7 +95,6 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		self.RawModuleInfos = None  # type: List[schema.RawModuleInfo]
 
 		self.ShowSchemaJson(None)
-		self.nodeMarkersByPath = {}  # type: Dict[str, List[str]]
 		self.previewMarkers = []  # type: List[op]
 		self.statefilename = None
 		self.statetoload = None  # type: schema.AppState
@@ -171,7 +170,6 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 					lambda: self.ModuleManager.RetrieveAllModuleStates(),
 					lambda: self.ModuleManager.BuildSubModuleHosts(),
 					lambda: self._BuildNodeMarkers(),
-					lambda: self._RegisterNodeMarkers(),
 					lambda: self.ControlMapper.InitializeChannelProcessing(),
 					lambda: self.ModulationManager.Mapper.InitializeChannelProcessing(),
 					_continueloadingstate,
@@ -197,7 +195,6 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			o.destroy()
 		self.AppSchema = None
 		self.RawModuleInfos = None
-		self.nodeMarkersByPath.clear()
 		self.ProxyManager.Detach()
 		self.ModuleManager.Detach()
 		self.Database.ClearDatabase()
@@ -228,7 +225,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			return
 		body = dest.op('body_panel')
 		for i, nodeinfo in enumerate(self.AppSchema.nodes):
-			uibuilder.CreateNodeMarker(
+			marker = uibuilder.CreateNodeMarker(
 				dest=dest,
 				name='node__{}'.format(i),
 				nodeinfo=nodeinfo,
@@ -238,6 +235,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 					nodepos=[100, -200 * i],
 					panelparent=body
 				))
+			self.Database.RegisterNodeMarker(marker)
 
 	def OnSidePanelHeaderClick(self, button):
 		items = self.AppHostMenu.SidePanelModeMenuItems
@@ -274,27 +272,6 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 
 	def GetDeviceAdditionalMenuItems(self, device: control_devices.MidiDevice):
 		return self.ControlMapper.GetDeviceAdditionalMenuItems(device)
-
-	@loggedmethod
-	def _RegisterNodeMarkers(self):
-		self.nodeMarkersByPath.clear()
-		for panel in self.ownerComp.ops('nodes', 'modules_panel'):
-			for marker in panel.findChildren(tags=['vjz4nodemarker']):
-				for par in marker.pars('Path', 'Video', 'Audio', 'Texbuf'):
-					path = par.eval()
-					if not path:
-						continue
-					if path in self.nodeMarkersByPath:
-						self.nodeMarkersByPath[path].append(marker)
-					else:
-						self.nodeMarkersByPath[path] = [marker]
-		self._BuildNodeMarkerTable()
-
-	def _BuildNodeMarkerTable(self):
-		dat = self.ownerComp.op('set_node_markers_by_path')
-		dat.clear()
-		for path, markers in sorted(self.nodeMarkersByPath.items(), key=itemgetter(0)):
-			dat.appendRow([path] + sorted([marker.path for marker in markers]))
 
 	def ShowAppSchema(self):
 		self.ShowSchemaJson(self.AppSchema)
@@ -357,10 +334,11 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			if hasattr(marker.par, 'Previewactive'):
 				marker.par.Previewactive = False
 		self.previewMarkers.clear()
-		if hassource and path in self.nodeMarkersByPath:
+		markers = hassource and self.Database.GetMarkersForNodePath(path)
+		if markers:
 			# TODO: clean this up
 			modpath = self.AppSchema.modulepathsbyprimarynodepath.get(path)
-			self.previewMarkers += self.nodeMarkersByPath[path]
+			self.previewMarkers += markers
 			for marker in self.previewMarkers:
 				if hasattr(marker.par, 'Previewactive'):
 					marker.par.Previewactive = True

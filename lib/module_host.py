@@ -73,7 +73,7 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 			showhiddenparams=self.ownerComp.par.Showhidden.eval(),
 			uimode=self.ownerComp.par.Uimode.eval(),
 			currentstate=self.ModuleConnector and schema.ModuleState(params=self.ModuleConnector.GetParVals()),
-			states=self.ModuleConnector and self.StateManager.BuildStates())
+			states=self.ModuleConnector and self._StateManager.BuildStates())
 
 	@loggedmethod
 	def LoadState(self, modstate: schema.ModuleHostState, resetmissing=True):
@@ -86,7 +86,7 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 		if not self.ModuleConnector:
 			return
 		self.ModuleConnector.SetParVals(modstate.currentstate.params)
-		self.StateManager.LoadStates(modstate.states)
+		self._StateManager.LoadStates(modstate.states)
 
 	@property
 	def ModulePath(self):
@@ -114,7 +114,7 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 		return self.ownerComp.op('module_header/progress_bar')
 
 	@property
-	def StateManager(self) -> 'ModuleStateManager':
+	def _StateManager(self) -> 'ModuleStateManager':
 		return self.ownerComp.op('states')
 
 	@property
@@ -138,7 +138,7 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 		bodypanel = self.ownerComp.op('body_panel')
 		bodypanel.par.opacity = 1
 		header.par.Previewactive = False
-		statemanager = self.StateManager
+		statemanager = self._StateManager
 		statemanager.ClearStates()
 		statemanager.par.h = 0
 		uimodenames = []
@@ -337,7 +337,7 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 			return
 		hasapphost = bool(self.AppHost)
 		for i, nodeinfo in enumerate(self.ModuleConnector.modschema.nodes):
-			uibuilder.CreateNodeMarker(
+			marker = uibuilder.CreateNodeMarker(
 				dest=dest,
 				name='node__' + nodeinfo.name,
 				nodeinfo=nodeinfo,
@@ -345,6 +345,7 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 				attrs=opattrs(
 					order=i,
 					nodepos=[100, -200 * i]))
+			self.AppHost.Database.RegisterNodeMarker(marker)
 		dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
 		self.nodemarkersbuilt = True
 
@@ -585,7 +586,7 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 		if not sourceop:
 			return
 		if 'vjz4presetmarker' in sourceop.tags:
-			self.StateManager.HandlePresetDrop(presetmarker=sourceop, targetmarker=None)
+			self._StateManager.HandlePresetDrop(presetmarker=sourceop, targetmarker=None)
 		else:
 			self._LogEvent('Unsupported drop source: {}'.format(sourceop))
 
