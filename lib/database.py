@@ -36,7 +36,9 @@ def _ReInitTableWithRowHeaders(dat, headers):
 class AppDatabase(app_components.ComponentBase):
 	def __init__(self, ownerComp):
 		super().__init__(ownerComp)
+		self.nodesbypath = {}  # type: Dict[str, schema.DataNodeInfo]
 		self.nodemarkersbypath = {}  # type: Dict[str, List[COMP]]
+		self.modulepathsbyprimarynodepath = {}  # type: Dict[str, str]
 		self._InitTables()
 
 	@property
@@ -90,7 +92,9 @@ class AppDatabase(app_components.ComponentBase):
 	@loggedmethod
 	def ClearDatabase(self):
 		self._InitTables()
+		self.nodesbypath.clear()
 		self.nodemarkersbypath.clear()
+		self.modulepathsbyprimarynodepath.clear()
 
 	@loggedmethod
 	def _BuildAppInfoTable(self, appschema: schema.AppSchema):
@@ -122,6 +126,10 @@ class AppDatabase(app_components.ComponentBase):
 			modschema.AddToTable(self._ModuleTable)
 			self._LoadModuleParams(modschema)
 			self._AddDataNodesToTable(modschema.path, modschema.nodes)
+			for node in modschema.nodes:
+				self.nodesbypath[node.path] = node
+			if modschema.primarynode:
+				self.modulepathsbyprimarynodepath[modschema.primarynode.path] = modschema.path
 		finally:
 			self._LogEnd()
 
@@ -161,9 +169,18 @@ class AppDatabase(app_components.ComponentBase):
 			else:
 				self.nodemarkersbypath[path] = [marker]
 
-	def GetMarkersForNodePath(self, path):
+	def GetNodeMarkersForPath(self, path):
 		if path in self.nodemarkersbypath:
 			return self.nodemarkersbypath[path]
 		else:
 			return []
+
+	def GetNodeInfoByPath(self, path):
+		return self.nodesbypath.get(path)
+
+	def GetAllNodes(self):
+		return self.nodesbypath.values()
+
+	def GetModulePathByPrimaryNodePath(self, nodepath):
+		return self.modulepathsbyprimarynodepath.get(nodepath)
 

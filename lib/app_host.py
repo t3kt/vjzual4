@@ -224,7 +224,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		if not self.AppSchema or not uibuilder:
 			return
 		body = dest.op('body_panel')
-		for i, nodeinfo in enumerate(self.AppSchema.nodes):
+		for i, nodeinfo in enumerate(self.Database.GetAllNodes()):
 			marker = uibuilder.CreateNodeMarker(
 				dest=dest,
 				name='node__{}'.format(i),
@@ -334,10 +334,10 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			if hasattr(marker.par, 'Previewactive'):
 				marker.par.Previewactive = False
 		self.previewMarkers.clear()
-		markers = hassource and self.Database.GetMarkersForNodePath(path)
+		markers = hassource and self.Database.GetNodeMarkersForPath(path)
 		if markers:
 			# TODO: clean this up
-			modpath = self.AppSchema.modulepathsbyprimarynodepath.get(path)
+			modpath = self.Database.GetModulePathByPrimaryNodePath(path)
 			self.previewMarkers += markers
 			for marker in self.previewMarkers:
 				if hasattr(marker.par, 'Previewactive'):
@@ -349,7 +349,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 	def _GetNodeVideoPath(self, path):
 		if not self.AppSchema:
 			return None
-		node = self.AppSchema.nodesbypath.get(path)
+		node = self.Database.GetNodeInfoByPath(path)
 		return node.video if node else None
 
 	def _SetVideoSource(self, path, toggle, activepar, sourcepar, command):
