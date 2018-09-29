@@ -379,6 +379,7 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 			return lambda: self._SetSubModuleHostPars(name, val)
 
 		hassubmods = bool(self.ModuleConnector and self.ModuleConnector.modschema.childmodpaths)
+		hashiddenpars = self.ModuleConnector and any([p for p in self.ModuleConnector.modschema.params if p.hidden])
 		items = [
 			menu.ParToggleItem(self.ownerComp.par.Hidden),
 			menu.Divider(),
@@ -407,6 +408,7 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 				callback=self.UpdateParameterVisiblity),
 			menu.ParToggleItem(
 				self.ownerComp.par.Showhidden,
+				disabled=not hashiddenpars,
 				callback=self.UpdateParameterVisiblity),
 			menu.Divider(),
 		]
