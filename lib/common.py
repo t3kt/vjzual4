@@ -431,7 +431,7 @@ class Future(Generic[T]):
 		self._oninvoke = oninvoke  # type: Callable
 		self.label = label
 
-	def then(self, success: Callable[[T], None]=None, failure: Callable=None):
+	def then(self, success: 'Callable[[T], Optional[Future]]'=None, failure: Callable=None):
 		if not self._successcallbacks and not self._failurecallbacks:
 			if self._onlisten:
 				self._onlisten()
@@ -442,6 +442,28 @@ class Future(Generic[T]):
 		if self._resolved:
 			self._invoke()
 		return self
+
+	def pipe(self, success: Callable=None, failure: Callable=None):
+		piped = Future()
+
+		def _success(val):
+			result = success(val)
+			if isinstance(result, Future):
+				result.then(success=piped.resolve, failure=piped.fail)
+			else:
+				piped.resolve(val)
+
+		def _failure(err):
+			result = failure(err)
+			if isinstance(result, Future):
+				result.then(success=piped.resolve, failure=piped.fail)
+			else:
+				piped.fail(err)
+
+		self.then(
+			success=_success,
+			failure=_failure)
+		return piped
 
 	def _invoke(self):
 		if self._error is not None:

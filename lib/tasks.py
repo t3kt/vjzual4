@@ -23,13 +23,12 @@ class TaskManager(common.ExtensionBase):
 		self.queuedtasks = []  # type: List[_Task]
 		self.nextrunner = None
 
-	def AddTask(self, action: Callable, owner: COMP, label: str=None):
-		task = _Task(
-			self,
-			taskid=self.nextid,
-			owner=owner,
+	def AddTask(self, action: Callable, owner: COMP, label: str=None, continueonfail=False):
+		task = self._CreateTask(
 			action=action,
-			label=label)
+			owner=owner,
+			label=label,
+			continueonfail=continueonfail)
 		self.nextid += 1
 		self.queuedtasks.append(task)
 		self.QueueRunNextTask()
@@ -40,17 +39,15 @@ class TaskManager(common.ExtensionBase):
 			action: Callable,
 			owner: COMP,
 			label: str,
-			success: Callable,
-			failure: Callable):
+			continueonfail=False):
 		task = _Task(
 			self,
 			taskid=self.nextid,
 			owner=owner,
 			action=action,
 			label=label,
-			# continueonfail=continueonfail,
+			continueonfail=continueonfail,
 		)
-		task.completion.then(success, failure)
 		self.nextid += 1
 		return task
 
