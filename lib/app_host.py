@@ -166,6 +166,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			self.AddTaskBatch(
 				[
 					lambda: self.Database.BuildSchemaTables(),
+					lambda: self._LogEvent('AppHost thinks we have finished building schema tables'),
 					lambda: self.ModuleManager.Attach(appschema),
 					lambda: self.ModuleManager.RetrieveAllModuleStates(),
 					lambda: self.ModuleManager.BuildSubModuleHosts(),
@@ -224,7 +225,9 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		if not self.AppSchema or not uibuilder:
 			return
 		body = dest.op('body_panel')
-		for i, nodeinfo in enumerate(self.Database.GetAllNodes()):
+		nodes = list(self.Database.GetAllNodes())
+		self._LogEvent('Nodes: {}'.format(nodes))
+		for i, nodeinfo in enumerate(nodes):
 			marker = uibuilder.CreateNodeMarker(
 				dest=dest,
 				name='node__{}'.format(i),

@@ -65,11 +65,14 @@ class IndentedLogger:
 class _Tee:
 	def __init__(self, *files):
 		self.files = files
+		self.filestoflush = [f for f in files if hasattr(f, 'flush')]
 
 	def write(self, obj):
 		for f in self.files:
 			f.write(obj)
 			# f.flush()  # make the output to be visible immediately
+		for f in self.filestoflush:
+			f.flush()
 
 	def flush(self):
 		for f in self.files:
@@ -309,7 +312,7 @@ class OLD_TaskQueueExt:
 		self._TaskBatches.clear()
 		self._UpdateProgress()
 
-class NEW_TaskQueueExt:
+class NEW_TaskQueueExt(LoggableBase):
 	def __init__(self, ownerComp):
 		self.ownerComp = ownerComp
 		self.tasks = []  # type: List[Callable]
@@ -349,22 +352,24 @@ class NEW_TaskQueueExt:
 		result = task()
 
 		def _onsuccess(*_):
-			# Log('TaskQueue [{}] task succeeded {}'.format(self.ownerComp.path, result))
+			Log('TaskQueue [{}] task succeeded {}'.format(self.ownerComp.path, result))
 			self._UpdateProgress()
 			self._QueueNextTask()
 
 		def _onfailure(err):
-			# Log('TaskQueue [{}] ERROR from queued task ({})\n  {}'.format(self.ownerComp.path, task, err))
+			Log('TaskQueue [{}] ERROR from queued task ({})\n  {}'.format(self.ownerComp.path, task, err))
 			# self.ClearTasks()
 			self._UpdateProgress()
 			self._QueueNextTask()
 
 		if isinstance(result, Future):
+			Log('TaskQueue [{}] result IS a Future!! {}'.format(self.ownerComp.path, result))
 			result.then(
 				success=_onsuccess,
 				failure=_onfailure
 			)
 		else:
+			Log('TaskQueue [{}] result is NOT a Future!! {!r}'.format(self.ownerComp.path, result))
 			_onsuccess()
 
 	def _QueueNextTask(self):
@@ -379,11 +384,12 @@ class NEW_TaskQueueExt:
 		if not tasks:
 			return Future.immediate(label='{} (empty batch)'.format(label))
 		result = Future(label=label)
+		Log('TaskQueue [{}] adding task batch: {}'.format(self.ownerComp.path, label))
 		self.tasks.extend(tasks)
 
 		# TODO: get rid of this and fix the queue system!
 		def _noop():
-			# Log('NO-OP for batch: {}'.format(label))
+			Log('NO-OP for batch: {}'.format(label))
 			pass
 		self.tasks.append(_noop)
 		self.batchfuturetasks += 1
@@ -457,10 +463,10 @@ class Future(Generic[T]):
 		self._resolved = True
 		self._result = result
 		self._error = error
-		# if self._error is not None:
-		# 	Log('FUTURE FAILED {}'.format(self))
-		# else:
-		# 	Log('FUTURE SUCCEEDED {}'.format(self))
+		if self._error is not None:
+			Log('FUTURE FAILED {}'.format(self))
+		else:
+			Log('FUTURE SUCCEEDED {}'.format(self))
 		if self._successcallbacks or self._failurecallbacks:
 			self._invoke()
 

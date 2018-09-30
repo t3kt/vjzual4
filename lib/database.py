@@ -80,14 +80,20 @@ class AppDatabase(app_components.ComponentBase):
 		def _makeModuleTask(modschema: schema.ModuleSchema):
 			return lambda: self._RegisterModuleSchema(modschema)
 
-		return self.AppHost.AddTaskBatch(
+		completion = common.Future(label='BuildSchemaTables completion')
+
+		self.AppHost.AddTaskBatch(
 			[
 				_makeModuleTask(modschema)
 				for modschema in appschema.modules
 			] + [
+				lambda: self._LogEvent('... finished with the module schema tasks, moving on to module types'),
 				lambda: self._RegisterModuleTypeSchemas(appschema.moduletypes),
+				lambda: self._LogEvent('... finished with the module types, now going to resolve the future to complete the BuildSchemaTables stuff'),
+				lambda: completion.resolve()
 			],
 			label='BuildSchemaTables')
+		return completion
 
 	@loggedmethod
 	def ClearDatabase(self):
@@ -130,6 +136,7 @@ class AppDatabase(app_components.ComponentBase):
 				self.nodesbypath[node.path] = node
 			if modschema.primarynode:
 				self.modulepathsbyprimarynodepath[modschema.primarynode.path] = modschema.path
+			return Future.immediate('omg finished registering modschema {}'.format(modschema.path))
 		finally:
 			self._LogEnd()
 
