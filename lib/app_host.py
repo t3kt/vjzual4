@@ -100,6 +100,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		self.statetoload = None  # type: schema.AppState
 		self._OnDetach()
 		self.SetStatusText(None)
+		self.initializing = True
 
 	@property
 	def ProgressBar(self):
@@ -156,11 +157,16 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 		self.HighlightManager.ClearAllHighlights()
 		self.AppSchema = appschema
 		self.ShowSchemaJson(None)
+		self.initializing = True
 
 		def _continueloadingstate():
 			if not self.statetoload:
 				return
 			return self.LoadState(self.statetoload)
+
+		def _done():
+			self.SetStatusText('App schema loading completed')
+			self.initializing = True
 
 		def _continue():
 			self.AddTaskBatch(
@@ -174,7 +180,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 					lambda: self.ControlMapper.InitializeChannelProcessing(),
 					lambda: self.ModulationManager.Mapper.InitializeChannelProcessing(),
 					_continueloadingstate,
-					lambda: self.SetStatusText('App schema loading completed'),
+					_done,
 				], label='OnAppSchemaLoaded - after proxies built, attach and build host')
 
 		self.ProxyManager.BuildProxiesForAppSchema(appschema).then(
@@ -196,6 +202,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 			o.destroy()
 		self.AppSchema = None
 		self.RawModuleInfos = None
+		self.initializing = False
 		self.ProxyManager.Detach()
 		self.ModuleManager.Detach()
 		self.Database.ClearDatabase()
@@ -219,26 +226,36 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 	@loggedmethod
 	def _BuildNodeMarkers(self):
 		dest = self.ownerComp.op('nodes')
-		for marker in dest.ops('node__*'):
-			marker.destroy()
+		for m in dest.ops('node__*'):
+			m.destroy()
 		uibuilder = self.UiBuilder
 		if not self.AppSchema or not uibuilder:
 			return
 		body = dest.op('body_panel')
 		nodes = list(self.Database.GetAllNodes())
 		self._LogEvent('Nodes: {}'.format(nodes))
-		for i, nodeinfo in enumerate(nodes):
-			marker = uibuilder.CreateNodeMarker(
-				dest=dest,
-				name='node__{}'.format(i),
-				nodeinfo=nodeinfo,
-				previewbutton=True,
-				attrs=opattrs(
-					order=i,
-					nodepos=[100, -200 * i],
-					panelparent=body
-				))
-			self.Database.RegisterNodeMarker(marker)
+
+		def _makeInitTask(i, n):
+			def _task():
+				marker = uibuilder.CreateNodeMarker(
+					dest=dest,
+					name='node__{}'.format(i),
+					nodeinfo=n,
+					previewbutton=True,
+					attrs=opattrs(
+						order=i,
+						nodepos=[100, -200 * i],
+						panelparent=body
+					))
+				self.Database.RegisterNodeMarker(marker)
+			return _task
+
+		return self.AddTaskBatch(
+			[
+				_makeInitTask(i, n)
+				for i, n in enumerate(nodes)
+			],
+			label='Build all node markers')
 
 	def OnSidePanelHeaderClick(self, button):
 		items = self.AppHostMenu.SidePanelModeMenuItems
@@ -323,6 +340,8 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 	# this is called by node marker preview button click handlers
 	@loggedmethod
 	def SetPreviewSource(self, path, toggle=False):
+		if self.initializing:
+			return
 		client = self.RemoteClient
 		hassource = self._SetVideoSource(
 			path=path,

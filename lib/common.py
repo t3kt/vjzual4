@@ -213,106 +213,12 @@ class ActionsExt:
 					page = self.ownerComp.appendCustomPage('Actions')
 				page.appendPulse(name)
 
-class OLD_TaskQueueExt:
+class TaskQueueExt(LoggableBase):
 	"""
 	An extension class for components that can queue up tasks to be performed, spread over multiple
 	frames, so that TD doesn't block the main thread for too long.
 	If the component includes a progress bar, it is shown and updated as tasks are completed.
 	"""
-	def __init__(self, ownerComp):
-		self.ownerComp = ownerComp
-		self._TaskBatches = []  # type: List[_TaskBatch]
-		self._UpdateProgress()
-
-	@property
-	def ProgressBar(self):
-		return None
-
-	def _UpdateProgress(self):
-		bar = self.ProgressBar
-		if bar is None:
-			return
-		ratio = self._ProgressRatio
-		bar.par.display = ratio < 1
-		bar.par.Ratio = ratio
-
-	@property
-	def _ProgressRatio(self):
-		if not self._TaskBatches:
-			return 1
-		total = 0
-		remaining = 0
-		for batch in self._TaskBatches:
-			total += batch.total
-			remaining += len(batch.tasks)
-		if not total or not remaining:
-			return 1
-		return 1 - (remaining / total)
-
-	def _QueueRunNextTask(self):
-		if not self._TaskBatches:
-			return
-		mod.td.run('op({!r}).RunNextTask()'.format(self.ownerComp.path), delayFrames=1)
-
-	def RunNextTask(self):
-		if not self._TaskBatches:
-			self._UpdateProgress()
-			return
-
-		task, batch = self._PopNextTask()
-		self._UpdateProgress()
-		if task is None:
-			return
-		result = task()
-		# Log('[TASK BATCH] ran task: {}, result: {}'.format(task, result))
-
-		def _onsuccess(r):
-			# Log('[TASK BATCH]   future resolved successfully\n    task: {}\n       result: {}'.format(task, r))
-			batch.results.append(r)
-			if not batch.tasks:
-				if not batch.future.isresolved:
-					batch.future.resolve(batch.results)
-			self._QueueRunNextTask()
-
-		def _onfailure(err):
-			# Log('[TASK BATCH]   future FAILED\n    task: {}\n       error: {}'.format(task, err))
-			batch.tasks.clear()
-			batch.future.fail(err)
-			self._QueueRunNextTask()
-
-		if isinstance(result, Future):
-			# Log('[TASK BATCH]  - result IS a Future!')
-			result.then(
-				success=_onsuccess,
-				failure=_onfailure)
-		else:
-			# Log('[TASK BATCH]  - result is not a Future (type: {})'.format(type(result)))
-			_onsuccess(result)
-
-	def _PopNextTask(self):
-		while self._TaskBatches:
-			batch = self._TaskBatches[0]
-			task = None
-			if batch.tasks:
-				task = batch.tasks.pop(0)
-			if not batch.tasks:
-				self._TaskBatches.pop(0)
-			if task is not None:
-				return task, batch
-		return None, None
-
-	def AddTaskBatch(self, tasks: List[Callable]) -> 'Future':
-		batch = _TaskBatch(tasks)
-		self._TaskBatches.append(batch)
-		self._UpdateProgress()
-		self._QueueRunNextTask()
-		return batch.future
-
-	def ClearTasks(self):
-		self._TaskBatches.clear()
-		self._UpdateProgress()
-
-class NEW_TaskQueueExt(LoggableBase):
 	def __init__(self, ownerComp):
 		self.ownerComp = ownerComp
 		self.tasks = []  # type: List[Callable]
@@ -385,7 +291,7 @@ class NEW_TaskQueueExt(LoggableBase):
 			return Future.immediate(label='{} (empty batch)'.format(label))
 		result = Future(label=label)
 		Log('TaskQueue [{}] adding task batch: {}'.format(self.ownerComp.path, label))
-		self.tasks.extend(tasks)
+		self.tasks[:0] = tasks
 
 		# TODO: get rid of this and fix the queue system!
 		def _noop():
@@ -409,8 +315,6 @@ class NEW_TaskQueueExt(LoggableBase):
 		self.totaltasks = 0
 		self.batchfuturetasks = 0
 		self._UpdateProgress()
-
-TaskQueueExt = NEW_TaskQueueExt
 
 class _TaskBatch:
 	def __init__(self, tasks: List[Callable]):

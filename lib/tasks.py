@@ -16,6 +16,8 @@ except ImportError:
 	simpleloggedmethod = common.simpleloggedmethod
 
 
+# NOT USED YET!!
+
 class TaskManager(common.ExtensionBase):
 	def __init__(self, ownerComp):
 		super().__init__(ownerComp)
