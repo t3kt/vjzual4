@@ -258,24 +258,24 @@ class TaskQueueExt(LoggableBase):
 		result = task()
 
 		def _onsuccess(*_):
-			Log('TaskQueue [{}] task succeeded {}'.format(self.ownerComp.path, result))
+			# Log('TaskQueue [{}] task succeeded {}'.format(self.ownerComp.path, result))
 			self._UpdateProgress()
 			self._QueueNextTask()
 
 		def _onfailure(err):
-			Log('TaskQueue [{}] ERROR from queued task ({})\n  {}'.format(self.ownerComp.path, task, err))
+			# Log('TaskQueue [{}] ERROR from queued task ({})\n  {}'.format(self.ownerComp.path, task, err))
 			# self.ClearTasks()
 			self._UpdateProgress()
 			self._QueueNextTask()
 
 		if isinstance(result, Future):
-			Log('TaskQueue [{}] result IS a Future!! {}'.format(self.ownerComp.path, result))
+			# Log('TaskQueue [{}] result IS a Future!! {}'.format(self.ownerComp.path, result))
 			result.then(
 				success=_onsuccess,
 				failure=_onfailure
 			)
 		else:
-			Log('TaskQueue [{}] result is NOT a Future!! {!r}'.format(self.ownerComp.path, result))
+			# Log('TaskQueue [{}] result is NOT a Future!! {!r}'.format(self.ownerComp.path, result))
 			_onsuccess()
 
 	def _QueueNextTask(self):
@@ -290,12 +290,12 @@ class TaskQueueExt(LoggableBase):
 		if not tasks:
 			return Future.immediate(label='{} (empty batch)'.format(label))
 		result = Future(label=label)
-		Log('TaskQueue [{}] adding task batch: {}'.format(self.ownerComp.path, label))
+		self._LogEvent('Adding task batch: {}'.format(label))
 		self.tasks[:0] = tasks
 
 		# TODO: get rid of this and fix the queue system!
 		def _noop():
-			Log('NO-OP for batch: {}'.format(label))
+			self._LogEvent('NO-OP for batch: {}'.format(label))
 			pass
 		self.tasks.append(_noop)
 		self.batchfuturetasks += 1
@@ -389,10 +389,10 @@ class Future(Generic[T]):
 		self._resolved = True
 		self._result = result
 		self._error = error
-		if self._error is not None:
-			Log('FUTURE FAILED {}'.format(self))
-		else:
-			Log('FUTURE SUCCEEDED {}'.format(self))
+		# if self._error is not None:
+		# 	Log('FUTURE FAILED {}'.format(self))
+		# else:
+		# 	Log('FUTURE SUCCEEDED {}'.format(self))
 		if self._successcallbacks or self._failurecallbacks:
 			self._invoke()
 
