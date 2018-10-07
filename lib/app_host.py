@@ -754,8 +754,14 @@ class ModuleManager(app_components.ComponentBase):
 		self.SetStatusText('Module hosts connected')
 		self.UpdateModuleWidths()
 		self.UpdateModuleVisibility()
+		self._ReenableModuleUIs()
 		self.moduleloadfuture.resolve()
 		self.AppHost.OnModuleHostsReady()
+
+	@loggedmethod
+	def _ReenableModuleUIs(self):
+		for m in self.modulehostsbypath.values():
+			m.ReenableUI()
 
 	def UpdateModuleWidths(self):
 		for m in self.ownerComp.ops('mod__*'):

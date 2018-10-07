@@ -125,6 +125,7 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 	def AttachToModuleConnector(self, connector: 'ModuleHostConnector') -> Optional[Future]:
 		self.ModuleConnector = connector
 		header = self.ownerComp.op('module_header')
+		self._ToggleHeaderUICooking(False)
 		bypassbutton = header.op('bypass_button')
 		previewbutton = header.op('preview_button')
 		automapbutton = header.op('automap_button')
@@ -197,6 +198,19 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 
 		self._BuildSubModuleHosts().then(_success, completionfuture.fail)
 		return completionfuture
+
+	def _ToggleHeaderUICooking(self, enable):
+		mesg = '{} header ui cooking'.format('Enabling' if enable else 'Disabling')
+		self._LogBegin(mesg)
+		try:
+			header = self.ownerComp.op('module_header')
+			for o in [header] + header.ops('*_toggle', '*_button', '*_field'):
+				o.allowCooking = enable
+		finally:
+			self._LogEnd(mesg)
+
+	def ReenableUI(self):
+		self._ToggleHeaderUICooking(True)
 
 	def _RebuildParamControlTable(self):
 		hostcore = self.ownerComp.op('host_core')
@@ -349,6 +363,7 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 		dest.par.h = self.HeightOfVisiblePanels(dest.panelChildren)
 		self.nodemarkersbuilt = True
 
+	@loggedmethod
 	def UpdateModuleHeight(self):
 		if not self.ownerComp.par.Autoheight:
 			return
@@ -364,6 +379,7 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 		if 0 < maxheight < h:
 			h = maxheight
 		self.ownerComp.par.h = h
+		# self._LogEvent('UpdateModuleHeight() disabled!!')
 
 	@staticmethod
 	def HeightOfVisiblePanels(panels):
@@ -561,7 +577,8 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 	@loggedmethod
 	def _OnSubModuleHostsConnected(self):
 		# TODO: load ui state etc
-		self.UpdateModuleHeight()
+		# self.UpdateModuleHeight()
+		pass
 
 	def _SetSubModuleHostPars(self, name, val):
 		for m in self.ownerComp.ops('sub_modules_panel/mod__*'):
