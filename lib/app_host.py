@@ -657,6 +657,8 @@ class AppHostMenu(app_components.ComponentBase):
 					'App State',
 					callback=lambda: self.AppHost.ShowSchemaJson(self.AppHost.BuildState())),
 				menu.Divider(),
+				menu.Item('Reenable Module UIs', callback=lambda: self.AppHost.ModuleManager.DebugReenableModuleUIs()),
+				menu.Divider(),
 				menu.Item(
 					'Reload code',
 					callback=lambda: op.Vjz4.op('RELOAD_CODE').run()),
@@ -754,14 +756,31 @@ class ModuleManager(app_components.ComponentBase):
 		self.SetStatusText('Module hosts connected')
 		self.UpdateModuleWidths()
 		self.UpdateModuleVisibility()
-		self._ReenableModuleUIs()
-		self.moduleloadfuture.resolve()
-		self.AppHost.OnModuleHostsReady()
+
+		def _success(_):
+			self.moduleloadfuture.resolve()
+			self.AppHost.OnModuleHostsReady()
+		self._LogEvent('[DEBUG] SKIPPING reenable module UIs')
+		#self._ReenableModuleUIs().then(success=_success)
+		_success(None)
 
 	@loggedmethod
 	def _ReenableModuleUIs(self):
-		for m in self.modulehostsbypath.values():
-			m.ReenableUI()
+		def _createTask(modhost):
+			return lambda: modhost.ReenableUI()
+
+		return self.AppHost.AddTaskBatch(
+			[_createTask(m) for m in self.modulehostsbypath.values()],
+			label='Reenable module UIs')
+
+	@loggedmethod
+	def DebugReenableModuleUIs(self):
+		self.SetStatusText('[DEBUG] Reenabling module UIs..', temporary=False)
+
+		def _success(*_):
+			self.SetStatusText('[DEBUG] Finished reenabling module UIs', temporary=True)
+
+		self._ReenableModuleUIs().then(success=_success)
 
 	def UpdateModuleWidths(self):
 		for m in self.ownerComp.ops('mod__*'):

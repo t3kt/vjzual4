@@ -200,15 +200,18 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 		return completionfuture
 
 	def _ToggleHeaderUICooking(self, enable):
-		mesg = '{} header ui cooking'.format('Enabling' if enable else 'Disabling')
-		self._LogBegin(mesg)
+		action = 'Enabling' if enable else 'Disabling'
+		mesg = '{} header ui cooking'.format(action)
+		self._LogBegin('BEGIN ' + mesg)
 		try:
 			header = self.ownerComp.op('module_header')
 			for o in [header] + header.ops('*_toggle', '*_button', '*_field'):
+				self._LogEvent('{} cooking on OP: {}'.format(action, o))
 				o.allowCooking = enable
 		finally:
-			self._LogEnd(mesg)
+			self._LogEnd('END ' + mesg)
 
+	@loggedmethod
 	def ReenableUI(self):
 		self._ToggleHeaderUICooking(True)
 
