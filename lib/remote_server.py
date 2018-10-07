@@ -455,6 +455,13 @@ class _RawModuleInfoBuilder(common.LoggableSubComponent):
 			typeattrs=self.settings.typeattrs,
 		)
 
+class _ModuleNavigator(common.LoggableSubComponent):
+	def GetAllModules(self) -> List[COMP]:
+		pass
+
+	def GetChildModules(self, parentpath) -> List[COMP]:
+		pass
+
 class _ServerSettingAccessor(common.ExtensionBase):
 
 	@loggedmethod
@@ -557,4 +564,16 @@ class _ServerSettingAccessor(common.ExtensionBase):
 				p.val = value or ''
 				return
 		raise Exception('Address parameter not found!')
+
+	def GetModulePaths(self):
+		par = self._SettingsCompPar('Modulelist')
+		dat = par.eval() if par else None
+		if not dat or dat.numRows == 0:
+			return None
+		if dat[0, 'path']:
+			return [c.val for c in dat.col('path')[1:] if c.val]
+		if '/' in dat[0, 0].val:
+			return [c.val for c in dat.col(0) if c.val]
+		self._LogEvent('Error getting module paths from dat {}'.format(dat))
+		return []
 
