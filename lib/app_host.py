@@ -166,7 +166,7 @@ class AppHost(common.ExtensionBase, common.ActionsExt, common.TaskQueueExt):
 
 		def _done():
 			self.SetStatusText('App schema loading completed')
-			self.initializing = True
+			self.initializing = False
 
 		def _continue():
 			self.AddTaskBatch(
