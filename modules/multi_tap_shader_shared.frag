@@ -29,7 +29,6 @@ uniform vec4 uTapVals[8];
 #define TAP_ACTIVE    0
 #define TAP_ALPHA     1
 #define TAP_FILTER    2
-#define TAP_LENGTH    3
 
 vec4 applyFilter(vec4 color, int mode) {
     if (color.a <= 0.0) {

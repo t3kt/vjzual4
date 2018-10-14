@@ -1,4 +1,5 @@
 #define W_OFFSET uTD3DInfos[0].depth.z
+#define TAP_LENGTH    3
 
 vec4 getDelayTap(float length) {
 	return texture(sTD3DInputs[0], vec3(vUV.st, length + W_OFFSET));
