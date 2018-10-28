@@ -130,7 +130,6 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 		previewbutton = header.op('preview_button')
 		automapbutton = header.op('automap_button')
 		bypassbutton.par.display = False
-		bypassbutton.par.Value1.expr = ''
 		previewbutton.par.display = False
 		automapbutton.par.display = False
 		title = header.op('panel_title/bg')
@@ -153,9 +152,11 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 			if connector.modschema.childmodpaths:
 				uimodenames.append('submods')
 			if connector.modschema.hasbypass:
-				bypassexpr = connector.GetParExpr('Bypass')
+				bypasspar = connector.GetPar('Bypass')
 				bypassbutton.par.display = True
-				bypassbutton.par.Value1.expr = bypassexpr
+				bypassbutton.par.Targetop = bypasspar.owner
+				bypassbutton.par.Targetpar = bypasspar.name
+				bypassexpr = connector.GetParExpr('Bypass')
 				bodypanel.par.opacity.expr = '0.5 if {} else 1'.format(bypassexpr)
 			if connector.modschema.primarynode:
 				previewbutton.par.display = True
@@ -200,6 +201,8 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 		return completionfuture
 
 	def _ToggleHeaderUICooking(self, enable):
+		self._LogEvent('SKIPPING _ToggleHeaderUICooking')
+		return
 		action = 'Enabling' if enable else 'Disabling'
 		mesg = '{} header ui cooking'.format(action)
 		self._LogBegin('BEGIN ' + mesg)
