@@ -307,6 +307,7 @@ class TaskQueueExt(LoggableBase):
 		self.tasks.append(_finishbatch)
 		self.totaltasks += len(tasks)
 		self.batchfuturetasks += 1
+		self._LogEvent('Remaining tasks: {}, Total tasks: {}'.format(len(self.tasks), self.totaltasks))
 		self._QueueNextTask()
 		return result
 

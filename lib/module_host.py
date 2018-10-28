@@ -201,8 +201,8 @@ class ModuleHost(app_components.ComponentBase, common.TaskQueueExt):
 		return completionfuture
 
 	def _ToggleHeaderUICooking(self, enable):
-		self._LogEvent('SKIPPING _ToggleHeaderUICooking')
-		return
+		# self._LogEvent('SKIPPING _ToggleHeaderUICooking')
+		# return
 		action = 'Enabling' if enable else 'Disabling'
 		mesg = '{} header ui cooking'.format(action)
 		self._LogBegin('BEGIN ' + mesg)
