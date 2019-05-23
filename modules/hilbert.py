@@ -24,6 +24,11 @@ def GeneratePattern(chop, recursions: int):
 		chop["u"][d] = uvs * d
 		chop["v"][d] = 0.5
 
+	orighigh = chop['tx'].max()
+	for d in range(points):
+		chop['tx'][d] = remap(chop['tx'][d], 0, orighigh, -0.5, 0.5)
+		chop['ty'][d] = remap(chop['ty'][d], 0, orighigh, -0.5, 0.5)
+
 def Radialize(chop, dlow=0.1, dhigh=0.5, tlow=0, thigh=360):
 	xlow, xhigh = chop['tx'].min(), chop['tx'].max()
 	ylow, yhigh = chop['ty'].min(), chop['ty'].max()
@@ -44,29 +49,6 @@ def polartocartesian(r, t):
 	x = r * math.cos(trad)
 	y = r * math.sin(trad)
 	return x, y
-
-# this isn't actually being used yet
-def GeneratePatternGeo(sop, recursions: int):
-	sop.clear()
-	sop.vertexAttribs.create('uv')
-	sop.pointAttribs.create('Cd')
-
-	n = 2 ** recursions
-	pointcount = GetPointCount(recursions)
-	uvstep = 1 / pointcount
-	prim = sop.appendPoly(pointcount, addPoints=True, closed=False)
-	for d in range(pointcount):
-		vert = prim[d]
-		point = vert.point
-		point.x, point.y = d2xy(n, d)
-		point.z = 0
-		point.Cd[0] = d % 4 / 4
-		point.Cd[1] = (d + 1) % 4 / 4
-		point.Cd[2] = (d + 2) % 4 / 4
-		point.Cd[3] = 1
-		vert.uv[0] = uvstep * d
-		vert.uv[1] = 0.5
-		vert.uv[2] = 1
 
 def GetPointCount(recursions: int):
 	n = 2 ** recursions
