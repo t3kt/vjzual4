@@ -1,5 +1,3 @@
-layout (location = 0) out vec4 fragColor;
-
 uniform float uScale;
 uniform vec2 uOffset;
 uniform float uRotate;
@@ -11,6 +9,12 @@ uniform float uColDispMix;
 uniform int uIterations;
 uniform float uCoordMix;
 uniform float uTanGain;
+
+layout (location = 0) out vec4 fragColor;
+
+#ifdef ENABLE_UV_MAP
+layout (location = 1) out vec4 uvMapOut;
+#endif
 
 mat2 rotMatrixXY(float r)
 {
@@ -53,6 +57,9 @@ void main()
 	inputCol = texture(sTD2DInputs[0], p);
 
 	fragColor = inputCol;
+	#ifdef ENABLE_UV_MAP
+	uvMapOut = vec4(p, 0.0, 1.0);
+	#endif
 }
 
 void noop(vec2 p) {}
