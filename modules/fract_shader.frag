@@ -139,9 +139,6 @@ void S9C(inout vec2 p) {
 	p = mod(p, 1.0);
 }
 
-
-//--INSERT-SECTION-DEFS
-
 #ifndef S1
 	#define S1	S1A
 #endif
