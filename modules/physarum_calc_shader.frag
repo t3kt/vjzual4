@@ -1,4 +1,5 @@
-out vec4 fragColor;
+layout (location = 0) out vec4 fragColor;
+layout (location = 1) out vec4 stateOut;
 
 uniform float uSensorAngle;
 uniform float uRotationAngle;
@@ -12,6 +13,7 @@ uniform vec2 uTrailThresholds;
 uniform vec2 uDepositThresholds;
 uniform float uKillPct;
 uniform float uDepositAmt;
+uniform float uAgeStep;
 
 float rand(vec2 st) {
     return fract(sin(dot(st.xy,
@@ -25,8 +27,10 @@ float rand(vec2 st) {
 #define sPositions sTD2DInputs[0]
 #define sTrail  sTD2DInputs[1]
 #define sResetData sTD2DInputs[2]
+#define sStates sTD2DInputs[3]
 
 void main() {
+	stateOut = vec4(0.0, 0.0, 0.0, 1.0);
 
 	#if (Randomkilltoggle==1)
 	float randkillVal = rand(vUV.ts + vec2(1.546456*uSeed, 1.108645678*uSeed));
@@ -109,5 +113,6 @@ void main() {
     pos.x *= uAspect;
         
     fragColor = vec4(pos, heading, doDeposit*uDepositAmt);
-
+		stateOut = texture(sStates, vUV.st);
+	stateOut.r += uAgeStep;
 }
