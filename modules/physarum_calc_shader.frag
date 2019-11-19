@@ -1,4 +1,17 @@
+/*
+	r: pos.x
+	g: pos.y
+	b: heading
+	a: deposit
+*/
 layout (location = 0) out vec4 fragColor;
+
+/*
+	r: age
+	g:
+	b:
+	a:
+*/
 layout (location = 1) out vec4 stateOut;
 
 uniform float uSensorAngle;
@@ -14,6 +27,7 @@ uniform vec2 uDepositThresholds;
 uniform float uKillPct;
 uniform float uDepositAmt;
 uniform float uAgeStep;
+uniform float uSensorMapAmount;
 
 float rand(vec2 st) {
     return fract(sin(dot(st.xy,
@@ -28,6 +42,7 @@ float rand(vec2 st) {
 #define sTrail  sTD2DInputs[1]
 #define sResetData sTD2DInputs[2]
 #define sStates sTD2DInputs[3]
+#define sSensorOffsetMap sTD2DInputs[4]
 
 void main() {
 	stateOut = vec4(0.0, 0.0, 0.0, 1.0);
@@ -50,8 +65,11 @@ void main() {
     float angleA = heading + uSensorAngle;
     float angleB = heading;
     float angleC = heading - uSensorAngle;
-    
-    vec2 tex = uTD2DInfos[1].res.xy * uSensorDistanceOffset;
+
+		float sensorOffset = uSensorDistanceOffset;
+		float sensorOffsetFromMap = texture(sSensorOffsetMap, pos.xy).r * uSensorDistanceOffset;
+		sensorOffset = mix(sensorOffset, sensorOffsetFromMap, uSensorMapAmount);
+    vec2 tex = uTD2DInfos[1].res.xy * sensorOffset;
     vec2 uvA = pos.xy + tex * vec2(cos(angleA),sin(angleA));
     vec2 uvB = pos.xy + tex * vec2(cos(angleB),sin(angleB));
     vec2 uvC = pos.xy + tex * vec2(cos(angleC),sin(angleC));
@@ -81,9 +99,9 @@ void main() {
     	// rotate left by RA
     	heading += uRotationAngle;
     }
-    //else {
-    //	// continue facing same direction
-    //}
+    else {
+    	// continue facing same direction
+    }
     
     vec2 tempVec = tex * vec2(cos(heading),sin(heading));
     vec2 tempPos = pos + uStepSize * tempVec;

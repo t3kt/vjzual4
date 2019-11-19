@@ -5,6 +5,13 @@ uniform vec2 uTexRes;
 
 flat out float deposit;
 flat out vec4 color;
+
+/*
+	r: age
+	g:
+	b: heading
+	a: deposit
+*/
 flat out vec4 state;
 
 out Vertex
@@ -29,6 +36,8 @@ void main() {
 	state = texelFetch(sStateMap, coord, 0);
 	float age = state.r;
 	color = texture(sColorMap, vec2(age, 0));
+
+	state.ba = data.ba;
 
 	vec4 worldSpacePos = vec4(P, 1.);
 	
