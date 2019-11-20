@@ -16,8 +16,10 @@ void main()
 	d = clamp(d, 0., 1.);
 	
 	//d = pow(d, 1.5);
-	vec4 outcol = vec4(d*deposit);
+	vec4 outcol = vec4(deposit);
+//	outcol *= d;
 	outcol *= color;
 
 	oFragColor = TDOutputSwizzle(outcol);
+	oStateOut = state;
 }

@@ -10,8 +10,10 @@ void main()
 	float d = 1.-length( .5 - gl_PointCoord.xy );
 	
 	//d = pow(d, 1.5);
-	vec4 outcol = vec4(d*deposit);
+	vec4 outcol = vec4(deposit);
+//	outcol *= d;
 	outcol *= color;
 
 	oFragColor = TDOutputSwizzle(outcol);
+	oStateOut = state;
 }
