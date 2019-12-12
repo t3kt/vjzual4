@@ -210,6 +210,8 @@ vec4 compositeTaps(vec4[8] colors) {
     return color;
 }
 
+#ifndef CUSTOM_GET_TAPS
+
 vec4 getTapResult(int i);
 vec4 getZeroTap();
 
@@ -227,6 +229,8 @@ vec4[8] getTaps() {
     }
     return colors;
 }
+
+#endif
 
 out vec4 fragColor;
 void main()
