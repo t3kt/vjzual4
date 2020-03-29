@@ -52,8 +52,8 @@ float adjustAngle(float angle) {
 	if (uAngleWeightAmount == 0) {
 		return angle;
 	}
-//	float coord = mod(angle, TWOPI) / TWOPI;
-	float coord = angle / TWOPI;
+	float coord = mod(angle, TWOPI) / TWOPI;
+//	float coord = angle / TWOPI;
 	float mapAngle = texture(sAngleWeightMap, vec2(coord, 0)).r * TWOPI;
 	return mix(angle, mapAngle, uAngleWeightAmount);
 }
