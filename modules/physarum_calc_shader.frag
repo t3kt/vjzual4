@@ -28,6 +28,9 @@ uniform float uKillPct;
 uniform float uDepositAmt;
 uniform float uAgeStep;
 uniform float uSensorMapAmount;
+uniform float uAngleWeightAmount;
+
+
 
 float rand(vec2 st) {
     return fract(sin(dot(st.xy,
@@ -35,7 +38,7 @@ float rand(vec2 st) {
         43758.5453123);
 }
 
-#define MATHPI 3.141592653589793
+#define PI 3.141592653589793
 #define TWOPI 6.28318530718
 
 #define sPositions sTD2DInputs[0]
@@ -43,6 +46,17 @@ float rand(vec2 st) {
 #define sResetData sTD2DInputs[2]
 #define sStates sTD2DInputs[3]
 #define sSensorOffsetMap sTD2DInputs[4]
+#define sAngleWeightMap sTD2DInputs[5]
+
+float adjustAngle(float angle) {
+	if (uAngleWeightAmount == 0) {
+		return angle;
+	}
+//	float coord = mod(angle, TWOPI) / TWOPI;
+	float coord = angle / TWOPI;
+	float mapAngle = texture(sAngleWeightMap, vec2(coord, 0)).r * TWOPI;
+	return mix(angle, mapAngle, uAngleWeightAmount);
+}
 
 void main() {
 	stateOut = vec4(0.0, 0.0, 0.0, 1.0);
@@ -60,7 +74,6 @@ void main() {
     pos.x /= uAspect;
     
     float heading = data.z;
-    float newHeading = heading;
     
     float angleA = heading + uSensorAngle;
     float angleB = heading;
@@ -102,6 +115,7 @@ void main() {
     else {
     	// continue facing same direction
     }
+		heading = adjustAngle(heading);
     
     vec2 tempVec = tex * vec2(cos(heading),sin(heading));
     vec2 tempPos = pos + uStepSize * tempVec;
