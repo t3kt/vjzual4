@@ -19,19 +19,19 @@ void main() {
 	ivec2 res = ivec2(uTexRes);
 	
 	ivec2 coord = ivec2(gl_InstanceID%res.x,gl_InstanceID/res.x);
-	
-	vec4 data = texelFetch(sPosMap, coord, 0);
-	deposit = data.a;
 
-	state = texelFetch(sStateMap, coord, 0);
+	vec4 posMapData = texelFetch(sPosMap, coord, 0);
+	vec4 stateMapData = texelFetch(sStateMap, coord, 0);
+
+	deposit = stateMapData.a;
+
+	state = stateMapData;
 	float age = state.r;
 	color = texture(sColorMap, vec2(age, 0));
 
-	state.ba = data.ba;
-
 	vec4 worldSpacePos = vec4(P, 1.);
 	
-	worldSpacePos.xy += data.xy;
+	worldSpacePos.xy += posMapData.xy;
 	
 	gl_Position = TDWorldToProj(worldSpacePos);
 	gl_PointSize = 1.;
